@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { AnimatePresence } from "framer-motion";
-import { Search } from "lucide-react";
+import { MagnifyingGlass as Search } from "@phosphor-icons/react";
 import PageHeader from "../components/PageHeader";
 import Modal from "../components/Modal";
 import Select from "../components/Select";
@@ -109,7 +109,7 @@ export default function StaffClock() {
   const [editing, setEditing] = useState<ClockEntry | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const hourlyEmployees = useMemo(() => employees.filter((e) => e.payType === "hourly"), [employees]);
+  const hourlyEmployees = useMemo(() => employees.filter((e) => e.payType === "hourly" && e.active), [employees]);
   const employeeOptions = hourlyEmployees.map((e) => ({ value: e.id, label: e.name }));
   const employeeName = (id: string) => employees.find((e) => e.id === id)?.name ?? "Unknown";
 
@@ -122,9 +122,9 @@ export default function StaffClock() {
 
   return (
     <>
-      <PageHeader title="Clock" />
+      <PageHeader title="Clock in & Clock out" />
 
-      <div className="space-y-4 px-8 pb-10">
+      <div className="space-y-4 px-4 sm:px-8 pb-10">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 rounded-lg border border-line bg-paper px-3 py-2">
             <Search className="h-4 w-4 text-muted" />
@@ -149,11 +149,10 @@ export default function StaffClock() {
         </div>
 
         <p className="text-xs text-muted">
-          Daily hours logged here are summed automatically into each hourly employee's payroll — landlord-entered today,
-          written the same way once the gatehouse time-tracker portal ships.
+          Hours logged here are added automatically to each hourly employee's pay.
         </p>
 
-        <div className="overflow-hidden rounded-xl border border-line">
+        <div className="overflow-x-auto rounded-lg border border-line">
           <table className="w-full table-fixed text-left text-sm">
             <colgroup>
               <col className="w-48" />

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { Paperclip as AttachmentIcon } from "@phosphor-icons/react";
 
 type NotificationTab = "inbox" | "general" | "archived";
 
@@ -104,18 +105,6 @@ function Avatar({ n }: { n: Notification }) {
   );
 }
 
-function AttachmentIcon() {
-  return (
-    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth={1.5}>
-      <path
-        d="M10.5 3.5 4.8 9.2a2.3 2.3 0 0 0 3.25 3.25l5.7-5.7a3.6 3.6 0 0 0-5.1-5.1L3 6.3"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 export default function NotificationsPanel({ onClose }: { onClose: () => void }) {
   const [tab, setTab] = useState<NotificationTab>("inbox");
   const [items, setItems] = useState(SEED);
@@ -209,7 +198,7 @@ export default function NotificationsPanel({ onClose }: { onClose: () => void })
 
                     {n.attachment && (
                       <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-line bg-mist px-2.5 py-1.5 text-xs font-medium text-muted">
-                        <AttachmentIcon />
+                        <AttachmentIcon size={14} weight="duotone" />
                         {n.attachment}
                       </div>
                     )}

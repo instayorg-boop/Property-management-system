@@ -8,13 +8,13 @@ export type Category = {
 
 export type Expense = {
   id: string;
-  description: string;
+  name: string;
+  description?: string;
   categoryId: string;
   amount: number;
   date: string; // ISO
   hasPhoto: boolean;
   source: "manual" | "payroll";
-  property?: string;
 };
 
 const defaultCategories: Category[] = [
@@ -25,12 +25,24 @@ const defaultCategories: Category[] = [
 ];
 
 const initialExpenses: Expense[] = [
-  { id: "e1", description: "Plumber — Room 08 leak", categoryId: "maintenance", amount: 450, date: "2026-08-22", hasPhoto: true, source: "manual" },
-  { id: "e2", description: "Security guard salaries", categoryId: "staff-wages", amount: 6200, date: "2026-08-20", hasPhoto: false, source: "manual" },
-  { id: "e3", description: "ZESCO bill", categoryId: "utilities", amount: 1340, date: "2026-08-18", hasPhoto: true, source: "manual" },
-  { id: "e4", description: "Water bill", categoryId: "utilities", amount: 620, date: "2026-08-15", hasPhoto: false, source: "manual" },
-  { id: "e5", description: "Gate repair", categoryId: "maintenance", amount: 890, date: "2026-08-10", hasPhoto: true, source: "manual" },
-  { id: "e6", description: "Office supplies", categoryId: "other", amount: 210, date: "2026-08-06", hasPhoto: false, source: "manual" },
+  { id: "e1", name: "Plumber — Room 08 leak", categoryId: "maintenance", amount: 450, date: "2026-08-22", hasPhoto: true, source: "manual" },
+  { id: "e2", name: "Security guard salaries", categoryId: "staff-wages", amount: 6200, date: "2026-08-20", hasPhoto: false, source: "manual" },
+  { id: "e3", name: "ZESCO bill", categoryId: "utilities", amount: 1340, date: "2026-08-18", hasPhoto: true, source: "manual" },
+  { id: "e4", name: "Water bill", categoryId: "utilities", amount: 620, date: "2026-08-15", hasPhoto: false, source: "manual" },
+  { id: "e5", name: "Gate repair", categoryId: "maintenance", amount: 890, date: "2026-08-10", hasPhoto: true, source: "manual" },
+  { id: "e6", name: "Office supplies", categoryId: "other", amount: 210, date: "2026-08-06", hasPhoto: false, source: "manual" },
+  { id: "e7", name: "Cleaner — weekly service", categoryId: "staff-wages", amount: 480, date: "2026-08-25", hasPhoto: false, source: "manual" },
+  { id: "e8", name: "Borehole pump repair", categoryId: "maintenance", amount: 1150, date: "2026-08-24", hasPhoto: true, source: "manual" },
+  { id: "e9", name: "Internet — property WiFi", categoryId: "utilities", amount: 380, date: "2026-08-12", hasPhoto: false, source: "manual" },
+  { id: "e10", name: "Paint — common area touch-up", categoryId: "maintenance", amount: 340, date: "2026-08-08", hasPhoto: true, source: "manual" },
+  { id: "e11", name: "Garbage collection", categoryId: "utilities", amount: 260, date: "2026-08-05", hasPhoto: false, source: "manual" },
+  { id: "e12", name: "Stationery & printing", categoryId: "other", amount: 95, date: "2026-08-03", hasPhoto: false, source: "manual" },
+  { id: "e13", name: "Caretaker salary", categoryId: "staff-wages", amount: 2400, date: "2026-08-01", hasPhoto: false, source: "manual" },
+  { id: "e14", name: "Security guard salaries", categoryId: "staff-wages", amount: 6100, date: "2026-07-20", hasPhoto: false, source: "manual" },
+  { id: "e15", name: "ZESCO bill", categoryId: "utilities", amount: 1210, date: "2026-07-18", hasPhoto: true, source: "manual" },
+  { id: "e16", name: "Water bill", categoryId: "utilities", amount: 590, date: "2026-07-15", hasPhoto: false, source: "manual" },
+  { id: "e17", name: "Roof leak repair — Room 22", categoryId: "maintenance", amount: 1620, date: "2026-07-11", hasPhoto: true, source: "manual" },
+  { id: "e18", name: "Caretaker salary", categoryId: "staff-wages", amount: 2400, date: "2026-07-01", hasPhoto: false, source: "manual" },
 ];
 
 type ExpensesContextValue = {

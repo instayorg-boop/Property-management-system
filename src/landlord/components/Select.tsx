@@ -1,20 +1,5 @@
 import * as RadixSelect from "@radix-ui/react-select";
-
-function ChevronDownIcon() {
-  return (
-    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth={1.75}>
-      <path d="m4 6 4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function CheckIcon() {
-  return (
-    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth={2}>
-      <path d="M3.5 8.2l3 3 6-6.4" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
+import { CaretDown as ChevronDownIcon, Check as CheckIcon } from "@phosphor-icons/react";
 
 export type SelectOption = { value: string; label: string };
 
@@ -39,7 +24,7 @@ export default function Select({
       >
         <RadixSelect.Value placeholder={placeholder} />
         <RadixSelect.Icon className="ml-auto text-muted">
-          <ChevronDownIcon />
+          <ChevronDownIcon size={14} weight="bold" />
         </RadixSelect.Icon>
       </RadixSelect.Trigger>
 
@@ -57,7 +42,7 @@ export default function Select({
                 className="relative flex cursor-pointer items-center rounded-md py-2 pr-3 pl-8 text-sm text-ink outline-none select-none data-[highlighted]:bg-mist data-[state=checked]:font-medium data-[state=checked]:text-brand"
               >
                 <RadixSelect.ItemIndicator className="absolute left-2 flex items-center">
-                  <CheckIcon />
+                  <CheckIcon size={14} weight="bold" />
                 </RadixSelect.ItemIndicator>
                 <RadixSelect.ItemText>{o.label}</RadixSelect.ItemText>
               </RadixSelect.Item>

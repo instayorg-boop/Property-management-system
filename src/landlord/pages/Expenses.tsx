@@ -1,50 +1,27 @@
-import { useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
 import PageHeader from "../components/PageHeader";
 import Modal from "../components/Modal";
-import SlideOver from "../components/SlideOver";
 import Select from "../components/Select";
+import ExpenseFormDrawer from "../components/ExpenseFormDrawer";
 import { useExpenses, type Expense } from "../ExpensesContext";
+import { useTenants, formatCurrency } from "../TenantsContext";
+import { Paperclip, MagnifyingGlass, GearSix, CaretLeft, CaretRight, DownloadSimple } from "@phosphor-icons/react";
 
 function PaperclipIcon() {
-  return (
-    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth={1.5}>
-      <path
-        d="M10.5 4.5 5 10a2 2 0 1 0 2.83 2.83L13.5 7a3.5 3.5 0 0 0-5-5L3 7.5a5 5 0 0 0 7.07 7.07"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
+  return <Paperclip size={14} weight="duotone" />;
 }
 
 function SearchIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current" strokeWidth={1.75}>
-      <circle cx="11" cy="11" r="7" />
-      <path d="m20 20-3.5-3.5" strokeLinecap="round" />
-    </svg>
-  );
+  return <MagnifyingGlass size={16} weight="bold" />;
 }
 
 function SettingsIcon() {
-  return (
-    <svg viewBox="0 0 16 16" className="h-4 w-4 fill-none stroke-current" strokeWidth={1.5}>
-      <circle cx="8" cy="8" r="2" />
-      <path
-        d="M13 8a5 5 0 0 0-.1-1l1.2-1-1-1.7-1.4.5a5 5 0 0 0-1.7-1L9.7 2H6.3l-.3 1.5a5 5 0 0 0-1.7 1l-1.4-.5-1 1.7 1.2 1a5 5 0 0 0 0 2l-1.2 1 1 1.7 1.4-.5a5 5 0 0 0 1.7 1l.3 1.5h3.4l.3-1.5a5 5 0 0 0 1.7-1l1.4.5 1-1.7-1.2-1c.07-.33.1-.66.1-1Z"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
+  return <GearSix size={16} weight="duotone" />;
 }
 
-const months = ["August 2026", "July 2026", "June 2026", "May 2026"];
-
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
-}
+const ROWS_PER_PAGE = 8;
 
 function formatK(n: number) {
   return `K${n.toLocaleString()}`;
@@ -54,192 +31,29 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
-function isInMonth(iso: string, monthLabel: string) {
-  const d = new Date(iso);
-  const label = d.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
-  return label === monthLabel;
+function monthLabel(date: Date) {
+  return date.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
 }
 
-// ---------- Add / edit expense ----------
+function isInMonth(iso: string, label: string) {
+  return monthLabel(new Date(iso)) === label;
+}
 
-function ExpenseFormDrawer({
-  editing,
-  onClose,
-}: {
-  editing: Expense | null;
-  onClose: () => void;
-}) {
-  const { categories, addExpense, updateExpense, deleteExpense, addCategory } = useExpenses();
-  const activeCategories = categories.filter((c) => c.active);
-
-  const [description, setDescription] = useState(editing?.description ?? "");
-  const [amount, setAmount] = useState(editing ? String(editing.amount) : "");
-  const [categoryId, setCategoryId] = useState(editing?.categoryId ?? activeCategories[0]?.id ?? "");
-  const [date, setDate] = useState(editing?.date ?? todayISO());
-  const [hasPhoto, setHasPhoto] = useState(editing?.hasPhoto ?? false);
-  const [addingCategory, setAddingCategory] = useState(false);
-  const [newCategoryName, setNewCategoryName] = useState("");
-
-  const confirmNewCategory = () => {
-    if (!newCategoryName.trim()) return;
-    const cat = addCategory(newCategoryName.trim());
-    setCategoryId(cat.id);
-    setNewCategoryName("");
-    setAddingCategory(false);
-  };
-
-  const submit = () => {
-    if (!description.trim() || !amount || !categoryId) return;
-    const payload = {
-      description,
-      categoryId,
-      amount: parseInt(amount.replace(/[^\d]/g, ""), 10) || 0,
-      date,
-      hasPhoto,
-      source: "manual" as const,
-    };
-    if (editing) {
-      updateExpense(editing.id, payload);
-    } else {
-      addExpense(payload);
-    }
-    onClose();
-  };
-
-  return (
-    <SlideOver
-      onClose={onClose}
-      title={editing ? "Edit expense" : "Add expense"}
-      footer={
-        <div className="flex justify-end gap-2">
-          {editing && (
-            <button
-              type="button"
-              onClick={() => {
-                deleteExpense(editing.id);
-                onClose();
-              }}
-              className="rounded-lg px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
-            >
-              Delete
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={submit}
-            className="rounded-lg bg-brand px-5 py-2 text-sm font-medium text-paper transition-transform hover:scale-[1.01]"
-          >
-            {editing ? "Save changes" : "Add expense"}
-          </button>
-        </div>
-      }
-    >
-      <div className="space-y-4">
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-muted">Description</label>
-          <input
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
-          />
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-muted">Amount (K)</label>
-          <input
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            inputMode="decimal"
-            className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
-          />
-        </div>
-
-        <div>
-          <div className="mb-1.5 flex items-center justify-between">
-            <label className="text-xs font-medium text-muted">Category</label>
-            <button
-              type="button"
-              onClick={() => setAddingCategory((v) => !v)}
-              className="text-xs font-medium text-brand hover:text-ink"
-            >
-              {addingCategory ? "Cancel" : "+ New category"}
-            </button>
-          </div>
-
-          {addingCategory ? (
-            <div className="flex gap-2">
-              <input
-                autoFocus
-                value={newCategoryName}
-                onChange={(e) => setNewCategoryName(e.target.value)}
-                placeholder="e.g. Generator fuel"
-                className="flex-1 rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
-              />
-              <button
-                type="button"
-                onClick={confirmNewCategory}
-                className="rounded-lg bg-brand px-4 text-sm font-medium text-paper"
-              >
-                Add
-              </button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-2">
-              {activeCategories.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => setCategoryId(c.id)}
-                  className={`rounded-lg border py-2.5 text-sm font-medium transition-colors ${
-                    categoryId === c.id ? "border-brand bg-brand-soft text-brand" : "border-line text-muted hover:bg-mist"
-                  }`}
-                >
-                  {c.name}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-muted">Date</label>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
-          />
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-muted">Receipt</label>
-          {hasPhoto ? (
-            <div className="space-y-2">
-              <div className="flex h-40 items-center justify-center rounded-lg border border-dashed border-line bg-mist text-sm text-muted">
-                Receipt photo
-              </div>
-              <button
-                type="button"
-                onClick={() => setHasPhoto(false)}
-                className="text-xs font-medium text-red-600 hover:underline"
-              >
-                Remove photo
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setHasPhoto(true)}
-              className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-line py-2.5 text-sm font-medium text-muted transition-colors hover:bg-mist"
-            >
-              <PaperclipIcon />
-              Attach receipt photo (optional)
-            </button>
-          )}
-        </div>
-      </div>
-    </SlideOver>
+function downloadCsv(filename: string, rows: Expense[], categoryName: (id: string) => string) {
+  const header = ["Name", "Description", "Category", "Date", "Amount"];
+  const lines = rows.map((e) =>
+    [e.name, e.description ?? "", categoryName(e.categoryId), e.date, e.amount]
+      .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+      .join(",")
   );
+  const csv = [header.join(","), ...lines].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 // ---------- Manage categories ----------
@@ -338,21 +152,55 @@ function ManageCategoriesModal({ onClose }: { onClose: () => void }) {
 
 export default function Expenses() {
   const { expenses, categories, categoryName } = useExpenses();
-  const [month, setMonth] = useState(months[0]);
+  const { tenants } = useTenants();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const [monthOffset, setMonthOffset] = useState(0);
+  const monthDate = useMemo(() => {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() + monthOffset);
+    return d;
+  }, [monthOffset]);
+  const month = monthLabel(monthDate);
+
   const [query, setQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [page, setPage] = useState(1);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Expense | null>(null);
+  const [prefill, setPrefill] = useState<Partial<Pick<Expense, "name" | "description" | "categoryId">> | undefined>(undefined);
   const [showCategories, setShowCategories] = useState(false);
+
+  // Arriving from a maintenance report's "Log a repair cost" — open Add expense pre-filled.
+  useEffect(() => {
+    const state = location.state as { expensePrefill?: typeof prefill } | null;
+    if (state?.expensePrefill) {
+      setEditing(null);
+      setPrefill(state.expensePrefill);
+      setShowForm(true);
+      navigate(location.pathname, { replace: true, state: null });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
 
   const monthExpenses = useMemo(() => expenses.filter((e) => isInMonth(e.date, month)), [expenses, month]);
 
   const filtered = useMemo(() => {
     return monthExpenses
       .filter((e) => categoryFilter === "all" || e.categoryId === categoryFilter)
-      .filter((e) => e.description.toLowerCase().includes(query.toLowerCase()))
+      .filter(
+        (e) =>
+          e.name.toLowerCase().includes(query.toLowerCase()) ||
+          (e.description ?? "").toLowerCase().includes(query.toLowerCase())
+      )
       .sort((a, b) => (a.date < b.date ? 1 : -1));
   }, [monthExpenses, categoryFilter, query]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / ROWS_PER_PAGE));
+  const currentPage = Math.min(page, pageCount);
+  const pageRows = filtered.slice((currentPage - 1) * ROWS_PER_PAGE, currentPage * ROWS_PER_PAGE);
 
   const total = useMemo(() => monthExpenses.reduce((sum, e) => sum + e.amount, 0), [monthExpenses]);
 
@@ -365,15 +213,47 @@ export default function Expenses() {
       .filter((c) => c.category.active || c.total > 0);
   }, [categories, monthExpenses]);
 
+  // Only trustworthy for the current month — tenant status/ledger reflect live state, not a clean
+  // per-month history, so a past month here can't be reconstructed accurately.
+  const rentCollected = useMemo(() => {
+    if (monthOffset !== 0) return null;
+    return tenants
+      .filter((t) => t.active)
+      .reduce((sum, t) => {
+        if (t.status === "paid") return sum + t.rentAmount;
+        if (t.status === "partial") return sum + (t.ledger[0]?.paidAmount ?? 0);
+        return sum;
+      }, 0);
+  }, [tenants, monthOffset]);
+
   return (
     <>
       <PageHeader title="Expenses" />
 
-      <div className="space-y-5 px-8 pb-10">
+      <div className="space-y-5 px-4 sm:px-8 pb-10">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <Select value={month} onChange={setMonth} options={months.map((m) => ({ value: m, label: m }))} />
+            <div className="flex items-center gap-1 rounded-lg border border-line bg-paper px-1.5 py-1">
+              <button
+                type="button"
+                onClick={() => setMonthOffset((o) => o - 1)}
+                aria-label="Previous month"
+                className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-mist hover:text-ink"
+              >
+                <CaretLeft size={14} weight="bold" />
+              </button>
+              <span className="w-36 text-center text-sm font-medium text-ink">{month}</span>
+              <button
+                type="button"
+                onClick={() => setMonthOffset((o) => Math.min(0, o + 1))}
+                disabled={monthOffset === 0}
+                aria-label="Next month"
+                className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-mist hover:text-ink disabled:opacity-30 disabled:hover:bg-transparent"
+              >
+                <CaretRight size={14} weight="bold" />
+              </button>
+            </div>
             <div>
               <p className="text-xs text-muted">Total spent</p>
               <p className="font-display text-lg font-semibold text-ink">{formatK(total)}</p>
@@ -383,8 +263,10 @@ export default function Expenses() {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist"
+              onClick={() => downloadCsv(`expenses-${month.replace(" ", "-")}.csv`, filtered, categoryName)}
+              className="flex items-center gap-1.5 rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist"
             >
+              <DownloadSimple size={14} weight="bold" />
               Export
             </button>
             <button
@@ -399,6 +281,7 @@ export default function Expenses() {
               type="button"
               onClick={() => {
                 setEditing(null);
+                setPrefill(undefined);
                 setShowForm(true);
               }}
               className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-paper transition-transform hover:scale-[1.02]"
@@ -414,8 +297,11 @@ export default function Expenses() {
             <button
               key={c.category.id}
               type="button"
-              onClick={() => setCategoryFilter(c.category.id)}
-              className={`min-w-40 flex-1 rounded-xl border p-5 text-left transition-colors ${
+              onClick={() => {
+                setCategoryFilter(c.category.id);
+                setPage(1);
+              }}
+              className={`min-w-40 flex-1 rounded-lg border p-5 text-left transition-colors ${
                 categoryFilter === c.category.id ? "border-brand bg-brand-soft" : "border-line bg-paper hover:bg-mist"
               }`}
             >
@@ -425,26 +311,46 @@ export default function Expenses() {
           ))}
         </div>
 
+        {rentCollected !== null && (
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg border border-line bg-paper px-5 py-3 text-sm">
+            <span className="text-muted">
+              Rent collected: <span className="font-medium text-ink">{formatCurrency(rentCollected)}</span>
+            </span>
+            <span className="text-muted">
+              Expenses: <span className="font-medium text-ink">{formatK(total)}</span>
+            </span>
+            <span className={`font-medium ${rentCollected - total >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+              Net to owner: {formatCurrency(rentCollected - total)}
+            </span>
+          </div>
+        )}
+
         {/* Search + filter */}
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-2 rounded-lg border border-line bg-paper px-3 py-2">
             <SearchIcon />
             <input
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search by description"
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setPage(1);
+              }}
+              placeholder="Search by name or description"
               className="w-56 bg-transparent text-sm outline-none placeholder:text-muted"
             />
           </div>
           <Select
             value={categoryFilter}
-            onChange={setCategoryFilter}
+            onChange={(v) => {
+              setCategoryFilter(v);
+              setPage(1);
+            }}
             options={[{ value: "all", label: "All categories" }, ...categories.map((c) => ({ value: c.id, label: c.name }))]}
           />
         </div>
 
         {/* Expense table */}
-        <div className="overflow-hidden rounded-xl border border-line">
+        <div className="overflow-x-auto rounded-lg border border-line">
           <table className="w-full table-fixed text-left text-sm">
             <colgroup>
               <col />
@@ -456,7 +362,7 @@ export default function Expenses() {
             </colgroup>
             <thead className="bg-mist text-xs text-muted">
               <tr>
-                <th className="px-3 py-2.5 font-medium">Description</th>
+                <th className="px-3 py-2.5 font-medium">Name</th>
                 <th className="px-3 py-2.5 font-medium">Category</th>
                 <th className="px-3 py-2.5 font-medium">Receipt</th>
                 <th className="px-3 py-2.5 font-medium">Date</th>
@@ -465,10 +371,11 @@ export default function Expenses() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((e) => (
+              {pageRows.map((e) => (
                 <tr key={e.id} className="border-t border-line transition-colors hover:bg-mist">
                   <td className="truncate px-3 py-2.5 text-ink">
-                    {e.description}
+                    {e.name}
+                    {e.description && <span className="ml-1.5 text-xs text-muted">— {e.description}</span>}
                     {e.source === "payroll" && (
                       <span className="ml-1.5 rounded bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap text-violet-600">
                         Auto
@@ -509,7 +416,7 @@ export default function Expenses() {
                   </td>
                 </tr>
               ))}
-              {filtered.length === 0 && (
+              {pageRows.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-4 py-8 text-center text-sm text-muted">
                     No expenses found.
@@ -518,11 +425,28 @@ export default function Expenses() {
               )}
             </tbody>
           </table>
+
+          {pageCount > 1 && (
+            <div className="flex items-center justify-center gap-1.5 border-t border-line p-4">
+              {Array.from({ length: pageCount }, (_, i) => i + 1).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setPage(p)}
+                  className={`flex h-8 w-8 items-center justify-center rounded-lg text-sm font-medium transition-colors ${
+                    currentPage === p ? "bg-ink text-paper" : "text-muted hover:bg-mist"
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
       <AnimatePresence>
-        {showForm && <ExpenseFormDrawer editing={editing} onClose={() => setShowForm(false)} />}
+        {showForm && <ExpenseFormDrawer editing={editing} prefill={prefill} onClose={() => setShowForm(false)} />}
         {showCategories && <ManageCategoriesModal onClose={() => setShowCategories(false)} />}
       </AnimatePresence>
     </>

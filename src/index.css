@@ -2,17 +2,19 @@
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Inter Tight", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Inter", ui-sans-serif, system-ui, sans-serif;
 
-  --color-ink: #222222;
+  --color-ink: #212529;
   --color-paper: #ffffff;
-  --color-mist: #f7f7f7;
-  --color-line: #dddddd;
-  --color-muted: #6a6a6a;
-  --color-brand: #ff385c;
-  --color-brand-soft: #ffe8ec;
+  --color-mist: #f8f9fa;
+  --color-line: #dde2ea;
+  --color-muted: #6c757d;
+  --color-brand: #1e3a8a;
+  --color-brand-soft: #e8ecf9;
+  --color-success: #059669;
+  --color-danger: #dc2626;
 
-  --shadow-card: 0 1px 2px rgba(34, 34, 34, 0.06), 0 6px 20px -8px rgba(34, 34, 34, 0.16);
+  --shadow-card: 0 1px 2px rgba(30, 58, 138, 0.06), 0 6px 20px -8px rgba(30, 58, 138, 0.16);
 }
 
 html {
@@ -20,7 +22,7 @@ html {
 }
 
 body {
-  background-color: var(--color-paper);
+  background-color: var(--color-mist);
   color: var(--color-ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
@@ -42,5 +44,5 @@ body {
   --color-mist: #18181b;
   --color-line: #3a3a3d;
   --color-muted: #9a9a9f;
-  --color-brand-soft: rgba(255, 56, 92, 0.16);
+  --color-brand-soft: rgba(30, 58, 138, 0.22);
 }

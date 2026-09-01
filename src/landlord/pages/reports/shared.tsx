@@ -1,36 +1,27 @@
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
+import {
+  DownloadSimple,
+  Phone,
+  ChatCircle,
+  MagnifyingGlass,
+} from "@phosphor-icons/react";
+import { useRoomsView, roomLabel } from "../../RoomsContext";
+import { useTenants, type PaymentStatus, type Tenant } from "../../TenantsContext";
 
 export function DownloadIcon() {
-  return (
-    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth={1.75}>
-      <path d="M8 2v8m0 0 3-3m-3 3-3-3M3 13h10" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
+  return <DownloadSimple size={14} weight="bold" />;
 }
 
 export function PhoneIcon() {
-  return (
-    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth={1.5}>
-      <path d="M3.5 2h2.2l1 3-1.5 1.2a8 8 0 0 0 3.6 3.6l1.2-1.5 3 1v2.2a1 1 0 0 1-1.1 1A11 11 0 0 1 2.5 3.1 1 1 0 0 1 3.5 2Z" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
+  return <Phone size={14} weight="duotone" />;
 }
 
 export function ChatIcon() {
-  return (
-    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth={1.5}>
-      <path d="M2 8a6 6 0 1 1 2.4 4.8L2 13.5l.7-2.4A6 6 0 0 1 2 8Z" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
+  return <ChatCircle size={14} weight="duotone" />;
 }
 
 export function Search() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current" strokeWidth={1.75}>
-      <circle cx="11" cy="11" r="7" />
-      <path d="m20 20-3.5-3.5" strokeLinecap="round" />
-    </svg>
-  );
+  return <MagnifyingGlass size={16} weight="bold" />;
 }
 
 export function currency(n: number) {
@@ -47,7 +38,7 @@ export function ReportCard({
   children: ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-line bg-paper p-6">
+    <div className="rounded-lg border border-line bg-paper p-6">
       <div className="flex flex-wrap items-start justify-between gap-2 border-b border-line pb-4">
         <div>
           <p className="font-display text-lg font-semibold tracking-tight text-ink">{title}</p>
@@ -67,35 +58,74 @@ export function ReportCard({
   );
 }
 
-// --- Shared mock data ---------------------------------------------------------
-// The bed roll doubles as the source for gross-collected in the Owner Payout
-// Statement, so it lives here rather than duplicated per report.
+// --- Live report views ---------------------------------------------------------
+// These are derived from RoomsContext/TenantsContext (not separate mock data), so
+// editing a tenant or a room anywhere else in the app is reflected here automatically.
 
-export type BedStatus = "paid" | "overdue" | "partial" | "vacant";
+export type BedStatus = PaymentStatus | "vacant";
 
-export type Bed = {
+export type BedRow = {
   id: string;
   room: string;
   roomType: string;
   bed: string;
   tenant: string | null;
+  tenantId: string | null;
   rent: number;
   status: BedStatus;
 };
 
-export const bedRoll: Bed[] = [
-  { id: "b1", room: "Room 12", roomType: "Single", bed: "Bed A", tenant: "A. Mwansa", rent: 1200, status: "paid" },
-  { id: "b2", room: "Room 08", roomType: "Single", bed: "Bed A", tenant: "B. Phiri", rent: 950, status: "overdue" },
-  { id: "b3", room: "Room 03", roomType: "Two sharing", bed: "Bed A", tenant: "C. Banda", rent: 450, status: "partial" },
-  { id: "b4", room: "Room 03", roomType: "Two sharing", bed: "Bed B", tenant: "D. Zulu", rent: 450, status: "paid" },
-  { id: "b5", room: "Room 05", roomType: "Two sharing", bed: "Bed A", tenant: null, rent: 450, status: "vacant" },
-  { id: "b6", room: "Room 05", roomType: "Two sharing", bed: "Bed B", tenant: "F. Chileshe", rent: 450, status: "paid" },
-  { id: "b7", room: "Room 19", roomType: "Two sharing", bed: "Bed A", tenant: "G. Mwape", rent: 450, status: "paid" },
-  { id: "b8", room: "Room 19", roomType: "Two sharing", bed: "Bed B", tenant: null, rent: 450, status: "vacant" },
-  { id: "b9", room: "Room 14", roomType: "Single", bed: "Bed A", tenant: "H. Banda", rent: 1200, status: "overdue" },
-  { id: "b10", room: "Room 33", roomType: "Four sharing", bed: "Bed A", tenant: "J. Kunda", rent: 325, status: "paid" },
-  { id: "b11", room: "Room 33", roomType: "Four sharing", bed: "Bed B", tenant: "K. Phiri", rent: 325, status: "paid" },
-  { id: "b12", room: "Room 33", roomType: "Four sharing", bed: "Bed C", tenant: null, rent: 325, status: "vacant" },
-  { id: "b13", room: "Room 33", roomType: "Four sharing", bed: "Bed D", tenant: "L. Zulu", rent: 325, status: "partial" },
-  { id: "b14", room: "Room 22", roomType: "Two sharing", bed: "Bed A", tenant: "M. Ngoma", rent: 450, status: "paid" },
-];
+/** One row per physical bed, live from RoomsContext's merged room/occupancy view. */
+export function useBedRoll(): BedRow[] {
+  const rooms = useRoomsView();
+  return useMemo(() => {
+    const rows: BedRow[] = [];
+    for (const room of rooms) {
+      room.beds.forEach((occupant, i) => {
+        rows.push({
+          id: `${room.number}-${i}`,
+          room: roomLabel(room.number),
+          roomType: room.typeConfig.name,
+          bed: room.beds.length > 1 ? `Bed ${String.fromCharCode(65 + i)}` : "—",
+          tenant: occupant?.name ?? null,
+          tenantId: occupant?.id ?? null,
+          rent: occupant?.rentAmount ?? room.typeConfig.rent,
+          status: occupant ? occupant.status : "vacant",
+        });
+      });
+    }
+    return rows;
+  }, [rooms]);
+}
+
+export type ArrearsRow = {
+  id: string;
+  tenantId: string;
+  tenant: string;
+  room: string;
+  daysOverdue: number;
+  owed: number;
+  guardianName: string;
+  guardianPhone: string;
+};
+
+/** Active tenants who are overdue or unpaid, live from TenantsContext. */
+export function useArrears(): ArrearsRow[] {
+  const { tenants } = useTenants();
+  return useMemo(
+    () =>
+      tenants
+        .filter((t): t is Tenant => t.active && (t.status === "overdue" || t.status === "unpaid"))
+        .map((t) => ({
+          id: t.id,
+          tenantId: t.id,
+          tenant: t.name,
+          room: t.room,
+          daysOverdue: t.daysOverdue ?? 0,
+          owed: t.owedAmount,
+          guardianName: t.guardianName,
+          guardianPhone: t.guardianPhone,
+        })),
+    [tenants]
+  );
+}

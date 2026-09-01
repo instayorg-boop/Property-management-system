@@ -1,25 +1,47 @@
-import { useState } from "react";
-import { motion } from "framer-motion";
+import { useEffect, useState } from "react";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { AnimatePresence, motion } from "framer-motion";
+import { QRCodeSVG } from "qrcode.react";
+import {
+  Copy as CopyIconBase,
+  QrCode as QrIconBase,
+  Plus as PlusIconBase,
+  Check as CheckIconBase,
+  CaretRight as CaretRightIcon,
+  ArrowLeft as ArrowLeftIcon,
+  House as HouseIcon,
+  Receipt as ReceiptIcon,
+  BellRinging as BellRingingIcon,
+  LinkSimple as LinkSimpleIcon,
+  Bank as BankIcon,
+  Scales as ScalesIcon,
+  Bell as BellIcon,
+  Gift as GiftIcon,
+  UserCircle as UserCircleIcon,
+  CheckCircle as CheckCircleIcon,
+  Laptop as LaptopIcon,
+  Wallet as WalletIcon,
+  Coins as CoinsIcon,
+  type Icon as PhosphorIcon,
+} from "@phosphor-icons/react";
 import PageHeader from "../components/PageHeader";
+import ThemeSwitcher from "../components/ThemeSwitcher";
+import { useSettings, type NotificationPrefs } from "../SettingsContext";
 
 function CopyIcon() {
-  return (
-    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth={1.5}>
-      <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" />
-      <path d="M3 10.5V3.5A1.5 1.5 0 0 1 4.5 2h7" strokeLinecap="round" />
-    </svg>
-  );
+  return <CopyIconBase size={14} weight="duotone" />;
 }
 
 function QrIcon() {
-  return (
-    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth={1.5}>
-      <rect x="2" y="2" width="4.5" height="4.5" rx="0.5" />
-      <rect x="9.5" y="2" width="4.5" height="4.5" rx="0.5" />
-      <rect x="2" y="9.5" width="4.5" height="4.5" rx="0.5" />
-      <path d="M9.5 9.5h2v2h-2v-2Zm2.5 2.5h2v2h-2v-2Zm0-5h2v2h-2v-2Z" />
-    </svg>
-  );
+  return <QrIconBase size={14} weight="duotone" />;
+}
+
+function PlusIcon() {
+  return <PlusIconBase size={14} weight="bold" />;
+}
+
+function CheckIcon() {
+  return <CheckIconBase size={12} weight="bold" />;
 }
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
@@ -65,69 +87,176 @@ function Input({ defaultValue, type = "text" }: { defaultValue?: string; type?: 
   );
 }
 
-const tabs = ["Property", "Billing", "Reminders", "Payment link", "Lenco payout", "Subscription", "Account"] as const;
+const fieldCls = "w-full max-w-xs rounded-lg border border-line bg-paper px-3 py-2 text-sm outline-none focus:border-brand";
+
+const tabs = ["Property", "Billing", "Reminders", "Payment link", "Online payments", "Statutory", "Notifications", "Subscription", "Account"] as const;
 type Tab = (typeof tabs)[number];
 
-export default function Settings() {
-  const [tab, setTab] = useState<Tab>("Property");
-  const [invoicesOn, setInvoicesOn] = useState(false);
-  const [contactOrder, setContactOrder] = useState<"student" | "guardian">("student");
-  const [linkCopied, setLinkCopied] = useState(false);
-  const [saved, setSaved] = useState(false);
+const tabSlug: Record<Tab, string> = {
+  Property: "property",
+  Billing: "billing",
+  Reminders: "reminders",
+  "Payment link": "payment-link",
+  "Online payments": "online-payments",
+  Statutory: "statutory",
+  Notifications: "notifications",
+  Subscription: "subscription",
+  Account: "account",
+};
 
-  const save = () => {
-    setSaved(true);
-    window.setTimeout(() => setSaved(false), 1500);
+const tabIcon: Record<Tab, PhosphorIcon> = {
+  Property: HouseIcon,
+  Billing: ReceiptIcon,
+  Reminders: BellRingingIcon,
+  "Payment link": LinkSimpleIcon,
+  "Online payments": BankIcon,
+  Statutory: ScalesIcon,
+  Notifications: BellIcon,
+  Subscription: GiftIcon,
+  Account: UserCircleIcon,
+};
+
+function tabFromSlug(slug: string | null): Tab {
+  const match = tabs.find((t) => tabSlug[t] === slug?.toLowerCase());
+  return match ?? "Property";
+}
+
+function slugify(name: string) {
+  return name.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+}
+
+// Plain-language explanation of what each section actually contains — shown on the section list so
+// landlords don't have to open a section just to find out what's in it.
+const tabDescription: Record<Tab, string> = {
+  Property: "Your property's name and address, plus switching between properties you manage.",
+  Billing: "When rent is due, how long tenants have before it's overdue, and late-payment penalties.",
+  Reminders: "When tenants and their guardians get reminded about upcoming or overdue rent.",
+  "Payment link": "The link and QR code tenants use to pay their rent online.",
+  "Online payments": "Connect a bank account so rent paid online lands there automatically.",
+  Statutory: "NAPSA and minimum wage figures used to calculate payroll correctly.",
+  Notifications: "Which events send you a push notification or email.",
+  Subscription: "Your current plan, billing, and upgrade options.",
+  Account: "Your login email, password, and app appearance.",
+};
+
+const onlinePaymentsSteps: { label: string; Icon: PhosphorIcon }[] = [
+  { label: "Set up online payments", Icon: LaptopIcon },
+  { label: "Add your bank account", Icon: WalletIcon },
+  { label: "Accept payments", Icon: CoinsIcon },
+];
+
+const notificationRows: { key: keyof NotificationPrefs; label: string; desc: string }[] = [
+  { key: "newPayment", label: "New payment received", desc: "A tenant's rent payment is logged." },
+  { key: "newMaintenanceReport", label: "New maintenance report", desc: "A tenant or you log a new maintenance issue." },
+  { key: "upcomingPayout", label: "Upcoming payout", desc: "Your scheduled bank payout is a day away." },
+  { key: "overdueEscalated", label: "Overdue tenant escalated to guardian", desc: "A tenant crosses the escalation threshold and their guardian is contacted." },
+];
+
+export default function Settings() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  // Each section is its own route (/settings/:section) — navigating between them is a real page
+  // change, not a shared-component tab flip, so there's no flash of intermediate sections.
+  const { section } = useParams<{ section?: string }>();
+  const tab = tabFromSlug(section ?? null);
+  const sectionOpen = !!section;
+
+  const openTab = (t: Tab) => navigate(`/settings/${tabSlug[t]}`);
+  const goToList = () => navigate("/settings");
+
+  useEffect(() => {
+    if (tab !== "Online payments" || !location.hash) return;
+    const target = document.getElementById(location.hash.slice(1));
+    target?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [tab, location.hash]);
+
+  const {
+    invoicesOn, setInvoicesOn,
+    collectionTargetPct, setCollectionTargetPct,
+    propertyName, setPropertyName,
+    properties, addProperty,
+    managementFeeRate, setManagementFeeRate,
+    billingPeriod, setBillingPeriod,
+    dueDay, setDueDay,
+    gracePeriodDays, setGracePeriodDays,
+    dailyPenaltyRate, setDailyPenaltyRate,
+    reminderLeadDays, setReminderLeadDays,
+    escalationDays, setEscalationDays,
+    contactOrder, setContactOrder,
+    notificationPrefs, setNotificationPref,
+    lencoConnected, setLencoConnected,
+    bankName, setBankName,
+    accountNumber, setAccountNumber,
+    accountHolderName, setAccountHolderName,
+    napsaInsurableEarningsCeiling, setNapsaInsurableEarningsCeiling,
+    minimumWageReference, setMinimumWageReference,
+  } = useSettings();
+
+  const [linkCopied, setLinkCopied] = useState(false);
+  const [showQr, setShowQr] = useState(false);
+  const [newPropertyName, setNewPropertyName] = useState("");
+  const [toast, setToast] = useState<string | null>(null);
+
+  // Online payments setup — a 3-step wizard (0 = not started) that runs whether this is the
+  // first connection or an edit to an already-connected account.
+  const [payoutStep, setPayoutStep] = useState(0);
+  const [editingBank, setEditingBank] = useState(false);
+  const [formBankName, setFormBankName] = useState("");
+  const [formAccountNumber, setFormAccountNumber] = useState("");
+  const [formAccountHolderName, setFormAccountHolderName] = useState("");
+
+  useEffect(() => {
+    setPayoutStep(0);
+    setEditingBank(false);
+  }, [tab]);
+
+  // The setup flow (intro + wizard) is a centered, full-width screen, not a left-aligned settings
+  // form — it needs the full content width to actually center in, not just within the narrow column.
+  const onlinePaymentsWizard = tab === "Online payments" && (!lencoConnected || editingBank);
+
+  const startEditingBank = () => {
+    setFormBankName(bankName);
+    setFormAccountNumber(accountNumber);
+    setFormAccountHolderName(accountHolderName);
+    setEditingBank(true);
+    setPayoutStep(1);
   };
 
-  return (
+  const flash = (msg = "Saved") => {
+    setToast(msg);
+    window.setTimeout(() => setToast((t) => (t === msg ? null : t)), 1200);
+  };
+
+  const propertySlug = slugify(propertyName) || "property";
+  const paymentLink = `pay.instay.co/${propertySlug}`;
+  /** The real in-app route tenants land on — used for the QR code and the "Open" preview link. */
+  const paymentPath = `/pay/${propertySlug}`;
+
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(`https://${paymentLink}`);
+    } catch {
+      // clipboard API unavailable — UI still confirms so the user can copy manually if needed
+    }
+    setLinkCopied(true);
+    window.setTimeout(() => setLinkCopied(false), 1500);
+  };
+
+  // The settings for whichever section is selected — shared between the mobile push-navigation
+  // view and the desktop list-plus-detail layout so it's only written once.
+  const detail = (
     <>
-      <PageHeader title="Settings" />
-
-      <div className="px-8 pb-10">
-        {/* Top tabs */}
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-line">
-          <div className="flex flex-wrap gap-5">
-            {tabs.map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setTab(t)}
-                className={`relative shrink-0 pb-3 text-sm font-medium transition-colors ${
-                  tab === t ? "text-brand" : "text-muted hover:text-ink"
-                }`}
-              >
-                {t}
-                {tab === t && (
-                  <motion.span
-                    layoutId="settings-tab-underline"
-                    className="absolute right-0 -bottom-px left-0 h-0.5 rounded-full bg-brand"
-                    transition={{ type: "spring", stiffness: 500, damping: 35 }}
-                  />
-                )}
-              </button>
-            ))}
-          </div>
-
-          <motion.button
-            type="button"
-            onClick={save}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.96 }}
-            transition={{ type: "spring", stiffness: 500, damping: 25 }}
-            className={`mb-2 shrink-0 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-paper ${
-              tab === "Property" || tab === "Billing" || tab === "Reminders" ? "visible" : "invisible"
-            }`}
-          >
-            {saved ? "Saved" : "Save changes"}
-          </motion.button>
-        </div>
-
-        <div>
-          {tab === "Property" && (
+      {tab === "Property" && (
             <>
-              <Row label="Property name">
-                <Input defaultValue="Kabulonga House" />
+              <Row label="Property name" desc="Used across the dashboard — tenants added on the Tenants page are assigned to this property automatically.">
+                <input
+                  value={propertyName}
+                  onChange={(e) => {
+                    setPropertyName(e.target.value);
+                    flash();
+                  }}
+                  className={fieldCls}
+                />
               </Row>
               <Row label="Address">
                 <Input defaultValue="Plot 14, Kabulonga, Lusaka" />
@@ -135,39 +264,130 @@ export default function Settings() {
               <Row label="Property type">
                 <Input defaultValue="Student accommodation" />
               </Row>
+              <Row label="Your properties" desc="Switch which property the dashboard is scoped to, or add another one you manage.">
+                <div className="w-full max-w-xs space-y-2">
+                  {properties.map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => {
+                        setPropertyName(p);
+                        flash();
+                      }}
+                      className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-sm transition-colors ${
+                        p === propertyName ? "border-brand bg-brand-soft text-brand" : "border-line text-ink hover:bg-mist"
+                      }`}
+                    >
+                      {p}
+                      {p === propertyName && <CheckIcon />}
+                    </button>
+                  ))}
+                  <div className="flex gap-2">
+                    <input
+                      value={newPropertyName}
+                      onChange={(e) => setNewPropertyName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && newPropertyName.trim()) {
+                          addProperty(newPropertyName.trim());
+                          setNewPropertyName("");
+                          flash("Property added");
+                        }
+                      }}
+                      placeholder="New property name"
+                      className="flex-1 rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-brand"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!newPropertyName.trim()) return;
+                        addProperty(newPropertyName.trim());
+                        setNewPropertyName("");
+                        flash("Property added");
+                      }}
+                      className="flex shrink-0 items-center gap-1 rounded-lg border border-line px-3 text-sm font-medium text-ink hover:bg-mist"
+                    >
+                      <PlusIcon />
+                    </button>
+                  </div>
+                </div>
+              </Row>
             </>
           )}
 
           {tab === "Billing" && (
             <>
               <Row label="Billing period">
-                <Input defaultValue="Monthly" />
+                <input value={billingPeriod} onChange={(e) => { setBillingPeriod(e.target.value); flash(); }} className={fieldCls} />
               </Row>
-              <Row label="Due date">
-                <Input defaultValue="30th" />
+              <Row label="Due date" desc="Day of the month rent is due.">
+                <input
+                  type="number"
+                  min={1}
+                  max={31}
+                  value={dueDay}
+                  onChange={(e) => { setDueDay(Math.min(31, Math.max(1, Number(e.target.value) || 1))); flash(); }}
+                  className={fieldCls}
+                />
               </Row>
               <Row label="Grace period" desc="Days after the due date before rent is marked overdue.">
-                <Input defaultValue="5" type="number" />
+                <input
+                  type="number"
+                  min={0}
+                  value={gracePeriodDays}
+                  onChange={(e) => { setGracePeriodDays(Math.max(0, Number(e.target.value) || 0)); flash(); }}
+                  className={fieldCls}
+                />
               </Row>
               <Row label="Daily penalty rate (K)" desc="Charged per day once the grace period ends.">
-                <Input defaultValue="15" type="number" />
+                <input
+                  type="number"
+                  min={0}
+                  value={dailyPenaltyRate}
+                  onChange={(e) => { setDailyPenaltyRate(Math.max(0, Number(e.target.value) || 0)); flash(); }}
+                  className={fieldCls}
+                />
               </Row>
               <Row
                 label="Generate invoices"
                 desc="Lets you pre-fill and send invoices for every tenant from the Rent page, including carried-over balances."
               >
-                <Toggle checked={invoicesOn} onChange={setInvoicesOn} />
+                <Toggle checked={invoicesOn} onChange={(v) => { setInvoicesOn(v); flash(); }} />
+              </Row>
+              <Row
+                label="Collection rate target (%)"
+                desc="The goal shown against your monthly collection rate on the Rent page. Lower this during slow seasons so the trend isn't always red."
+              >
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={collectionTargetPct}
+                  onChange={(e) => { setCollectionTargetPct(Math.min(100, Math.max(0, Number(e.target.value) || 0))); flash(); }}
+                  className={fieldCls}
+                />
               </Row>
             </>
           )}
 
           {tab === "Reminders" && (
             <>
-              <Row label="Days before due date" desc="When the first pre-due reminder goes out.">
-                <Input defaultValue="3" type="number" />
+              <Row label="Days before rent is due" desc="How many days ahead of the due date the first reminder is sent.">
+                <input
+                  type="number"
+                  min={0}
+                  value={reminderLeadDays}
+                  onChange={(e) => { setReminderLeadDays(Math.max(0, Number(e.target.value) || 0)); flash(); }}
+                  className={fieldCls}
+                />
               </Row>
-              <Row label="Days overdue before escalation" desc="When a guardian gets contacted automatically.">
-                <Input defaultValue="7" type="number" />
+              <Row label="Days overdue before guardian is contacted" desc="The parent/guardian is contacted automatically after rent is this many days late.">
+                <input
+                  type="number"
+                  min={0}
+                  value={escalationDays}
+                  onChange={(e) => { setEscalationDays(Math.max(0, Number(e.target.value) || 0)); flash(); }}
+                  className={fieldCls}
+                />
               </Row>
               <Row label="Contact order" desc="Who gets reminded first when rent is due.">
                 <div className="flex gap-2">
@@ -175,55 +395,335 @@ export default function Settings() {
                     <button
                       key={o}
                       type="button"
-                      onClick={() => setContactOrder(o)}
+                      onClick={() => { setContactOrder(o); flash(); }}
                       className={`rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
                         contactOrder === o ? "border-brand bg-brand-soft text-brand" : "border-line text-muted hover:bg-mist"
                       }`}
                     >
-                      {o === "student" ? "Student first" : "Guardian first"}
+                      {o === "student" ? "Student first" : "Parent/guardian first"}
                     </button>
                   ))}
                 </div>
               </Row>
+              <p className="pb-5 text-xs text-muted">These values are ready for the reminder automation to read once it's built — nothing sends yet.</p>
             </>
           )}
 
           {tab === "Payment link" && (
             <Row label="Your payment link" desc="Share this with tenants directly, or display the QR code at the property office.">
-              <div className="flex w-full max-w-md items-center gap-2 rounded-lg border border-line bg-mist px-3 py-2">
-                <span className="flex-1 truncate text-sm text-muted">pay.instay.co/kabulonga-house</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLinkCopied(true);
-                    window.setTimeout(() => setLinkCopied(false), 1500);
-                  }}
-                  className="flex items-center gap-1.5 rounded-md border border-line bg-paper px-2.5 py-1.5 text-xs font-medium text-ink hover:bg-mist"
-                >
-                  <CopyIcon />
-                  {linkCopied ? "Copied" : "Copy"}
-                </button>
-                <button type="button" className="flex items-center gap-1.5 rounded-md border border-line bg-paper px-2.5 py-1.5 text-xs font-medium text-ink hover:bg-mist">
-                  <QrIcon />
-                  QR code
-                </button>
+              <div className="w-full max-w-md space-y-3">
+                <div className="flex items-center gap-2 rounded-lg border border-line bg-mist px-3 py-2">
+                  <span className="flex-1 truncate text-sm text-muted">{paymentLink}</span>
+                  <button
+                    type="button"
+                    onClick={copyLink}
+                    className="flex items-center gap-1.5 rounded-md border border-line bg-paper px-2.5 py-1.5 text-xs font-medium text-ink hover:bg-mist"
+                  >
+                    <CopyIcon />
+                    {linkCopied ? "Copied" : "Copy"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowQr((v) => !v)}
+                    className="flex items-center gap-1.5 rounded-md border border-line bg-paper px-2.5 py-1.5 text-xs font-medium text-ink hover:bg-mist"
+                  >
+                    <QrIcon />
+                    QR code
+                  </button>
+                </div>
+                {showQr && (
+                  <div className="flex flex-col items-center gap-2 rounded-lg border border-line bg-paper p-5">
+                    <QRCodeSVG value={`${window.location.origin}${paymentPath}`} size={160} />
+                    <p className="text-xs text-muted">Print or screenshot this for the property office.</p>
+                  </div>
+                )}
+                <a href={paymentPath} target="_blank" rel="noreferrer" className="inline-block text-xs font-medium text-brand hover:underline">
+                  Open the tenant-facing page →
+                </a>
               </div>
             </Row>
           )}
 
-          {tab === "Lenco payout" && (
+          {tab === "Online payments" && (
             <>
-              <Row label="Bank account">
-                <Input defaultValue="Zanaco · •••• 4821" />
+              {lencoConnected && !editingBank ? (
+                <>
+                  <div className="border-b border-line py-5">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:max-w-3xl">
+                      <div>
+                        <p className="text-sm font-medium text-ink">Lenco</p>
+                        <p className="mt-1 max-w-sm text-xs text-muted">
+                          Payouts are sent to your bank account automatically on your scheduled day.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-600">Connected</span>
+                        <button
+                          type="button"
+                          className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist"
+                        >
+                          Manage in Lenco
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <Row label="Bank account">
+                    <span className="text-sm font-medium text-ink">
+                      {bankName} · •••• {accountNumber.slice(-4)}
+                    </span>
+                  </Row>
+                  <Row label="Account holder">
+                    <span className="text-sm font-medium text-ink">{accountHolderName}</span>
+                  </Row>
+                  <Row label="Scheduled payout day">
+                    <span className="text-sm font-medium text-ink">Every Friday</span>
+                  </Row>
+                  <Row label="Payout details">
+                    <button
+                      type="button"
+                      onClick={startEditingBank}
+                      className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist"
+                    >
+                      Edit payout details
+                    </button>
+                  </Row>
+                  <Row
+                    label="Management fee (%)"
+                    desc="Taken off gross rent before the owner payout statement calculates net to owner."
+                  >
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={Math.round(managementFeeRate * 100)}
+                      onChange={(e) => { setManagementFeeRate(Math.min(100, Math.max(0, Number(e.target.value) || 0)) / 100); flash(); }}
+                      className={fieldCls}
+                    />
+                  </Row>
+                </>
+              ) : (
+                <AnimatePresence mode="wait">
+                  {payoutStep === 0 ? (
+                    <motion.div
+                      key="intro"
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -8 }}
+                      transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+                      className="mx-auto max-w-xl py-10 text-center"
+                    >
+                      <p className="font-display text-2xl font-semibold tracking-tight text-ink">Get payments online!</p>
+                      <p className="mx-auto mt-2 max-w-sm text-sm text-muted">
+                        Accept rent payments straight to your bank account through your payment link.
+                      </p>
+
+                      <div className="mt-8 grid grid-cols-3 gap-4">
+                        {onlinePaymentsSteps.map(({ label, Icon }) => (
+                          <div key={label} className="flex flex-col items-center gap-3">
+                            <span className="flex h-16 w-16 items-center justify-center rounded-full bg-brand-soft text-brand">
+                              <Icon size={28} weight="duotone" />
+                            </span>
+                            <p className="text-xs font-medium text-ink">{label}</p>
+                          </div>
+                        ))}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setPayoutStep(1)}
+                        className="mt-8 rounded-lg bg-brand px-8 py-2.5 text-sm font-medium text-paper transition-transform hover:scale-[1.02]"
+                      >
+                        Set up
+                      </button>
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key={payoutStep}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -8 }}
+                      transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+                      className="mx-auto max-w-md py-10"
+                    >
+                      <div className="mb-5 flex items-center gap-2">
+                        {[1, 2, 3].map((s) => (
+                          <div
+                            key={s}
+                            className={`h-1.5 flex-1 rounded-full transition-colors duration-300 ${s <= payoutStep ? "bg-brand" : "bg-line"}`}
+                          />
+                        ))}
+                      </div>
+                      <p className="text-xs font-medium text-muted">Step {Math.min(payoutStep, 3)} of 3</p>
+
+                      {payoutStep === 1 && (
+                        <>
+                          <p className="mt-1 font-display text-lg font-semibold text-ink">Add your bank account</p>
+                          <p className="mt-1 text-sm text-muted">
+                            Make sure these details match your bank exactly — payouts go here automatically.
+                          </p>
+                          <div className="mt-4 space-y-3">
+                            <div>
+                              <label className="mb-1.5 block text-xs font-medium text-muted">Bank name</label>
+                              <input
+                                value={formBankName}
+                                onChange={(e) => setFormBankName(e.target.value)}
+                                placeholder="e.g. Zanaco"
+                                className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm outline-none focus:border-brand"
+                              />
+                            </div>
+                            <div>
+                              <label className="mb-1.5 block text-xs font-medium text-muted">Account number</label>
+                              <input
+                                value={formAccountNumber}
+                                onChange={(e) => setFormAccountNumber(e.target.value.replace(/\D/g, ""))}
+                                placeholder="0000000000"
+                                className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm outline-none focus:border-brand"
+                              />
+                            </div>
+                            <div>
+                              <label className="mb-1.5 block text-xs font-medium text-muted">Account holder name</label>
+                              <input
+                                value={formAccountHolderName}
+                                onChange={(e) => setFormAccountHolderName(e.target.value)}
+                                placeholder="Must match the bank account"
+                                className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm outline-none focus:border-brand"
+                              />
+                            </div>
+                          </div>
+                          <div className="mt-5 flex gap-2">
+                            {editingBank && (
+                              <button
+                                type="button"
+                                onClick={() => setEditingBank(false)}
+                                className="flex-1 rounded-lg border border-line py-2.5 text-sm font-medium text-ink transition-colors hover:bg-mist"
+                              >
+                                Cancel
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              disabled={!formBankName.trim() || !formAccountNumber.trim() || !formAccountHolderName.trim()}
+                              onClick={() => setPayoutStep(2)}
+                              className="flex-1 rounded-lg bg-brand py-2.5 text-sm font-medium text-paper transition-transform hover:scale-[1.01] disabled:opacity-50 disabled:hover:scale-100"
+                            >
+                              Continue
+                            </button>
+                          </div>
+                        </>
+                      )}
+
+                      {payoutStep === 2 && (
+                        <>
+                          <p className="mt-1 font-display text-lg font-semibold text-ink">Confirm your details</p>
+                          <p className="mt-1 text-sm text-muted">Double-check these are correct — this is where every payout will be sent.</p>
+                          <div className="mt-4 divide-y divide-line rounded-lg border border-line">
+                            <div className="px-4 py-3">
+                              <p className="text-xs text-muted">Bank name</p>
+                              <p className="mt-0.5 text-sm font-medium text-ink">{formBankName}</p>
+                            </div>
+                            <div className="px-4 py-3">
+                              <p className="text-xs text-muted">Account number</p>
+                              <p className="mt-0.5 text-sm font-medium text-ink">{formAccountNumber}</p>
+                            </div>
+                            <div className="px-4 py-3">
+                              <p className="text-xs text-muted">Account holder</p>
+                              <p className="mt-0.5 text-sm font-medium text-ink">{formAccountHolderName}</p>
+                            </div>
+                          </div>
+                          <div className="mt-5 flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setPayoutStep(1)}
+                              className="flex-1 rounded-lg border border-line py-2.5 text-sm font-medium text-ink transition-colors hover:bg-mist"
+                            >
+                              Back
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBankName(formBankName.trim());
+                                setAccountNumber(formAccountNumber.trim());
+                                setAccountHolderName(formAccountHolderName.trim());
+                                setLencoConnected(true);
+                                if (editingBank) {
+                                  setEditingBank(false);
+                                  setPayoutStep(0);
+                                  flash("Payout details updated");
+                                } else {
+                                  setPayoutStep(3);
+                                }
+                              }}
+                              className="flex-1 rounded-lg bg-brand py-2.5 text-sm font-medium text-paper transition-transform hover:scale-[1.01]"
+                            >
+                              {editingBank ? "Save changes" : "Confirm & connect"}
+                            </button>
+                          </div>
+                        </>
+                      )}
+
+                      {payoutStep === 3 && (
+                        <>
+                          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-500">
+                            <CheckCircleIcon size={24} weight="duotone" />
+                          </span>
+                          <p className="mt-4 font-display text-lg font-semibold text-ink">You're all set</p>
+                          <p className="mt-1.5 text-sm text-muted">
+                            All rent collected through your payment link will now be paid out to {formBankName} · •••• {formAccountNumber.slice(-4)}.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setPayoutStep(0)}
+                            className="mt-5 rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-paper transition-transform hover:scale-[1.02]"
+                          >
+                            Done
+                          </button>
+                        </>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              )}
+            </>
+          )}
+
+          {tab === "Statutory" && (
+            <>
+              <p className="pt-5 text-xs text-muted">
+                Government-published figures that change periodically — keep these current so payroll stays accurate without a code change.
+              </p>
+              <Row
+                label="NAPSA insurable earnings ceiling (K/month)"
+                desc="NAPSA updates this annually. Contributions are capped at 5% of this figure."
+              >
+                <input
+                  type="number"
+                  min={0}
+                  value={napsaInsurableEarningsCeiling}
+                  onChange={(e) => { setNapsaInsurableEarningsCeiling(Math.max(0, Number(e.target.value) || 0)); flash(); }}
+                  className={fieldCls}
+                />
               </Row>
-              <Row label="Scheduled payout day">
-                <span className="text-sm font-medium text-ink">Every Friday</span>
+              <Row label="Minimum wage reference (K/month)" desc="For reference when setting pay rates — not enforced automatically.">
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={minimumWageReference}
+                  onChange={(e) => { setMinimumWageReference(Math.max(0, Number(e.target.value) || 0)); flash(); }}
+                  className={fieldCls}
+                />
               </Row>
-              <Row label="Payout details">
-                <button type="button" className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist">
-                  Edit payout details
-                </button>
-              </Row>
+            </>
+          )}
+
+          {tab === "Notifications" && (
+            <>
+              <p className="pt-5 text-xs text-muted">Choose which events send you a push notification or email.</p>
+              {notificationRows.map((n) => (
+                <Row key={n.key} label={n.label} desc={n.desc}>
+                  <Toggle checked={notificationPrefs[n.key]} onChange={(v) => { setNotificationPref(n.key, v); flash(); }} />
+                </Row>
+              ))}
             </>
           )}
 
@@ -248,15 +748,85 @@ export default function Settings() {
                   Change password
                 </button>
               </Row>
+              <Row label="Appearance" desc="Switch between light, dark, or match your device.">
+                <ThemeSwitcher />
+              </Row>
               <Row label="Sign out" desc="You'll need to sign in again on this device.">
-                <button type="button" className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50">
+                <button
+                  type="button"
+                  onClick={() => navigate("/sign-in")}
+                  className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+                >
                   Sign out
                 </button>
               </Row>
             </>
           )}
-        </div>
-      </div>
+    </>
+  );
+
+  return (
+    <>
+      {!sectionOpen ? (
+        <>
+          <PageHeader title="Settings" />
+          <div className="px-4 pb-10 sm:px-8">
+            <div className="grid grid-cols-1 gap-x-8 gap-y-7 py-2 sm:grid-cols-2 lg:grid-cols-3">
+              {tabs.map((t) => {
+                const Icon = tabIcon[t];
+                const linkLabel = t === "Online payments" ? (lencoConnected ? "Manage" : "Set up") : "Manage";
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => openTab(t)}
+                    className="group flex flex-col items-start rounded-lg text-left transition-colors hover:bg-mist -m-2 p-2"
+                  >
+                    <div className="flex items-center gap-2 text-sm font-semibold text-ink">
+                      <Icon size={17} weight="duotone" className="text-muted" />
+                      {t}
+                    </div>
+                    <p className="mt-1.5 text-xs leading-relaxed text-muted">{tabDescription[t]}</p>
+                    <span className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-brand">
+                      {linkLabel}
+                      <CaretRightIcon size={11} weight="bold" className="transition-transform group-hover:translate-x-0.5" />
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          {/* Selected section replaces the list entirely — back returns to the list, not a split view */}
+          <div className="sticky top-0 z-20 bg-paper px-4 pt-5 pb-6 sm:px-8">
+            <button
+              type="button"
+              onClick={goToList}
+              className="flex items-center gap-2 font-display text-xl font-semibold tracking-tight text-brand"
+            >
+              <ArrowLeftIcon size={20} weight="bold" />
+              {tab}
+            </button>
+          </div>
+          <div className={`px-4 pb-10 sm:px-8 ${onlinePaymentsWizard ? "" : "max-w-3xl"}`}>{detail}</div>
+        </>
+      )}
+
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            transition={{ duration: 0.15 }}
+            className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-ink px-4 py-2 text-xs font-medium text-paper shadow-card"
+          >
+            {toast}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }

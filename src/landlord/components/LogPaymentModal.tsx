@@ -14,11 +14,11 @@ export default function LogPaymentModal({
 }: {
   tenantName: string;
   room: string;
-  outstanding: string;
+  outstanding: number;
   onClose: () => void;
   onConfirm: () => void;
 }) {
-  const [amount, setAmount] = useState(outstanding.replace(/[^0-9.]/g, ""));
+  const [amount, setAmount] = useState(String(outstanding));
   const [method, setMethod] = useState<"mobile" | "cash">("mobile");
   const [date, setDate] = useState(todayISO());
   const [notes, setNotes] = useState("");

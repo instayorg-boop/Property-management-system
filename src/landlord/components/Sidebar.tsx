@@ -1,28 +1,32 @@
-import { useState } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { forwardRef, useState } from "react";
+import { NavLink, Link, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
-import ThemeSwitcher from "./ThemeSwitcher";
-
-function Icon({ path, className = "" }: { path: string; className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={`h-4.5 w-4.5 fill-none stroke-current ${className}`} strokeWidth={1.75}>
-      <path d={path} strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
+import {
+  SquaresFour,
+  CurrencyCircleDollar,
+  UsersThree,
+  DoorOpen,
+  Wrench,
+  IdentificationBadge,
+  Receipt,
+  ChartBar,
+  GearSix,
+  CaretDown,
+  Lifebuoy,
+  X,
+} from "@phosphor-icons/react";
+import { useSidebar } from "../SidebarContext";
 
 const icons = {
-  dashboard: "M4 4h7v7H4V4Zm9 0h7v4h-7V4ZM4 13h7v7H4v-7Zm9-2h7v9h-7v-9Z",
-  rent: "M3 8h18M3 8v10a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V8M3 8l2-4h14l2 4M12 12v4",
-  tenants: "M17 20v-1a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v1M10 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM19 20v-1a3.5 3.5 0 0 0-2.5-3.36M15 4.14a3.5 3.5 0 0 1 0 6.72",
-  rooms: "M4 21V7l8-4 8 4v14M9 21v-6h6v6M4 21h16",
-  expenses: "M8 3h8l2 4v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V7l2-4ZM8 11h8M8 15h5",
-  staff: "M12 2 3 6v6c0 5 3.8 8.7 9 10 5.2-1.3 9-5 9-10V6l-9-4ZM9.5 12l1.8 1.8L15 10",
-  maintenance: "M11.5 2.5a3 3 0 0 0-3.9 3.9L2 12l2 2 5.6-5.6a3 3 0 0 0 3.9-3.9l-2.1 2.1-1.5-.5-.5-1.5 2.1-2.1Z",
-  reports: "M4 20V10M10 20V4M16 20v-7M4 20h16",
-  settings: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.14.42.42.78.79 1.02.37.24.81.35 1.24.31H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z",
-  bell: "M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9ZM13.73 21a2 2 0 0 1-3.46 0",
-  chevron: "m6 9 6 6 6-6",
+  dashboard: SquaresFour,
+  rent: CurrencyCircleDollar,
+  tenants: UsersThree,
+  rooms: DoorOpen,
+  expenses: Receipt,
+  staff: IdentificationBadge,
+  maintenance: Wrench,
+  reports: ChartBar,
+  settings: GearSix,
 };
 
 type NavChild = { label: string; hash?: string; to?: string };
@@ -45,7 +49,7 @@ const groups: { label: string; items: NavItem[] }[] = [
       { label: "Rent", to: "/rent", icon: "rent" },
       { label: "Tenants", to: "/tenants", icon: "tenants" },
       { label: "Rooms", to: "/rooms", icon: "rooms" },
-      { label: "Maintenance", to: "/maintenance", icon: "maintenance" },
+      { label: "Maintenance requests", to: "/maintenance", icon: "maintenance" },
       { label: "Expenses", to: "/expenses", icon: "expenses" },
       {
         label: "Staff",
@@ -54,7 +58,7 @@ const groups: { label: string; items: NavItem[] }[] = [
         children: [
           { label: "Employees", to: "/staff/employees" },
           { label: "Payroll", to: "/staff/payroll" },
-          { label: "Clock", to: "/staff/clock" },
+          { label: "Clock in / out", to: "/staff/clock" },
         ],
       },
     ],
@@ -67,9 +71,12 @@ const groups: { label: string; items: NavItem[] }[] = [
         to: "/reports",
         icon: "reports",
         children: [
-          { label: "Bed rent roll", to: "/reports/bed-rent-roll" },
-          { label: "Arrears & delinquency", to: "/reports/arrears-delinquency" },
-          { label: "Owner payout statement", to: "/reports/owner-payout-statement" },
+          { label: "Room rent roll", to: "/reports/bed-rent-roll" },
+          { label: "Overdue rent", to: "/reports/arrears-delinquency" },
+          { label: "Payout statement", to: "/reports/owner-payout-statement" },
+          { label: "Income vs expenses", to: "/reports/income-expenses" },
+          { label: "Payroll summary", to: "/reports/payroll-summary" },
+          { label: "Occupancy rate", to: "/reports/occupancy-rate" },
         ],
       },
     ],
@@ -80,15 +87,17 @@ const groups: { label: string; items: NavItem[] }[] = [
   },
 ];
 
-function NavRow({ item }: { item: NavItem }) {
+function NavRow({ item, onNavigate }: { item: NavItem; onNavigate: () => void }) {
   const location = useLocation();
   const isOnPage = location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
   const [open, setOpen] = useState(isOnPage && !!item.children);
+  const ItemIcon = icons[item.icon];
 
   if (!item.children) {
     return (
       <NavLink
         to={item.to}
+        onClick={onNavigate}
         className={({ isActive }) =>
           `relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
             isActive ? "font-semibold text-brand" : "text-muted hover:bg-paper hover:text-ink"
@@ -105,7 +114,7 @@ function NavRow({ item }: { item: NavItem }) {
               />
             )}
             <span className="relative flex items-center gap-2.5">
-              <Icon path={icons[item.icon]} />
+              <ItemIcon size={18} weight="duotone" />
               {item.label}
             </span>
           </>
@@ -123,9 +132,9 @@ function NavRow({ item }: { item: NavItem }) {
           isOnPage ? "font-semibold text-brand" : "text-muted hover:bg-paper hover:text-ink"
         }`}
       >
-        <Icon path={icons[item.icon]} />
+        <ItemIcon size={18} weight="duotone" />
         <span className="flex-1">{item.label}</span>
-        <Icon path={icons.chevron} className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
+        <CaretDown size={14} className={`transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
       {open && (
@@ -134,6 +143,7 @@ function NavRow({ item }: { item: NavItem }) {
             <NavLink
               key={child.to ?? child.hash}
               to={child.to ?? `${item.to}#${child.hash}`}
+              onClick={onNavigate}
               className={({ isActive }) =>
                 `block rounded-md px-2.5 py-1.5 text-[13px] transition-colors ${
                   isActive ? "font-medium text-brand" : "text-muted hover:text-ink"
@@ -149,14 +159,30 @@ function NavRow({ item }: { item: NavItem }) {
   );
 }
 
-export default function Sidebar() {
-  return (
-    <aside className="flex h-full w-62 shrink-0 flex-col">
-      <div>
-        
-      </div>
+const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
+  const { open, setOpen } = useSidebar();
 
-      <div className="" />
+  return (
+    <div
+      ref={ref}
+      role="dialog"
+      aria-modal={open ? true : undefined}
+      aria-label="Navigation"
+      className={`fixed inset-y-0 left-0 z-50 flex h-full w-72 max-w-[85vw] shrink-0 flex-col bg-paper transition-transform duration-200 lg:static lg:z-auto lg:h-full lg:w-62 lg:max-w-none lg:translate-x-0 lg:bg-transparent ${
+        open ? "translate-x-0" : "-translate-x-full"
+      }`}
+    >
+      <div className="flex items-center justify-between border-b border-line px-3 py-3 lg:hidden">
+        <span className="font-display text-sm font-semibold text-ink">Menu</span>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          aria-label="Close menu"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-ink"
+        >
+          <X size={16} weight="bold" />
+        </button>
+      </div>
 
       <nav className="flex-1 space-y-3 overflow-y-auto px-3 py-4">
         {groups.map((group) => (
@@ -166,7 +192,7 @@ export default function Sidebar() {
             </p>
             <div className="space-y-0.5">
               {group.items.map((item) => (
-                <NavRow key={item.to} item={item} />
+                <NavRow key={item.to} item={item} onNavigate={() => setOpen(false)} />
               ))}
             </div>
           </div>
@@ -174,8 +200,17 @@ export default function Sidebar() {
       </nav>
 
       <div className="border-t border-line px-3 py-3">
-        <ThemeSwitcher />
+        <Link
+          to="/help"
+          onClick={() => setOpen(false)}
+          className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-muted transition-colors hover:bg-mist hover:text-ink"
+        >
+          <Lifebuoy size={18} weight="duotone" />
+          Help & Support
+        </Link>
       </div>
-    </aside>
+    </div>
   );
-}
+});
+
+export default Sidebar;

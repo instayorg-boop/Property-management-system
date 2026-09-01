@@ -15,6 +15,12 @@ import Status from "./pages/Status";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 
+import PaymentLayout from "./pages/pay/PaymentLayout";
+import SelectTenant from "./pages/pay/SelectTenant";
+import TenantBalance from "./pages/pay/TenantBalance";
+import PaymentSuccess from "./pages/pay/PaymentSuccess";
+import MaintenanceReport from "./pages/pay/MaintenanceReport";
+
 import DashboardLayout from "./landlord/components/DashboardLayout";
 import Dashboard from "./landlord/pages/Dashboard";
 import Rent from "./landlord/pages/Rent";
@@ -28,6 +34,9 @@ import StaffClock from "./landlord/pages/StaffClock";
 import BedRentRoll from "./landlord/pages/reports/BedRentRoll";
 import ArrearsDelinquency from "./landlord/pages/reports/ArrearsDelinquency";
 import OwnerPayoutStatement from "./landlord/pages/reports/OwnerPayoutStatement";
+import IncomeExpenses from "./landlord/pages/reports/IncomeExpenses";
+import PayrollSummary from "./landlord/pages/reports/PayrollSummary";
+import OccupancyRate from "./landlord/pages/reports/OccupancyRate";
 import Settings from "./landlord/pages/Settings";
 
 export default function App() {
@@ -51,6 +60,13 @@ export default function App() {
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/terms" element={<Terms />} />
 
+        <Route element={<PaymentLayout />}>
+          <Route path="/pay/:propertySlug" element={<SelectTenant />} />
+          <Route path="/pay/:propertySlug/:tenantId" element={<TenantBalance />} />
+          <Route path="/pay/:propertySlug/:tenantId/success" element={<PaymentSuccess />} />
+          <Route path="/pay/:propertySlug/:tenantId/report" element={<MaintenanceReport />} />
+        </Route>
+
         <Route element={<DashboardLayout />}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/rent" element={<Rent />} />
@@ -66,7 +82,11 @@ export default function App() {
           <Route path="/reports/bed-rent-roll" element={<BedRentRoll />} />
           <Route path="/reports/arrears-delinquency" element={<ArrearsDelinquency />} />
           <Route path="/reports/owner-payout-statement" element={<OwnerPayoutStatement />} />
+          <Route path="/reports/income-expenses" element={<IncomeExpenses />} />
+          <Route path="/reports/payroll-summary" element={<PayrollSummary />} />
+          <Route path="/reports/occupancy-rate" element={<OccupancyRate />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/settings/:section" element={<Settings />} />
         </Route>
       </Routes>
     </BrowserRouter>

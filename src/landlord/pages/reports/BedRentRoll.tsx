@@ -1,11 +1,13 @@
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import PageHeader from "../../components/PageHeader";
 import Select from "../../components/Select";
-import { ReportCard, Search, currency, bedRoll, type BedStatus } from "./shared";
+import { ReportCard, Search, currency, useBedRoll, type BedStatus } from "./shared";
 
 const bedStatusStyle: Record<BedStatus, string> = {
   paid: "bg-emerald-50 text-emerald-600",
   overdue: "bg-red-50 text-red-600",
+  unpaid: "bg-slate-100 text-slate-600",
   partial: "bg-amber-50 text-amber-600",
   vacant: "bg-slate-100 text-slate-600",
 };
@@ -13,6 +15,7 @@ const bedStatusStyle: Record<BedStatus, string> = {
 const bedStatusLabel: Record<BedStatus, string> = {
   paid: "Paid",
   overdue: "Overdue",
+  unpaid: "Unpaid",
   partial: "Partial",
   vacant: "Vacant",
 };
@@ -21,11 +24,14 @@ const bedFilterOptions = [
   { value: "all", label: "All beds" },
   { value: "paid", label: "Paid" },
   { value: "overdue", label: "Overdue" },
+  { value: "unpaid", label: "Unpaid" },
   { value: "partial", label: "Partial" },
   { value: "vacant", label: "Vacant" },
 ];
 
 export default function BedRentRoll() {
+  const navigate = useNavigate();
+  const bedRoll = useBedRoll();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
 
@@ -36,19 +42,19 @@ export default function BedRentRoll() {
       const matchesFilter = filter === "all" || b.status === filter;
       return matchesQuery && matchesFilter;
     });
-  }, [query, filter]);
+  }, [bedRoll, query, filter]);
 
   const occupied = bedRoll.filter((b) => b.status !== "vacant").length;
-  const occupancyRate = Math.round((occupied / bedRoll.length) * 100);
+  const occupancyRate = bedRoll.length > 0 ? Math.round((occupied / bedRoll.length) * 100) : 0;
 
   return (
     <>
       <PageHeader title="Reports" />
-      <div className="px-8 pb-10">
-        <ReportCard title="Bed Rent Roll" audience="Property Manager">
-          <p className="text-xs text-muted">Live status of every bed, rent rate, and current payment status for the active month.</p>
+      <div className="px-4 sm:px-8 pb-10">
+        <ReportCard title="Room Rent Roll" audience="Property Manager">
+          <p className="text-xs text-muted">A live list of every bed, its rent, and whether it's been paid this month.</p>
 
-          <div className="mt-4 grid grid-cols-3 gap-3">
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="rounded-lg bg-mist px-3.5 py-2.5">
               <p className="text-[11px] text-muted">Occupied</p>
               <p className="mt-0.5 font-display text-lg font-semibold text-ink">{occupied} / {bedRoll.length}</p>
@@ -76,7 +82,7 @@ export default function BedRentRoll() {
             <Select value={filter} onChange={setFilter} options={bedFilterOptions} />
           </div>
 
-          <div className="mt-4 overflow-hidden rounded-lg border border-line">
+          <div className="mt-4 overflow-x-auto rounded-lg border border-line">
             <table className="w-full table-fixed text-left text-sm">
               <colgroup>
                 <col className="w-28" />
@@ -99,7 +105,19 @@ export default function BedRentRoll() {
                   <tr key={b.id} className="border-t border-line">
                     <td className="px-3 py-2 text-ink">{b.room}</td>
                     <td className="px-3 py-2 text-muted">{b.bed}</td>
-                    <td className={`px-3 py-2 ${b.tenant ? "text-ink" : "text-muted italic"}`}>{b.tenant ?? "— Vacant —"}</td>
+                    <td className="px-3 py-2">
+                      {b.tenant && b.tenantId ? (
+                        <button
+                          type="button"
+                          onClick={() => navigate("/tenants", { state: { openTenantId: b.tenantId } })}
+                          className="text-ink hover:text-brand hover:underline"
+                        >
+                          {b.tenant}
+                        </button>
+                      ) : (
+                        <span className="text-muted italic">— Vacant —</span>
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-muted">{currency(b.rent)}</td>
                     <td className="px-3 py-2">
                       <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${bedStatusStyle[b.status]}`}>

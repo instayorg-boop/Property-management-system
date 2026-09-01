@@ -1,68 +1,24 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence } from "framer-motion";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
 import SlideOver from "../components/SlideOver";
-import Select from "../components/Select";
+import { Eye, MagnifyingGlass, Paperclip, Wrench } from "@phosphor-icons/react";
+import { useMaintenance, type MaintenanceReport, type MaintenanceStatus } from "../MaintenanceContext";
+import { useTenants } from "../TenantsContext";
+import Pagination, { DEFAULT_PAGE_SIZE } from "../components/Pagination";
 
 function EyeIcon() {
-  return (
-    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth={1.5}>
-      <path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5Z" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="8" cy="8" r="2" />
-    </svg>
-  );
+  return <Eye size={14} weight="duotone" />;
 }
 
-type Status = "open" | "in-progress" | "resolved";
+function SearchIcon() {
+  return <MagnifyingGlass size={16} weight="bold" />;
+}
 
-type Report = {
-  id: string;
-  tenant: string;
-  room: string;
-  description: string;
-  submittedAt: string; // ISO
-  status: Status;
-  unread: boolean;
-  hasPhoto: boolean;
-};
+const statusLabel: Record<MaintenanceStatus, string> = { open: "Open", "in-progress": "In progress", resolved: "Resolved" };
 
-const initialReports: Report[] = [
-  {
-    id: "m1", tenant: "B. Phiri", room: "Room 08",
-    description: "Tap in the bathroom won't stop dripping, has been going for two days.",
-    submittedAt: "2026-08-27T08:12:00", status: "open", unread: true, hasPhoto: true,
-  },
-  {
-    id: "m2", tenant: "F. Chileshe", room: "Room 19",
-    description: "Window latch is broken, doesn't lock properly at night.",
-    submittedAt: "2026-08-26T19:40:00", status: "open", unread: true, hasPhoto: false,
-  },
-  {
-    id: "m3", tenant: "A. Mwansa", room: "Room 12",
-    description: "Ceiling light in the room has stopped working.",
-    submittedAt: "2026-08-25T14:05:00", status: "in-progress", unread: false, hasPhoto: true,
-  },
-  {
-    id: "m4", tenant: "G. Mwape", room: "Room 22",
-    description: "Door handle came loose, still usable but needs tightening.",
-    submittedAt: "2026-08-22T09:30:00", status: "in-progress", unread: false, hasPhoto: false,
-  },
-  {
-    id: "m5", tenant: "H. Banda", room: "Room 14",
-    description: "Gate to the compound was squeaking, plumber fixed it after oiling.",
-    submittedAt: "2026-08-18T11:15:00", status: "resolved", unread: false, hasPhoto: false,
-  },
-  {
-    id: "m6", tenant: "D. Zulu", room: "Room 05",
-    description: "Requested extra key cut for a guardian visiting for the weekend.",
-    submittedAt: "2026-08-15T16:50:00", status: "resolved", unread: false, hasPhoto: false,
-  },
-];
-
-const statusLabel: Record<Status, string> = { open: "Open", "in-progress": "In progress", resolved: "Resolved" };
-
-const statusStyle: Record<Status, string> = {
+const statusStyle: Record<MaintenanceStatus, string> = {
   open: "bg-red-50 text-red-600",
   "in-progress": "bg-amber-50 text-amber-600",
   resolved: "bg-emerald-50 text-emerald-600",
@@ -79,20 +35,40 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
-function ReportDrawer({
-  report,
+function RequestDrawer({
+  request,
   onClose,
   onSetStatus,
 }: {
-  report: Report;
+  request: MaintenanceReport;
   onClose: () => void;
-  onSetStatus: (status: Status) => void;
+  onSetStatus: (status: MaintenanceStatus) => void;
 }) {
+  const { tenants } = useTenants();
+  const navigate = useNavigate();
+  const reportedByTenant = tenants.find((t) => t.name === request.tenant);
+
   return (
     <SlideOver
       onClose={onClose}
-      title={report.room}
-      description={`Reported by ${report.tenant} · ${formatDate(report.submittedAt)}`}
+      title={request.location}
+      description={
+        <>
+          Reported by{" "}
+          {reportedByTenant ? (
+            <button
+              type="button"
+              onClick={() => navigate("/tenants", { state: { openTenantId: reportedByTenant.id } })}
+              className="font-medium text-brand hover:underline"
+            >
+              {request.tenant}
+            </button>
+          ) : (
+            request.tenant
+          )}{" "}
+          · {formatDate(request.submittedAt)}
+        </>
+      }
       footer={
         <>
           <div className="grid grid-cols-3 gap-2">
@@ -102,7 +78,7 @@ function ReportDrawer({
                 type="button"
                 onClick={() => onSetStatus(s)}
                 className={`rounded-lg border py-2.5 text-sm font-medium transition-colors ${
-                  report.status === s ? "border-brand bg-brand-soft text-brand" : "border-line text-muted hover:bg-mist"
+                  request.status === s ? "border-brand bg-brand-soft text-brand" : "border-line text-muted hover:bg-mist"
                 }`}
               >
                 {statusLabel[s]}
@@ -112,6 +88,13 @@ function ReportDrawer({
 
           <Link
             to="/expenses"
+            state={{
+              expensePrefill: {
+                name: `Repair — ${request.location}`,
+                description: request.description,
+                categoryId: "maintenance",
+              },
+            }}
             className="mt-2 block w-full rounded-lg border border-line py-2.5 text-center text-sm font-medium text-ink transition-colors hover:bg-mist"
           >
             Log a repair cost for this →
@@ -119,32 +102,143 @@ function ReportDrawer({
         </>
       }
     >
-      <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ${statusStyle[report.status]}`}>
-        {statusLabel[report.status]}
-      </span>
-      <p className="mt-3 rounded-lg bg-mist p-4 text-sm text-ink">{report.description}</p>
+      <div className="flex items-center gap-2">
+        <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ${statusStyle[request.status]}`}>
+          {statusLabel[request.status]}
+        </span>
+        {request.status === "resolved" && request.resolvedAt && (
+          <span className="text-xs text-muted">Resolved {formatDate(request.resolvedAt)}</span>
+        )}
+      </div>
+      <p className="mt-3 rounded-lg bg-mist p-4 text-sm text-ink">{request.description}</p>
 
       <p className="mt-6 text-sm font-medium text-ink">Photo</p>
-      {report.hasPhoto ? (
-        <div className="mt-2 flex h-48 items-center justify-center rounded-lg border border-dashed border-line bg-mist text-sm text-muted">
-          Photo attached by tenant
+      {request.hasPhoto || request.photoUrl ? (
+        <div className="mt-2 h-48 overflow-hidden rounded-lg border border-line bg-mist">
+          {request.photoUrl ? (
+            <img src={request.photoUrl} alt="Attached to this maintenance request" className="h-full w-full object-cover" />
+          ) : (
+            <div className="flex h-full items-center justify-center text-sm text-muted">Photo attached by tenant</div>
+          )}
         </div>
       ) : (
-        <p className="mt-2 text-xs text-muted">No photo attached to this report.</p>
+        <p className="mt-2 text-xs text-muted">No photo attached to this request.</p>
       )}
     </SlideOver>
   );
 }
 
+function AddRequestDrawer({ onClose, onSave }: { onClose: () => void; onSave: (request: Omit<MaintenanceReport, "id" | "unread" | "resolvedAt">) => void }) {
+  const [location, setLocation] = useState("");
+  const [description, setDescription] = useState("");
+  const [photoUrl, setPhotoUrl] = useState<string | undefined>(undefined);
+
+  const canSave = location.trim().length > 0 && description.trim().length > 0;
+
+  const submit = () => {
+    if (!canSave) return;
+    onSave({
+      tenant: "Landlord",
+      location: location.trim(),
+      description: description.trim(),
+      submittedAt: new Date().toISOString(),
+      status: "open",
+      hasPhoto: !!photoUrl,
+      photoUrl,
+    });
+  };
+
+  return (
+    <SlideOver
+      onClose={onClose}
+      title="Add maintenance request"
+      description="Log an issue you noticed yourself — anywhere on the property, not just a tenant's room."
+      footer={
+        <button
+          type="button"
+          onClick={submit}
+          disabled={!canSave}
+          className="w-full rounded-lg bg-brand py-3 text-sm font-medium text-paper transition-transform hover:scale-[1.01] disabled:opacity-50 disabled:hover:scale-100"
+        >
+          Add maintenance request
+        </button>
+      }
+    >
+      <div className="space-y-4">
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-muted">Location</label>
+          <input
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+            placeholder="e.g. Room 08, Main gate, Borehole pump, Parking lot"
+            className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+          />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-muted">Description</label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={3}
+            placeholder="What's the issue?"
+            className="w-full resize-none rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+          />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-muted">Photo (optional)</label>
+          {photoUrl ? (
+            <div className="space-y-2">
+              <div className="h-40 overflow-hidden rounded-lg border border-line bg-mist">
+                <img src={photoUrl} alt="Attached to this request" className="h-full w-full object-cover" />
+              </div>
+              <button type="button" onClick={() => setPhotoUrl(undefined)} className="text-xs font-medium text-red-600 hover:underline">
+                Remove photo
+              </button>
+            </div>
+          ) : (
+            <label className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-line py-2.5 text-sm font-medium text-muted transition-colors hover:bg-mist">
+              <Paperclip size={14} weight="duotone" />
+              Attach a photo
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) setPhotoUrl(URL.createObjectURL(file));
+                }}
+              />
+            </label>
+          )}
+        </div>
+      </div>
+    </SlideOver>
+  );
+}
+
 export default function Maintenance() {
-  const [reports, setReports] = useState<Report[]>(initialReports);
+  const { reports, setStatus, markRead, addReport } = useMaintenance();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [filter, setFilter] = useState("all");
-  const [selected, setSelected] = useState<Report | null>(null);
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(DEFAULT_PAGE_SIZE);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [addingRequest, setAddingRequest] = useState(false);
+
+  const selected = reports.find((r) => r.id === selectedId) ?? null;
 
   const filtered = useMemo(() => {
-    const rows = filter === "all" ? reports : reports.filter((r) => r.status === filter);
+    const rows = reports
+      .filter((r) => filter === "all" || r.status === filter)
+      .filter((r) => r.location.toLowerCase().includes(query.toLowerCase()) || r.description.toLowerCase().includes(query.toLowerCase()));
     return [...rows].sort((a, b) => (a.submittedAt < b.submittedAt ? 1 : -1));
-  }, [reports, filter]);
+  }, [reports, filter, query]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
+  const currentPage = Math.min(page, pageCount);
+  const pageRows = filtered.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
 
   const counts = useMemo(
     () => ({
@@ -155,45 +249,92 @@ export default function Maintenance() {
     [reports]
   );
 
-  const openReport = (r: Report) => {
-    setSelected(r);
-    if (r.unread) {
-      setReports((prev) => prev.map((x) => (x.id === r.id ? { ...x, unread: false } : x)));
-    }
+  const openRequest = (r: MaintenanceReport) => {
+    setSelectedId(r.id);
+    if (r.unread) markRead(r.id);
   };
+
+  // Arriving from the Dashboard's maintenance preview — open that request, then drop the nav state.
+  useEffect(() => {
+    const openId = (location.state as { openReportId?: string } | null)?.openReportId;
+    if (openId) {
+      const request = reports.find((r) => r.id === openId);
+      if (request) openRequest(request);
+      navigate(location.pathname, { replace: true, state: null });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
 
   return (
     <>
       <PageHeader title="Maintenance" />
 
-      <div className="space-y-5 px-8 pb-10">
+      <div className="space-y-5 px-4 sm:px-8 pb-10">
+        {/* Top actions */}
+        <div className="flex items-center justify-end">
+          <button
+            type="button"
+            onClick={() => setAddingRequest(true)}
+            className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-paper transition-transform hover:scale-[1.02]"
+          >
+            + Add maintenance request
+          </button>
+        </div>
+
         {/* Stat cards */}
-        <div className="grid grid-cols-3 gap-4">
-          <div className="rounded-xl border border-line bg-paper p-5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="rounded-lg border border-line bg-paper p-5">
             <p className="text-xs text-muted">Open</p>
             <p className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink">{counts.open}</p>
           </div>
-          <div className="rounded-xl border border-line bg-paper p-5">
+          <div className="rounded-lg border border-line bg-paper p-5">
             <p className="text-xs text-muted">In progress</p>
             <p className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink">{counts.inProgress}</p>
           </div>
-          <div className="rounded-xl border border-line bg-paper p-5">
+          <div className="rounded-lg border border-line bg-paper p-5">
             <p className="text-xs text-muted">Unread</p>
             <p className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink">{counts.unread}</p>
           </div>
         </div>
 
-        {/* Status filter */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-muted">Filter by status</span>
-          <Select value={filter} onChange={setFilter} options={filterOptions} />
+        {/* Search + status filter */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 rounded-lg border border-line bg-paper px-3 py-2">
+            <SearchIcon />
+            <input
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setPage(1);
+              }}
+              placeholder="Search by location or description"
+              className="w-56 bg-transparent text-sm outline-none placeholder:text-muted"
+            />
+          </div>
+          <div className="flex gap-2 overflow-x-auto">
+            {filterOptions.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                onClick={() => {
+                  setFilter(o.value);
+                  setPage(1);
+                }}
+                className={`shrink-0 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                  filter === o.value ? "bg-ink text-paper" : "border border-line text-muted hover:bg-mist"
+                }`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Report table */}
-        <div className="overflow-hidden rounded-xl border border-line">
+        {/* Request table */}
+        <div className="overflow-x-auto rounded-lg border border-line">
           <table className="w-full table-fixed text-left text-sm">
             <colgroup>
-              <col className="w-24" />
+              <col className="w-32" />
               <col className="w-32" />
               <col />
               <col className="w-36" />
@@ -202,7 +343,7 @@ export default function Maintenance() {
             </colgroup>
             <thead className="bg-mist text-xs text-muted">
               <tr>
-                <th className="px-3 py-2.5 font-medium">Room</th>
+                <th className="px-3 py-2.5 font-medium">Location</th>
                 <th className="px-3 py-2.5 font-medium">Reported by</th>
                 <th className="px-3 py-2.5 font-medium">Description</th>
                 <th className="px-3 py-2.5 font-medium">Date</th>
@@ -211,16 +352,18 @@ export default function Maintenance() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((r) => (
+              {pageRows.map((r) => (
                 <tr key={r.id} className="border-t border-line transition-colors hover:bg-mist">
                   <td className="px-3 py-2.5">
                     <div className="flex items-center gap-1.5">
                       {r.unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />}
-                      <span className="truncate font-medium text-ink">{r.room}</span>
+                      <span className="truncate font-medium text-ink">{r.location}</span>
                     </div>
                   </td>
                   <td className="truncate px-3 py-2.5 text-ink">{r.tenant}</td>
-                  <td className="truncate px-3 py-2.5 text-muted">{r.description}</td>
+                  <td className="truncate px-3 py-2.5 text-muted" title={r.description}>
+                    {r.description}
+                  </td>
                   <td className="px-3 py-2.5 text-muted">
                     <span className="whitespace-nowrap">{formatDate(r.submittedAt)}</span>
                   </td>
@@ -232,8 +375,8 @@ export default function Maintenance() {
                   <td className="px-3 py-2.5 text-right">
                     <button
                       type="button"
-                      onClick={() => openReport(r)}
-                      aria-label={`View report for ${r.room}`}
+                      onClick={() => openRequest(r)}
+                      aria-label={`View maintenance request for ${r.location}`}
                       className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-line text-muted transition-colors hover:bg-paper hover:text-ink"
                     >
                       <EyeIcon />
@@ -241,26 +384,60 @@ export default function Maintenance() {
                   </td>
                 </tr>
               ))}
-              {filtered.length === 0 && (
+              {pageRows.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-sm text-muted">
-                    No reports match this filter.
+                  <td colSpan={6} className="px-4 py-10">
+                    <div className="flex flex-col items-center justify-center gap-3 text-center">
+                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
+                        <Wrench size={22} weight="duotone" />
+                      </span>
+                      <div>
+                        <p className="text-xs font-semibold text-ink">
+                          {reports.length === 0 ? "No maintenance requests yet" : "No requests match this filter"}
+                        </p>
+                        <p className="mt-0.5 text-xs text-muted">
+                          {reports.length === 0
+                            ? "Requests tenants submit will show up here."
+                            : "Try a different search or status filter."}
+                        </p>
+                      </div>
+                    </div>
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
+
+          {filtered.length > 0 && (
+            <Pagination
+              page={currentPage}
+              pageCount={pageCount}
+              pageSize={rowsPerPage}
+              totalItems={filtered.length}
+              onPageChange={setPage}
+              onPageSizeChange={(size) => {
+                setRowsPerPage(size);
+                setPage(1);
+              }}
+            />
+          )}
         </div>
       </div>
 
       <AnimatePresence>
         {selected && (
-          <ReportDrawer
-            report={selected}
-            onClose={() => setSelected(null)}
-            onSetStatus={(status) => {
-              setReports((prev) => prev.map((r) => (r.id === selected.id ? { ...r, status } : r)));
-              setSelected((prev) => (prev ? { ...prev, status } : prev));
+          <RequestDrawer
+            request={selected}
+            onClose={() => setSelectedId(null)}
+            onSetStatus={(status) => setStatus(selected.id, status)}
+          />
+        )}
+        {addingRequest && (
+          <AddRequestDrawer
+            onClose={() => setAddingRequest(false)}
+            onSave={(request) => {
+              addReport(request);
+              setAddingRequest(false);
             }}
           />
         )}
