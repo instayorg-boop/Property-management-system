@@ -64,7 +64,7 @@ const MaintenanceContext = createContext<MaintenanceContextValue | null>(null);
 
 // Temporary switch for previewing empty states across the app — flip back to `false`
 // once the preview is done.
-const DEMO_EMPTY_STATE = true;
+const DEMO_EMPTY_STATE = false;
 
 export function MaintenanceProvider({ children }: { children: ReactNode }) {
   const [reports, setReports] = useState<MaintenanceReport[]>(DEMO_EMPTY_STATE ? [] : initialReports);

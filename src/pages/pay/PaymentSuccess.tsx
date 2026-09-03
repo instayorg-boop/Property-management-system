@@ -12,14 +12,16 @@ export default function PaymentSuccess() {
   const { tenants } = useTenants();
 
   const tenant = tenants.find((t) => t.id === tenantId);
-  const amount = (location.state as { amount?: number } | null)?.amount;
+  const state = (location.state as { amount?: number; method?: "mobile" | "card"; provider?: string } | null) ?? null;
+  const amount = state?.amount;
+  const methodLabel = state?.method === "card" ? "Card" : state?.provider ? `${state.provider} mobile money` : undefined;
   const paidAt = useMemo(() => new Date(), []);
   const reference = useMemo(() => `INS-${paidAt.getTime().toString().slice(-8)}`, [paidAt]);
 
   const [showReceipt, setShowReceipt] = useState(false);
 
   return (
-    <PayShell propertyName={propertyName}>
+    <PayShell propertyName={propertyName} step="done">
       <div className="flex flex-col items-center py-4 text-center print:hidden">
         <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
           <CheckCircle size={32} weight="fill" />
@@ -28,7 +30,10 @@ export default function PaymentSuccess() {
         <p className="mt-1 text-sm text-muted">
           {amount ? formatCurrency(amount) : "Your payment"} received{tenant ? ` for ${tenant.name}` : ""}.
         </p>
-        <p className="mt-0.5 text-xs text-muted">{paidAt.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}</p>
+        <p className="mt-0.5 text-xs text-muted">
+          {paidAt.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}
+          {methodLabel ? ` · ${methodLabel}` : ""}
+        </p>
 
         <div className="mt-6 w-full space-y-2">
           <button
@@ -58,6 +63,7 @@ export default function PaymentSuccess() {
             <Row label="Property" value={propertyName} />
             <Row label="Tenant" value={tenant?.name ?? "—"} />
             <Row label="Room" value={tenant?.room ?? "—"} />
+            <Row label="Method" value={methodLabel ?? "—"} />
             <Row label="Date" value={paidAt.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })} />
             <Row label="Amount paid" value={amount ? formatCurrency(amount) : "—"} emphasis />
           </div>

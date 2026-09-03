@@ -43,6 +43,9 @@ export type Tenant = {
   /** Total number of rent periods billed so far — the denominator for onTimeCount. */
   totalMonthsCount: number;
   active: boolean;
+  /** Institution (school/employer) covering this tenant's rent, if any — tenants sharing the same
+   * name here can be billed together as one combined invoice instead of individually. */
+  institution?: string;
   moveOutDate?: string;
   /** How the deposit was resolved on move-out, e.g. "Refunded in full" or "K200 deducted for cleaning". */
   depositResolutionNote?: string;
@@ -55,7 +58,7 @@ export function formatCurrency(n: number) {
 
 // Temporary switch for previewing empty states across the app — flip back to `initialTenantsSeed`
 // once the preview is done.
-const DEMO_EMPTY_STATE = true;
+const DEMO_EMPTY_STATE = false;
 
 const initialTenantsSeed: Tenant[] = [
   {
@@ -137,7 +140,9 @@ type TenantsContextValue = {
   deleteTenant: (id: string) => void;
   moveOutTenant: (id: string, details: { moveOutDate: string; depositStatus: DepositStatus; depositResolutionNote: string }) => void;
   reactivateTenant: (id: string, newMoveInDate: string) => void;
-  logPayment: (id: string, amount: number) => void;
+  /** `label` defaults to the standard rent-row label when omitted — pass one explicitly for
+   * anything that isn't a plain full-month rent payment (e.g. a pro-rata partial month). */
+  logPayment: (id: string, amount: number, label?: string) => void;
 };
 
 const TenantsContext = createContext<TenantsContextValue | null>(null);
@@ -180,7 +185,7 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
     );
   };
 
-  const logPayment = (id: string, amount: number) => {
+  const logPayment = (id: string, amount: number, label?: string) => {
     setTenants((prev) =>
       prev.map((t) =>
         t.id === id
@@ -190,7 +195,7 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
               owedAmount: 0,
               onTimeCount: t.status === "overdue" || t.status === "unpaid" ? t.onTimeCount : t.onTimeCount + 1,
               totalMonthsCount: t.totalMonthsCount + 1,
-              ledger: [{ label: "August 2026 rent", amount, status: "paid" }, ...t.ledger],
+              ledger: [{ label: label ?? "August 2026 rent", amount, status: "paid" }, ...t.ledger],
             }
           : t
       )

@@ -201,7 +201,7 @@ type PaymentStep = "search" | "ledger" | "confirm";
 
 // Temporary switch for previewing the dashboard's empty states — clears every mock/derived
 // data source on the page without touching the underlying data providers.
-const DEMO_EMPTY_STATE = true;
+const DEMO_EMPTY_STATE = false;
 
 export default function Dashboard() {
   const { tenants: tenantsFromContext, logPayment } = useTenants();

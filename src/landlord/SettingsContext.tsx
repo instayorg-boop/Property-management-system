@@ -7,6 +7,15 @@ export type NotificationPrefs = {
   overdueEscalated: boolean;
 };
 
+export type PaymentMethod = {
+  type: "mtn" | "airtel" | "cash" | "bank" | "other";
+  number?: string;
+  bankName?: string;
+  accountNumber?: string;
+  /** Platform name for "other" — e.g. "Mukuru", "Zamtel Kwacha", anything not in the built-in list. */
+  label?: string;
+};
+
 type SettingsContextValue = {
   invoicesOn: boolean;
   setInvoicesOn: (v: boolean) => void;
@@ -16,6 +25,16 @@ type SettingsContextValue = {
   /** The active property this dashboard session is scoped to. */
   propertyName: string;
   setPropertyName: (v: string) => void;
+  propertyAddress: string;
+  setPropertyAddress: (v: string) => void;
+  /** Displayed on invoices and elsewhere landlord contact details are needed. */
+  landlordName: string;
+  setLandlordName: (v: string) => void;
+  landlordPhone: string;
+  setLandlordPhone: (v: string) => void;
+  /** Payment methods offered to tenants — shown on invoices in the "How to pay" section. */
+  paymentMethods: PaymentMethod[];
+  setPaymentMethods: (v: PaymentMethod[]) => void;
   /** All properties this landlord manages — switching the active one sets propertyName. */
   properties: string[];
   addProperty: (name: string) => void;
@@ -68,6 +87,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [invoicesOn, setInvoicesOn] = useState(false);
   const [collectionTargetPct, setCollectionTargetPct] = useState(90);
   const [propertyName, setPropertyName] = useState("Kabulonga House");
+  const [propertyAddress, setPropertyAddress] = useState("Plot 14, Kabulonga, Lusaka");
+  const [landlordName, setLandlordName] = useState("Bernard Mwansa");
+  const [landlordPhone, setLandlordPhone] = useState("0977 000 000");
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([
+    { type: "mtn", number: "0977 000 111" },
+    { type: "cash" },
+  ]);
   const [properties, setProperties] = useState<string[]>(["Kabulonga House"]);
   const [managementFeeRate, setManagementFeeRate] = useState(0.1);
 
@@ -114,6 +140,14 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         setCollectionTargetPct,
         propertyName,
         setPropertyName,
+        propertyAddress,
+        setPropertyAddress,
+        landlordName,
+        setLandlordName,
+        landlordPhone,
+        setLandlordPhone,
+        paymentMethods,
+        setPaymentMethods,
         properties,
         addProperty,
         managementFeeRate,

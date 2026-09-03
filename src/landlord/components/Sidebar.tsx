@@ -16,6 +16,8 @@ import {
   X,
 } from "@phosphor-icons/react";
 import { useSidebar } from "../SidebarContext";
+import { useMaintenance } from "../MaintenanceContext";
+import { useTenants } from "../TenantsContext";
 
 const icons = {
   dashboard: SquaresFour,
@@ -87,7 +89,17 @@ const groups: { label: string; items: NavItem[] }[] = [
   },
 ];
 
-function NavRow({ item, onNavigate }: { item: NavItem; onNavigate: () => void }) {
+/** Message-app-style count badge — shown at the trailing end of the row, not up front by the icon,
+ * so it reads like a notification rather than a label. Caps the display at 99+. */
+function AttentionBadge({ count }: { count: number }) {
+  return (
+    <span className="relative flex h-4.5 min-w-4.5 shrink-0 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white">
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
+
+function NavRow({ item, onNavigate, attentionCount }: { item: NavItem; onNavigate: () => void; attentionCount: number }) {
   const location = useLocation();
   const isOnPage = location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
   const [open, setOpen] = useState(isOnPage && !!item.children);
@@ -99,7 +111,7 @@ function NavRow({ item, onNavigate }: { item: NavItem; onNavigate: () => void })
         to={item.to}
         onClick={onNavigate}
         className={({ isActive }) =>
-          `relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+          `relative flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
             isActive ? "font-semibold text-brand" : "text-muted hover:bg-paper hover:text-ink"
           }`
         }
@@ -113,10 +125,11 @@ function NavRow({ item, onNavigate }: { item: NavItem; onNavigate: () => void })
                 transition={{ type: "spring", stiffness: 500, damping: 35 }}
               />
             )}
-            <span className="relative flex items-center gap-2.5">
-              <ItemIcon size={18} weight="duotone" />
-              {item.label}
+            <span className="relative flex min-w-0 flex-1 items-center gap-2.5">
+              <ItemIcon size={18} weight="duotone" className="shrink-0" />
+              <span className="truncate">{item.label}</span>
             </span>
+            {attentionCount > 0 && <AttentionBadge count={attentionCount} />}
           </>
         )}
       </NavLink>
@@ -134,6 +147,7 @@ function NavRow({ item, onNavigate }: { item: NavItem; onNavigate: () => void })
       >
         <ItemIcon size={18} weight="duotone" />
         <span className="flex-1">{item.label}</span>
+        {attentionCount > 0 && <AttentionBadge count={attentionCount} />}
         <CaretDown size={14} className={`transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
@@ -161,6 +175,15 @@ function NavRow({ item, onNavigate }: { item: NavItem; onNavigate: () => void })
 
 const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
   const { open, setOpen } = useSidebar();
+  const { reports } = useMaintenance();
+  const { tenants } = useTenants();
+
+  // How many things need a look on each nav item — shown as a count badge, not just a dot, so it's
+  // clear at a glance how much is waiting rather than just that something is.
+  const attention: Partial<Record<string, number>> = {
+    "/maintenance": reports.filter((r) => r.unread).length,
+    "/rent": tenants.filter((t) => t.active && (t.status === "overdue" || t.status === "unpaid")).length,
+  };
 
   return (
     <div
@@ -168,7 +191,7 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
       role="dialog"
       aria-modal={open ? true : undefined}
       aria-label="Navigation"
-      className={`fixed inset-y-0 left-0 z-50 flex h-full w-72 max-w-[85vw] shrink-0 flex-col bg-paper transition-transform duration-200 lg:static lg:z-auto lg:h-full lg:w-62 lg:max-w-none lg:translate-x-0 lg:bg-transparent ${
+      className={`fixed inset-y-0 left-0 z-50 flex h-full w-64 max-w-[85vw] shrink-0 flex-col bg-paper transition-transform duration-200 lg:static lg:z-auto lg:h-full lg:w-62 lg:max-w-none lg:translate-x-0 lg:bg-transparent ${
         open ? "translate-x-0" : "-translate-x-full"
       }`}
     >
@@ -192,7 +215,7 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
             </p>
             <div className="space-y-0.5">
               {group.items.map((item) => (
-                <NavRow key={item.to} item={item} onNavigate={() => setOpen(false)} />
+                <NavRow key={item.to} item={item} onNavigate={() => setOpen(false)} attentionCount={attention[item.to] ?? 0} />
               ))}
             </div>
           </div>

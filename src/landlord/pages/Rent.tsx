@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import PageHeader from "../components/PageHeader";
 import LogPaymentModal from "../components/LogPaymentModal";
 import TenantSearchDrawer from "../components/TenantSearchDrawer";
 import TenantPaymentDrawer from "../components/TenantPaymentDrawer";
+import GenerateInvoicesOverlay from "../components/GenerateInvoicesOverlay";
 import { useTenants, formatCurrency, type PaymentStatus, type Tenant } from "../TenantsContext";
 import { useRoomTypeRent } from "../RoomsContext";
 import { useSettings } from "../SettingsContext";
+import { useInvoices } from "../InvoicesContext";
 import { LinkSimple, MagnifyingGlass, Plus, CaretLeft, CaretRight, Receipt } from "@phosphor-icons/react";
 import Pagination, { DEFAULT_PAGE_SIZE } from "../components/Pagination";
 
@@ -55,6 +57,7 @@ type PaymentStep = "search" | "ledger" | "confirm";
 export default function Rent() {
   const { tenants, logPayment } = useTenants();
   const { invoicesOn, collectionTargetPct } = useSettings();
+  const { hasSentInvoiceForPeriod } = useInvoices();
   const roomTypeRent = useRoomTypeRent();
   const location = useLocation();
   const navigate = useNavigate();
@@ -73,7 +76,8 @@ export default function Rent() {
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(DEFAULT_PAGE_SIZE);
   const [linkCopied, setLinkCopied] = useState(false);
-  const [invoicesQueued, setInvoicesQueued] = useState(false);
+  const [invoiceMode, setInvoiceMode] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
 
   const [paymentStep, setPaymentStep] = useState<PaymentStep | null>(null);
   const [payingTenant, setPayingTenant] = useState<Tenant | null>(null);
@@ -150,9 +154,9 @@ export default function Rent() {
     window.setTimeout(() => setLinkCopied(false), 1500);
   };
 
-  const generateInvoices = () => {
-    setInvoicesQueued(true);
-    window.setTimeout(() => setInvoicesQueued(false), 1500);
+  const showToast = (msg: string) => {
+    setToast(msg);
+    window.setTimeout(() => setToast((t) => (t === msg ? null : t)), 2000);
   };
 
   return (
@@ -160,6 +164,31 @@ export default function Rent() {
       <PageHeader title="Rent" />
 
       <div className="space-y-5 px-4 sm:px-8 pb-10">
+        {invoiceMode ? (
+          <motion.div
+            key="invoice"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1], delay: 0.05 }}
+          >
+            <GenerateInvoicesOverlay
+              periodDate={monthDate}
+              periodLabel={month}
+              onCancel={() => setInvoiceMode(false)}
+              onSent={(count) => {
+                showToast(`Invoices sent to ${count} tenant${count === 1 ? "" : "s"}`);
+                setInvoiceMode(false);
+              }}
+            />
+          </motion.div>
+        ) : (
+          <motion.div
+            key="rent"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1], delay: 0.05 }}
+            className="space-y-5"
+          >
         {/* Header row */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-1 rounded-lg border border-line bg-paper px-1.5 py-1">
@@ -187,11 +216,11 @@ export default function Rent() {
             {invoicesOn && (
               <button
                 type="button"
-                onClick={generateInvoices}
+                onClick={() => setInvoiceMode(true)}
                 className="flex items-center gap-2 rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist"
               >
                 <Receipt size={14} weight="bold" />
-                {invoicesQueued ? "Invoices queued" : "Generate invoices"}
+                Generate invoices
               </button>
             )}
             <button
@@ -252,6 +281,7 @@ export default function Rent() {
           <div className="rounded-lg border border-line bg-paper p-4">
             <p className="text-xs text-muted">Collection rate</p>
             <p className="mt-1.5 font-display text-2xl font-semibold tracking-tight text-ink">{stats.collectedPct}%</p>
+            <p className="mt-1 text-[11px] text-muted">Goal is {collectionTargetPct}%</p>
             <span
               className={`mt-1 inline-flex items-center gap-1 text-[11px] font-medium ${
                 stats.trend >= 0 ? "text-emerald-600" : "text-red-600"
@@ -297,7 +327,83 @@ export default function Rent() {
         </div>
 
         {/* Tenant table */}
-        <div className="overflow-x-auto rounded-lg border border-line">
+        <div className="rounded-lg border border-line">
+          {/* Mobile: cards — an HTML table doesn't have room to breathe on a phone screen */}
+          <div className="divide-y divide-line md:hidden">
+            {pageRows.map((t) => {
+              const diffLabel = rateDiffLabel(t, roomTypeRent);
+              return (
+                <div
+                  key={t.id}
+                  onClick={() => {
+                    setPayingTenant(t);
+                    setPaymentStep("ledger");
+                  }}
+                  className="p-4 transition-colors active:bg-mist"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <p className="truncate text-sm font-medium text-ink">{t.name}</p>
+                        {hasSentInvoiceForPeriod(t.id, month) && (
+                          <span className="shrink-0 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600">
+                            Invoice sent
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-0.5 text-xs text-muted">
+                        {t.room} · {t.roomType}
+                      </p>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[t.status]}`}>
+                      {statusLabel[t.status]}
+                      {t.status === "overdue" && t.daysOverdue ? ` · ${t.daysOverdue}d` : ""}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
+                    <div>
+                      <span className="text-sm font-semibold text-ink">{formatCurrency(t.rentAmount)}</span>
+                      {diffLabel && <span className="ml-1.5 text-[10px] text-amber-600">{diffLabel}</span>}
+                    </div>
+                    {(t.status === "overdue" || t.status === "unpaid") && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPayingTenant(t);
+                          setPaymentStep("confirm");
+                        }}
+                        className="rounded-lg bg-brand px-3 py-1.5 text-xs font-medium text-paper"
+                      >
+                        Log payment
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            {pageRows.length === 0 && (
+              <div className="flex flex-col items-center justify-center gap-3 px-4 py-10 text-center">
+                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
+                  <Receipt size={22} weight="duotone" />
+                </span>
+                <div>
+                  <p className="text-xs font-semibold text-ink">
+                    {activeTenants.length === 0 ? "No tenants yet" : "No tenants match this filter"}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted">
+                    {activeTenants.length === 0
+                      ? "Add a tenant to start tracking rent payments."
+                      : "Try a different search or status filter."}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Desktop / tablet: table */}
+          <div className="hidden overflow-x-auto md:block">
           <table className="w-full text-left text-sm">
             <thead className="bg-mist text-xs text-muted">
               <tr>
@@ -321,7 +427,16 @@ export default function Rent() {
                       setPaymentStep("ledger");
                     }}
                   >
-                    <td className="px-4 py-3 font-medium text-ink">{t.name}</td>
+                    <td className="px-4 py-3 font-medium text-ink">
+                      <div className="flex items-center gap-1.5">
+                        {t.name}
+                        {hasSentInvoiceForPeriod(t.id, month) && (
+                          <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600">
+                            Invoice sent
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-4 py-3 text-muted">{t.room}</td>
                     <td className="px-4 py-3 text-muted">{t.roomType}</td>
                     <td className="px-4 py-3">
@@ -375,6 +490,7 @@ export default function Rent() {
               )}
             </tbody>
           </table>
+          </div>
           {filtered.length > 0 && (
             <Pagination
               page={currentPage}
@@ -390,7 +506,23 @@ export default function Rent() {
           )}
         </div>
 
-        
+        {/* Arrears aging strip */}
+        <div className="grid grid-cols-1 gap-4 rounded-lg border border-line bg-paper p-4 sm:grid-cols-3">
+          <div>
+            <p className="text-xs text-muted">0–30 days overdue</p>
+            <p className="mt-1.5 font-display text-xl font-semibold tracking-tight text-ink">{formatCurrency(aging.d0to30)}</p>
+          </div>
+          <div className="sm:border-l sm:border-line sm:pl-4">
+            <p className="text-xs text-muted">31–60 days overdue</p>
+            <p className="mt-1.5 font-display text-xl font-semibold tracking-tight text-amber-600">{formatCurrency(aging.d31to60)}</p>
+          </div>
+          <div className="sm:border-l sm:border-line sm:pl-4">
+            <p className="text-xs text-muted">60+ days overdue</p>
+            <p className="mt-1.5 font-display text-xl font-semibold tracking-tight text-red-600">{formatCurrency(aging.d61plus)}</p>
+          </div>
+        </div>
+          </motion.div>
+        )}
       </div>
 
       <AnimatePresence>
@@ -425,6 +557,20 @@ export default function Rent() {
               setPayingTenant(null);
             }}
           />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            transition={{ duration: 0.15 }}
+            className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-ink px-4 py-2 text-xs font-medium text-paper shadow-card"
+          >
+            {toast}
+          </motion.div>
         )}
       </AnimatePresence>
     </>

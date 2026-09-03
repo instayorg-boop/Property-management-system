@@ -12,7 +12,9 @@
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
     "@radix-ui/react-select": "^2.3.7",
+    "@react-pdf/renderer": "^4.9.0",
     "framer-motion": "^13.1.1",
+    "jszip": "^3.10.1",
     "qrcode.react": "^4.2.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

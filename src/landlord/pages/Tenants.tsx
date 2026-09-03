@@ -179,7 +179,12 @@ function TenantDrawer({
         {filteredLedger.length === 0 && <p className="px-3.5 py-4 text-sm text-muted">No payments recorded yet.</p>}
         {visibleLedger.map((row, i) => (
           <div key={`${row.label}-${i}`} className="flex items-center justify-between px-3.5 py-2.5">
-            <span className="text-sm text-ink">{row.label}</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm text-ink">{row.label}</span>
+              {row.label.toLowerCase().includes("pro-rata") && (
+                <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-600">Pro-rata</span>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted">
                 {row.paidAmount !== undefined ? `${formatCurrency(row.paidAmount)} of ${formatCurrency(row.amount)}` : formatCurrency(row.amount)}
@@ -478,8 +483,73 @@ export default function Tenants() {
             </div>
           </div>
 
-          {/* Table */}
-          <div className="overflow-x-auto">
+          {/* Mobile: cards — an HTML table doesn't have room to breathe on a phone screen */}
+          <div className="divide-y divide-line md:hidden">
+            {pageRows.map((t) => (
+              <div key={t.id} onClick={() => setSelectedId(t.id)} className="p-4 transition-colors active:bg-mist">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-ink">{t.name}</p>
+                    <p className="mt-0.5 text-xs text-muted">
+                      {t.room} · {t.property}
+                    </p>
+                  </div>
+                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[t.status]}`}>
+                    {statusLabel[t.status]}
+                  </span>
+                </div>
+
+                <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
+                  <div>
+                    <p className="text-sm font-semibold text-ink">{formatCurrency(t.rentAmount)}</p>
+                    <p className="mt-0.5 text-[11px] text-muted">Moved in {t.moveInDate}</p>
+                  </div>
+                  <div className="flex items-center gap-2 text-muted">
+                    <button
+                      type="button"
+                      aria-label="Edit"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingId(t.id);
+                      }}
+                      className="rounded-lg border-2 border-gray-200 p-2 transition-colors hover:text-ink"
+                    >
+                      <EditIcon />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Delete"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeletingId(t.id);
+                      }}
+                      className="rounded-lg border-2 border-gray-200 p-2 transition-colors hover:text-red-600"
+                    >
+                      <TrashIcon />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {pageRows.length === 0 && (
+              <div className="flex flex-col items-center justify-center gap-3 px-4 py-10 text-center">
+                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
+                  <UsersThree size={22} weight="duotone" />
+                </span>
+                <div>
+                  <p className="text-xs font-semibold text-ink">
+                    {tenants.length === 0 ? "No tenants yet" : statusFilter === "active" ? "No active tenants" : "No moved-out tenants"}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted">
+                    {tenants.length === 0 ? "Add your first tenant to get started." : "Try a different search or tab."}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Desktop / tablet: table */}
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full text-left text-sm">
               <thead className="bg-mist text-[11px] text-muted">
                 <tr>

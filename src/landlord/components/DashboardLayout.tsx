@@ -10,6 +10,7 @@ import { TenantsProvider } from "../TenantsContext";
 import { RoomsProvider } from "../RoomsContext";
 import { MaintenanceProvider } from "../MaintenanceContext";
 import { SettingsProvider } from "../SettingsContext";
+import { InvoicesProvider } from "../InvoicesContext";
 import { SidebarProvider, useSidebar } from "../SidebarContext";
 
 const FOCUSABLE_SELECTOR = 'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
@@ -107,9 +108,11 @@ export default function DashboardLayout() {
             <TenantsProvider>
               <RoomsProvider>
                 <MaintenanceProvider>
-                  <SidebarProvider>
-                    <Shell />
-                  </SidebarProvider>
+                  <InvoicesProvider>
+                    <SidebarProvider>
+                      <Shell />
+                    </SidebarProvider>
+                  </InvoicesProvider>
                 </MaintenanceProvider>
               </RoomsProvider>
             </TenantsProvider>

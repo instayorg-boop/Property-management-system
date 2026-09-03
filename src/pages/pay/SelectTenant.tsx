@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { MagnifyingGlass, CaretRight } from "@phosphor-icons/react";
+import { MagnifyingGlass, CaretRight, House } from "@phosphor-icons/react";
 import { useTenants, formatCurrency } from "../../landlord/TenantsContext";
 import { useSettings } from "../../landlord/SettingsContext";
 import PayShell from "./PayShell";
@@ -21,10 +21,17 @@ export default function SelectTenant() {
 
   return (
     <PayShell propertyName={propertyName}>
-      <p className="font-display text-lg font-semibold tracking-tight text-ink">Find your name</p>
-      <p className="mt-1 text-sm text-muted">Search for yourself to view your balance and pay rent.</p>
+      <div className="flex items-center gap-2.5">
+        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-soft text-brand">
+          <House size={16} weight="fill" />
+        </div>
+        <div>
+          <p className="font-display text-base font-semibold tracking-tight text-ink">Find your name</p>
+          <p className="text-xs text-muted">to view your balance and pay rent</p>
+        </div>
+      </div>
 
-      <div className="mt-4 flex items-center gap-2 rounded-lg border border-line bg-mist px-3 py-2.5">
+      <div className="mt-4 flex items-center gap-2 rounded-lg border border-line bg-mist px-3 py-2.5 focus-within:border-brand">
         <MagnifyingGlass size={16} weight="bold" className="text-muted" />
         <input
           autoFocus
@@ -35,13 +42,13 @@ export default function SelectTenant() {
         />
       </div>
 
-      <div className="mt-3 space-y-1">
+      <div className="mt-3 -mx-1 max-h-90 space-y-1 overflow-y-auto px-1">
         {results.map((t) => (
           <button
             key={t.id}
             type="button"
             onClick={() => navigate(`/pay/${propertySlug}/${t.id}`)}
-            className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-mist"
+            className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-mist active:scale-[0.99]"
           >
             <div className="flex items-center gap-2.5">
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-mist text-[11px] font-semibold text-muted">
@@ -53,7 +60,13 @@ export default function SelectTenant() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-muted">{formatCurrency(t.owedAmount || t.rentAmount)}</span>
+              {t.owedAmount > 0 ? (
+                <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-600">
+                  {formatCurrency(t.owedAmount)}
+                </span>
+              ) : (
+                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-600">Paid up</span>
+              )}
               <CaretRight size={14} weight="bold" className="text-muted" />
             </div>
           </button>

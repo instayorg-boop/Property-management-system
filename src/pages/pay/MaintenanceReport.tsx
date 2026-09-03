@@ -84,6 +84,7 @@ export default function MaintenanceReport() {
         <div>
           <label className="mb-1.5 block text-xs font-medium text-muted">What's the issue?</label>
           <textarea
+            autoFocus
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={4}

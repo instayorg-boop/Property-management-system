@@ -1,0 +1,108 @@
+import type { Tenant } from "./TenantsContext";
+import type { Invoice } from "./InvoicesContext";
+
+export function slugify(name: string) {
+  return name.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+}
+
+export function daysInMonth(year: number, monthIndex0: number): number {
+  return new Date(year, monthIndex0 + 1, 0).getDate();
+}
+
+export function periodLabel(date: Date): string {
+  return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+}
+
+function previousMonthDate(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth() - 1, 1);
+}
+
+/** Tenant.moveInDate is stored as a formatted display string (e.g. "12 Jan 2025"), not ISO — this
+ * parses that back into a Date, returning null if it's not in a recognizable form. */
+function parseDisplayDate(value: string): Date | null {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/** A tenant's first invoice period is pro-rata only when their move-in month/year matches the
+ * invoice period exactly and they didn't move in on the 1st (the billing cycle's start). */
+export function getProrataInfo(tenant: Tenant, periodDate: Date): { isProrata: boolean; days: number; totalDays: number } {
+  const moveIn = parseDisplayDate(tenant.moveInDate);
+  if (!moveIn) return { isProrata: false, days: 0, totalDays: 0 };
+  const sameMonth = moveIn.getFullYear() === periodDate.getFullYear() && moveIn.getMonth() === periodDate.getMonth();
+  if (!sameMonth || moveIn.getDate() === 1) return { isProrata: false, days: 0, totalDays: 0 };
+  const totalDays = daysInMonth(periodDate.getFullYear(), periodDate.getMonth());
+  const days = totalDays - moveIn.getDate() + 1;
+  return { isProrata: true, days, totalDays };
+}
+
+export type InvoiceLineItem = { label: string; amount: number; tint?: boolean };
+
+export type TenantInvoiceCalc = {
+  tenant: Tenant;
+  rentAmount: number;
+  isProrata: boolean;
+  prorataDays: number;
+  prorataTotalDays: number;
+  outstanding: number;
+  penalty: number;
+  total: number;
+  lineItems: InvoiceLineItem[];
+};
+
+/** Builds the rent/outstanding/penalty breakdown for one tenant's invoice in a given period.
+ * `rentOverride` lets the landlord adjust the base rent line before generating (edit-in-place on
+ * the review screen) without touching the tenant's actual agreed rent. */
+export function calcTenantInvoice(tenant: Tenant, periodDate: Date, dailyPenaltyRate: number, rentOverride?: number): TenantInvoiceCalc {
+  const { isProrata, days, totalDays } = getProrataInfo(tenant, periodDate);
+  const fullRent = rentOverride ?? tenant.rentAmount;
+  const rentAmount = isProrata ? Math.round((fullRent / totalDays) * days) : fullRent;
+
+  // The data model only tracks one rolled-up `owedAmount`/`daysOverdue` per tenant (no per-period
+  // ledger breakdown of "how much was outstanding" vs "how much was penalty"), so for a tenant who
+  // isn't paid up, `owedAmount` is treated as the carried-over outstanding balance from before this
+  // invoice, and any penalty is derived from `daysOverdue` × the configured daily rate.
+  const outstanding = tenant.status === "paid" ? 0 : tenant.owedAmount;
+  const penalty = tenant.daysOverdue && tenant.daysOverdue > 0 ? Math.round(tenant.daysOverdue * dailyPenaltyRate) : 0;
+  const total = rentAmount + outstanding + penalty;
+
+  const rentLabel = isProrata
+    ? `${periodLabel(periodDate)} rent pro-rata (${days} days)`
+    : `${periodLabel(periodDate)} rent`;
+
+  const lineItems: InvoiceLineItem[] = [{ label: rentLabel, amount: rentAmount }];
+  if (outstanding > 0) {
+    lineItems.push({ label: `Outstanding balance (${periodLabel(previousMonthDate(periodDate)).split(" ")[0]})`, amount: outstanding, tint: true });
+  }
+  if (penalty > 0) {
+    lineItems.push({ label: `Late penalty (${tenant.daysOverdue} days overdue)`, amount: penalty, tint: true });
+  }
+
+  return { tenant, rentAmount, isProrata, prorataDays: days, prorataTotalDays: totalDays, outstanding, penalty, total, lineItems };
+}
+
+/** Due date is the tenant's usual due day for the invoice's month; "issued today". */
+export function computeInvoiceDates(periodDate: Date, dueDay: number) {
+  const issueDate = new Date();
+  const clampedDueDay = Math.min(dueDay, daysInMonth(periodDate.getFullYear(), periodDate.getMonth()));
+  const dueDate = new Date(periodDate.getFullYear(), periodDate.getMonth(), clampedDueDay);
+  return { issueDate, dueDate };
+}
+
+export function isDueSoonOrPast(dueDate: Date): boolean {
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const daysUntilDue = Math.ceil((dueDate.getTime() - Date.now()) / msPerDay);
+  return daysUntilDue <= 7;
+}
+
+/** Placeholder until a real WhatsApp Business API / backend integration exists — simulates the
+ * network round trip so the UI's async send flow (loading state, "Invoices sent to X tenants")
+ * behaves the way it will once real delivery is wired up. */
+export async function sendInvoiceViaWhatsApp(_tenant: Tenant, _invoice: Invoice): Promise<boolean> {
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  return true;
+}
+
+export function formatMoney(n: number): string {
+  return `K${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}

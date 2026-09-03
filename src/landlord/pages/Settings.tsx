@@ -26,7 +26,7 @@ import {
 } from "@phosphor-icons/react";
 import PageHeader from "../components/PageHeader";
 import ThemeSwitcher from "../components/ThemeSwitcher";
-import { useSettings, type NotificationPrefs } from "../SettingsContext";
+import { useSettings, type NotificationPrefs, type PaymentMethod } from "../SettingsContext";
 
 function CopyIcon() {
   return <CopyIconBase size={14} weight="duotone" />;
@@ -89,12 +89,12 @@ function Input({ defaultValue, type = "text" }: { defaultValue?: string; type?: 
 
 const fieldCls = "w-full max-w-xs rounded-lg border border-line bg-paper px-3 py-2 text-sm outline-none focus:border-brand";
 
-const tabs = ["Property", "Billing", "Reminders", "Payment link", "Online payments", "Statutory", "Notifications", "Subscription", "Account"] as const;
+const tabs = ["Property", "Billing & invoicing", "Reminders", "Payment link", "Online payments", "Statutory", "Notifications", "Subscription", "Account"] as const;
 type Tab = (typeof tabs)[number];
 
 const tabSlug: Record<Tab, string> = {
   Property: "property",
-  Billing: "billing",
+  "Billing & invoicing": "billing-invoicing",
   Reminders: "reminders",
   "Payment link": "payment-link",
   "Online payments": "online-payments",
@@ -106,7 +106,7 @@ const tabSlug: Record<Tab, string> = {
 
 const tabIcon: Record<Tab, PhosphorIcon> = {
   Property: HouseIcon,
-  Billing: ReceiptIcon,
+  "Billing & invoicing": ReceiptIcon,
   Reminders: BellRingingIcon,
   "Payment link": LinkSimpleIcon,
   "Online payments": BankIcon,
@@ -129,7 +129,7 @@ function slugify(name: string) {
 // landlords don't have to open a section just to find out what's in it.
 const tabDescription: Record<Tab, string> = {
   Property: "Your property's name and address, plus switching between properties you manage.",
-  Billing: "When rent is due, how long tenants have before it's overdue, and late-payment penalties.",
+  "Billing & invoicing": "When rent is due, late-payment penalties, and generating tenant invoices.",
   Reminders: "When tenants and their guardians get reminded about upcoming or overdue rent.",
   "Payment link": "The link and QR code tenants use to pay their rent online.",
   "Online payments": "Connect a bank account so rent paid online lands there automatically.",
@@ -174,6 +174,10 @@ export default function Settings() {
     invoicesOn, setInvoicesOn,
     collectionTargetPct, setCollectionTargetPct,
     propertyName, setPropertyName,
+    propertyAddress, setPropertyAddress,
+    landlordName, setLandlordName,
+    landlordPhone, setLandlordPhone,
+    paymentMethods, setPaymentMethods,
     properties, addProperty,
     managementFeeRate, setManagementFeeRate,
     billingPeriod, setBillingPeriod,
@@ -227,6 +231,21 @@ export default function Settings() {
     window.setTimeout(() => setToast((t) => (t === msg ? null : t)), 1200);
   };
 
+  const togglePaymentMethod = (type: PaymentMethod["type"], enabled: boolean) => {
+    if (enabled) {
+      if (paymentMethods.some((m) => m.type === type)) return;
+      setPaymentMethods([...paymentMethods, { type }]);
+    } else {
+      setPaymentMethods(paymentMethods.filter((m) => m.type !== type));
+    }
+    flash();
+  };
+
+  const updatePaymentMethod = (type: PaymentMethod["type"], patch: Partial<PaymentMethod>) => {
+    setPaymentMethods(paymentMethods.map((m) => (m.type === type ? { ...m, ...patch } : m)));
+    flash();
+  };
+
   const propertySlug = slugify(propertyName) || "property";
   const paymentLink = `pay.instay.co/${propertySlug}`;
   /** The real in-app route tenants land on — used for the QR code and the "Open" preview link. */
@@ -258,11 +277,38 @@ export default function Settings() {
                   className={fieldCls}
                 />
               </Row>
-              <Row label="Address">
-                <Input defaultValue="Plot 14, Kabulonga, Lusaka" />
+              <Row label="Address" desc="Shown on invoices, in the From section.">
+                <input
+                  value={propertyAddress}
+                  onChange={(e) => {
+                    setPropertyAddress(e.target.value);
+                    flash();
+                  }}
+                  className={fieldCls}
+                />
               </Row>
               <Row label="Property type">
                 <Input defaultValue="Student accommodation" />
+              </Row>
+              <Row label="Landlord name" desc="Shown on invoices, in the From section.">
+                <input
+                  value={landlordName}
+                  onChange={(e) => {
+                    setLandlordName(e.target.value);
+                    flash();
+                  }}
+                  className={fieldCls}
+                />
+              </Row>
+              <Row label="Landlord phone" desc="Shown on invoices as the mobile money payment number.">
+                <input
+                  value={landlordPhone}
+                  onChange={(e) => {
+                    setLandlordPhone(e.target.value);
+                    flash();
+                  }}
+                  className={fieldCls}
+                />
               </Row>
               <Row label="Your properties" desc="Switch which property the dashboard is scoped to, or add another one you manage.">
                 <div className="w-full max-w-xs space-y-2">
@@ -314,7 +360,7 @@ export default function Settings() {
             </>
           )}
 
-          {tab === "Billing" && (
+          {tab === "Billing & invoicing" && (
             <>
               <Row label="Billing period">
                 <input value={billingPeriod} onChange={(e) => { setBillingPeriod(e.target.value); flash(); }} className={fieldCls} />
@@ -500,6 +546,82 @@ export default function Settings() {
                       className={fieldCls}
                     />
                   </Row>
+
+                  <div className="py-5">
+                    <p className="text-sm font-medium text-ink">Payment methods</p>
+                    <p className="mt-1 max-w-sm text-xs text-muted">Shown to tenants on invoices, in the "How to pay" section.</p>
+
+                    <div className="mt-3 max-w-md space-y-3">
+                      {(
+                        [
+                          { type: "mtn", checkboxLabel: "MTN MoMo" },
+                          { type: "airtel", checkboxLabel: "Airtel Money" },
+                          { type: "cash", checkboxLabel: "Cash" },
+                          { type: "bank", checkboxLabel: "Bank transfer" },
+                          { type: "other", checkboxLabel: "Other (Mukuru, Zamtel Kwacha, etc.)" },
+                        ] as const
+                      ).map(({ type, checkboxLabel }) => {
+                        const method = paymentMethods.find((m) => m.type === type);
+                        const enabled = !!method;
+                        return (
+                          <div key={type} className="rounded-lg border border-line p-3">
+                            <label className="flex cursor-pointer items-center gap-2.5 text-sm font-medium text-ink">
+                              <input
+                                type="checkbox"
+                                checked={enabled}
+                                onChange={(e) => togglePaymentMethod(type, e.target.checked)}
+                                className="h-4 w-4 rounded border-line accent-brand"
+                              />
+                              {checkboxLabel}
+                            </label>
+
+                            {enabled && (type === "mtn" || type === "airtel") && (
+                              <input
+                                value={method?.number ?? ""}
+                                onChange={(e) => updatePaymentMethod(type, { number: e.target.value })}
+                                placeholder="Phone number"
+                                className="mt-2.5 w-full rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-brand"
+                              />
+                            )}
+
+                            {enabled && type === "bank" && (
+                              <div className="mt-2.5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                <input
+                                  value={method?.bankName ?? ""}
+                                  onChange={(e) => updatePaymentMethod(type, { bankName: e.target.value })}
+                                  placeholder="Bank name"
+                                  className="w-full rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-brand"
+                                />
+                                <input
+                                  value={method?.accountNumber ?? ""}
+                                  onChange={(e) => updatePaymentMethod(type, { accountNumber: e.target.value })}
+                                  placeholder="Account number"
+                                  className="w-full rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-brand"
+                                />
+                              </div>
+                            )}
+
+                            {enabled && type === "other" && (
+                              <div className="mt-2.5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                <input
+                                  value={method?.label ?? ""}
+                                  onChange={(e) => updatePaymentMethod(type, { label: e.target.value })}
+                                  placeholder="Platform name (e.g. Mukuru)"
+                                  className="w-full rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-brand"
+                                />
+                                <input
+                                  value={method?.number ?? ""}
+                                  onChange={(e) => updatePaymentMethod(type, { number: e.target.value })}
+                                  placeholder="Account / number"
+                                  className="w-full rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-brand"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </>
               ) : (
                 <AnimatePresence mode="wait">

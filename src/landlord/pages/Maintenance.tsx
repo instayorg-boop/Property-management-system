@@ -331,7 +331,50 @@ export default function Maintenance() {
         </div>
 
         {/* Request table */}
-        <div className="overflow-x-auto rounded-lg border border-line">
+        <div className="rounded-lg border border-line">
+          {/* Mobile: cards — an HTML table doesn't have room to breathe on a phone screen */}
+          <div className="divide-y divide-line md:hidden">
+            {pageRows.map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => openRequest(r)}
+                className="flex w-full items-start justify-between gap-3 p-4 text-left transition-colors active:bg-mist"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    {r.unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />}
+                    <p className="truncate text-sm font-medium text-ink">{r.location}</p>
+                  </div>
+                  <p className="mt-0.5 truncate text-xs text-muted">{r.description}</p>
+                  <p className="mt-1.5 text-[11px] text-muted">
+                    {r.tenant} · {formatDate(r.submittedAt)}
+                  </p>
+                </div>
+                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${statusStyle[r.status]}`}>
+                  {statusLabel[r.status]}
+                </span>
+              </button>
+            ))}
+            {pageRows.length === 0 && (
+              <div className="flex flex-col items-center justify-center gap-3 px-4 py-10 text-center">
+                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
+                  <Wrench size={22} weight="duotone" />
+                </span>
+                <div>
+                  <p className="text-xs font-semibold text-ink">
+                    {reports.length === 0 ? "No maintenance requests yet" : "No requests match this filter"}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted">
+                    {reports.length === 0 ? "Requests tenants submit will show up here." : "Try a different search or status filter."}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Desktop / tablet: table */}
+          <div className="hidden overflow-x-auto md:block">
           <table className="w-full table-fixed text-left text-sm">
             <colgroup>
               <col className="w-32" />
@@ -407,6 +450,7 @@ export default function Maintenance() {
               )}
             </tbody>
           </table>
+          </div>
 
           {filtered.length > 0 && (
             <Pagination

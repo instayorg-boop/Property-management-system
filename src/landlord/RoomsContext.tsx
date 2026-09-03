@@ -84,7 +84,7 @@ const RoomsContext = createContext<RoomsContextValue | null>(null);
 
 // Temporary switch for previewing empty states across the app — flip back to `false`
 // once the preview is done.
-const DEMO_EMPTY_STATE = true;
+const DEMO_EMPTY_STATE = false;
 
 export function RoomsProvider({ children }: { children: ReactNode }) {
   const [rooms, setRooms] = useState<RoomRecord[]>(DEMO_EMPTY_STATE ? [] : initialRooms);

@@ -39,7 +39,12 @@ export default function TenantPaymentDrawer({
         {tenant.ledger.length === 0 && <p className="px-3.5 py-4 text-sm text-muted">No payments recorded yet.</p>}
         {tenant.ledger.map((row, i) => (
           <div key={`${row.label}-${i}`} className="flex items-center justify-between px-3.5 py-2.5">
-            <span className="text-sm text-ink">{row.label}</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm text-ink">{row.label}</span>
+              {row.label.toLowerCase().includes("pro-rata") && (
+                <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-600">Pro-rata</span>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted">
                 {row.paidAmount !== undefined ? `${formatCurrency(row.paidAmount)} of ${formatCurrency(row.amount)}` : formatCurrency(row.amount)}
