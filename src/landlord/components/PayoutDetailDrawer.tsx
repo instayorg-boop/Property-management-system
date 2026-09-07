@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import SlideOver from "./SlideOver";
+import { useSettings } from "../SettingsContext";
 
 export type UpcomingPayout = {
   amount: string;
@@ -9,9 +10,6 @@ export type UpcomingPayout = {
   schedule: string;
 };
 
-/** Placeholder until Lenco connection state comes from the API. */
-const lencoConnected = true;
-
 export default function PayoutDetailDrawer({
   payout,
   onClose,
@@ -19,6 +17,7 @@ export default function PayoutDetailDrawer({
   payout: UpcomingPayout;
   onClose: () => void;
 }) {
+  const { lencoConnected } = useSettings();
   const settingsTo = "/settings/online-payments";
 
   return (

@@ -1,5 +1,6 @@
 import type { Tenant } from "./TenantsContext";
 import type { Invoice } from "./InvoicesContext";
+import { supabase } from "../lib/supabaseClient";
 
 export function slugify(name: string) {
   return name.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
@@ -95,11 +96,26 @@ export function isDueSoonOrPast(dueDate: Date): boolean {
   return daysUntilDue <= 7;
 }
 
-/** Placeholder until a real WhatsApp Business API / backend integration exists — simulates the
- * network round trip so the UI's async send flow (loading state, "Invoices sent to X tenants")
- * behaves the way it will once real delivery is wired up. */
-export async function sendInvoiceViaWhatsApp(_tenant: Tenant, _invoice: Invoice): Promise<boolean> {
-  await new Promise((resolve) => setTimeout(resolve, 120));
+/** Calls the `send-whatsapp` edge function (see supabase/functions/send-whatsapp) to deliver an
+ * invoice over WhatsApp. That function is currently a placeholder — no WhatsApp Business account
+ * is connected yet, so it accepts the request and no-ops instead of actually sending — but the
+ * plumbing here is real, so the UI's send flow ("Invoices sent to X tenants") already reflects
+ * what will happen once WhatsApp is wired up, with no further changes needed on this end. */
+export async function sendInvoiceViaWhatsApp(tenant: Tenant, invoice: Invoice, propertyName: string): Promise<boolean> {
+  const { error } = await supabase.functions.invoke("send-whatsapp", {
+    body: {
+      phone: tenant.phone,
+      tenantName: tenant.name,
+      propertyName,
+      invoiceNumber: invoice.invoiceNumber,
+      total: invoice.amount,
+      dueDate: invoice.dueAt,
+    },
+  });
+  if (error) {
+    console.error("Failed to send invoice via WhatsApp", error);
+    return false;
+  }
   return true;
 }
 

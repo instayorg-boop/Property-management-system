@@ -37,6 +37,24 @@ body {
   background-size: 18px 18px;
 }
 
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+.skeleton {
+  background-color: var(--color-line);
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--color-line) 100%, transparent) 0%,
+    color-mix(in srgb, var(--color-paper) 60%, var(--color-line) 40%) 50%,
+    color-mix(in srgb, var(--color-line) 100%, transparent) 100%
+  );
+  background-size: 800px 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+  opacity: 0.6;
+}
+
 /* Scoped dark theme for the landlord dashboard only — never applied to the public site. */
 .theme-dark {
   --color-ink: #ececec;

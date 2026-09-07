@@ -18,8 +18,8 @@ export async function getOrCreateSettings(propertyId: string): Promise<SettingsR
       property_id: propertyId,
       invoices_on: false,
       collection_target_pct: 90,
-      landlord_name: "Bernard Mwansa",
-      landlord_phone: "0977 000 000",
+      landlord_name: "",
+      landlord_phone: "",
       payment_methods: [{ type: "mtn", number: "0977 000 111" }, { type: "cash" }],
       management_fee_rate: 0.1,
       billing_period: "Monthly",
@@ -31,6 +31,10 @@ export async function getOrCreateSettings(propertyId: string): Promise<SettingsR
       contact_order: "student",
       napsa_insurable_earnings_ceiling: 37236,
       minimum_wage_reference: 1978.99,
+      payout_day: "Friday",
+      account_email: "",
+      subscription_plan: "Pro",
+      subscription_renews_at: null,
     })
     .select()
     .single();

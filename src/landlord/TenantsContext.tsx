@@ -28,6 +28,8 @@ export function formatCurrency(n: number) {
 
 type TenantsContextValue = {
   tenants: Tenant[];
+  /** False until the initial Supabase fetch resolves — pages use this to show skeletons instead of an empty state. */
+  isReady: boolean;
   addTenant: (t: Omit<Tenant, "id">) => Tenant;
   updateTenant: (id: string, patch: Partial<Omit<Tenant, "id">>) => void;
   deleteTenant: (id: string) => void;
@@ -43,13 +45,17 @@ const TenantsContext = createContext<TenantsContextValue | null>(null);
 export function TenantsProvider({ children }: { children: ReactNode }) {
   const { propertyId, propertyName } = useSettings();
   const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
     if (!propertyId) return;
     let cancelled = false;
     (async () => {
       const rows = await listTenants(propertyId, propertyName);
-      if (!cancelled) setTenants(rows);
+      if (!cancelled) {
+        setTenants(rows);
+        setIsReady(true);
+      }
     })();
     return () => {
       cancelled = true;
@@ -68,8 +74,13 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
   const updateTenant = (id: string, patch: Partial<Omit<Tenant, "id">>) => {
     setTenants((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
     if (propertyId) {
-      const { ledger: _ledger, ...rowPatch } = patch;
-      void updateTenantRow(propertyId, id, rowPatch).catch((e) => console.error("Failed to update tenant", e));
+      const { ledger, ...rowPatch } = patch;
+      const writes: Promise<void>[] = [updateTenantRow(propertyId, id, rowPatch)];
+      // Every caller that passes `ledger` here does so to prepend exactly one new row (there's no
+      // "replace the whole ledger" call site) — persist that one row the same way logPayment does,
+      // instead of silently dropping it like this used to.
+      if (ledger && ledger.length > 0) writes.push(addLedgerEntry(id, ledger[0]));
+      void Promise.all(writes).catch((e) => console.error("Failed to update tenant", e));
     }
   };
 
@@ -118,7 +129,15 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
           owedAmount: 0,
           onTimeCount: t.status === "overdue" || t.status === "unpaid" ? t.onTimeCount : t.onTimeCount + 1,
           totalMonthsCount: t.totalMonthsCount + 1,
-          ledger: [{ label: label ?? "August 2026 rent", amount, status: "paid" }, ...t.ledger],
+          ledger: [
+            {
+              label: label ?? `${new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })} rent`,
+              amount,
+              status: "paid",
+              createdAt: new Date().toISOString(),
+            },
+            ...t.ledger,
+          ],
         };
         updated = next;
         return next;
@@ -140,7 +159,7 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
 
   return (
     <TenantsContext.Provider
-      value={{ tenants, addTenant, updateTenant, deleteTenant, moveOutTenant, reactivateTenant, logPayment }}
+      value={{ tenants, isReady, addTenant, updateTenant, deleteTenant, moveOutTenant, reactivateTenant, logPayment }}
     >
       {children}
     </TenantsContext.Provider>

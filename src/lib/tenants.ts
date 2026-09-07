@@ -9,6 +9,9 @@ export type LedgerRow = {
   amount: number;
   paidAmount?: number;
   status?: PaymentStatus;
+  /** When this entry was recorded — powers the Dashboard's monthly collections chart / recent
+   * payments list. Optional so client-constructed rows that haven't set it don't break typing. */
+  createdAt?: string;
 };
 
 export type Tenant = {
@@ -138,7 +141,10 @@ function toTenant(row: TenantRow, propertyName: string, ledger: LedgerRow[]): Te
   };
 }
 
-type LedgerEntryRow = Pick<Tables<"ledger_entries">, "tenant_id" | "label" | "amount" | "paid_amount" | "status">;
+type LedgerEntryRow = Pick<
+  Tables<"ledger_entries">,
+  "tenant_id" | "label" | "amount" | "paid_amount" | "status" | "created_at"
+>;
 
 function toLedgerRow(row: LedgerEntryRow): LedgerRow {
   return {
@@ -146,6 +152,7 @@ function toLedgerRow(row: LedgerEntryRow): LedgerRow {
     amount: row.amount,
     paidAmount: row.paid_amount ?? undefined,
     status: (row.status as PaymentStatus) ?? undefined,
+    createdAt: row.created_at,
   };
 }
 
@@ -162,7 +169,7 @@ export async function listTenants(propertyId: string, propertyName: string): Pro
   const tenantIds = tenantRows.map((r) => r.id);
   const { data: ledgerRows, error: ledgerError } = await supabase
     .from("ledger_entries")
-    .select("tenant_id, label, amount, paid_amount, status")
+    .select("tenant_id, label, amount, paid_amount, status, created_at")
     .in("tenant_id", tenantIds)
     .order("created_at", { ascending: false });
   if (ledgerError) throw ledgerError;

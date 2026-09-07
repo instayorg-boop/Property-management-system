@@ -9,8 +9,12 @@ import ExpenseFormDrawer from "../components/ExpenseFormDrawer";
 import PayoutDetailDrawer, { type UpcomingPayout } from "../components/PayoutDetailDrawer";
 import Select, { type SelectOption } from "../components/Select";
 import SlideOver from "../components/SlideOver";
-import { useTenants, type Tenant } from "../TenantsContext";
+import { Skeleton } from "../components/Skeleton";
+import { useTenants, useCollectedRent, formatCurrency, type Tenant } from "../TenantsContext";
 import { useMaintenance } from "../MaintenanceContext";
+import { useRoomsView } from "../RoomsContext";
+import { useSettings } from "../SettingsContext";
+import { useExpenses } from "../ExpensesContext";
 import {
   ArrowRight as ArrowIcon,
   Wrench as WrenchIcon,
@@ -32,10 +36,9 @@ const quickActions: { label: string; action: QuickAction; Icon: typeof CashIcon 
   { label: "Add tenant", action: "add-tenant", Icon: UserPlusIcon },
 ];
 
-function Greeting({ onAction }: { onAction: (action: QuickAction) => void }) {
+function Greeting({ name, onAction }: { name: string; onAction: (action: QuickAction) => void }) {
   const hour = new Date().getHours();
   const part = hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening";
-  const name = "Bernard";
 
   const today = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
   const time = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
@@ -46,7 +49,8 @@ function Greeting({ onAction }: { onAction: (action: QuickAction) => void }) {
     <div className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-4 bg-paper px-4 pt-5 pb-6 sm:px-8">
       <div>
         <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
-          Good {part}, {name}
+          Good {part}
+          {name ? `, ${name}` : ""}
         </h1>
         <p className="mt-0.5 text-sm text-muted">
           {today} · {time}
@@ -112,23 +116,16 @@ function Greeting({ onAction }: { onAction: (action: QuickAction) => void }) {
   );
 }
 
-const briefingItems = [
-  { label: "B. Phiri - Room 08", detail: "12 days overdue", tone: "red" as const, to: "/rent", tenantName: "B. Phiri" },
-  { label: "Maintenance - Room 19", detail: "Unread", tone: "amber" as const, to: "/maintenance", reportId: "m2" },
-  { label: "A. Mwansa - Room 12", detail: "Lease ends in 9 days", tone: "amber" as const, to: "/tenants", tenantName: "A. Mwansa" },
-];
-
 const toneDot = { red: "bg-red-400", amber: "bg-amber-400" };
 
 // How many briefing items show inline before the rest move behind "View all" — keeps the card
 // from growing to fit an unbounded list.
 const BRIEFING_VISIBLE_LIMIT = 3;
 
-type BriefingItem = (typeof briefingItems)[number];
+type BriefingItem = { label: string; detail: string; tone: "red" | "amber"; to: string; tenantId?: string; reportId?: string };
 
-function BriefingRow({ item, tenants }: { item: BriefingItem; tenants: Tenant[] }) {
-  const tenant = item.tenantName ? tenants.find((t) => t.name === item.tenantName) : undefined;
-  const state = item.reportId ? { openReportId: item.reportId } : tenant ? { openTenantId: tenant.id } : undefined;
+function BriefingRow({ item }: { item: BriefingItem }) {
+  const state = item.reportId ? { openReportId: item.reportId } : item.tenantId ? { openTenantId: item.tenantId } : undefined;
   return (
     <Link
       to={item.to}
@@ -154,67 +151,114 @@ function timeAgo(iso: string) {
   return `${days}d ago`;
 }
 
-const monthlyCollections = [
-  { label: "Sep", amount: 138000 },
-  { label: "Oct", amount: 121000 },
-  { label: "Nov", amount: 156000 },
-  { label: "Dec", amount: 173000 },
-  { label: "Jan", amount: 109000 },
-  { label: "Feb", amount: 132000 },
-  { label: "Mar", amount: 129000 },
-  { label: "Apr", amount: 162000 },
-  { label: "May", amount: 114000 },
-  { label: "Jun", amount: 187000 },
-  { label: "Jul", amount: 148000 },
-  { label: "Aug", amount: 184200 },
-];
-
 const collectionRangeOptions: SelectOption[] = [
   { value: "3", label: "Last 3 months" },
   { value: "6", label: "Last 6 months" },
   { value: "12", label: "Last 12 months" },
 ];
 
-const recentPayments = [
-  { tenant: "A. Mwansa", room: "Room 12", status: "Paid", date: "26 Aug 2026", amount: "+K1,200" },
-  { tenant: "D. Zulu", room: "Room 05", status: "Paid", date: "26 Aug 2026", amount: "+K1,000" },
-  { tenant: "B. Phiri", room: "Room 08", status: "Overdue", date: "14 Aug 2026", amount: "K950" },
-  { tenant: "F. Chileshe", room: "Room 19", status: "Paid", date: "23 Aug 2026", amount: "+K950" },
-  { tenant: "C. Banda", room: "Room 03", status: "Partial", date: "20 Aug 2026", amount: "+K700" },
-];
-
 const statusStyle: Record<string, string> = {
   Paid: "bg-emerald-50 text-emerald-600",
   Overdue: "bg-red-50 text-red-600",
   Partial: "bg-amber-50 text-amber-600",
+  Unpaid: "bg-slate-100 text-slate-600",
 };
 
-const upcomingPayout: UpcomingPayout = {
-  amount: "K42,300",
-  date: "Friday · 29 Aug 2026",
-  status: "Payment is on its way",
-  bankAccount: "Zanaco · •••• 4821",
-  schedule: "Every Friday",
-};
+const ledgerStatusLabel: Record<string, string> = { paid: "Paid", overdue: "Overdue", partial: "Partial", unpaid: "Unpaid" };
 
 type PaymentStep = "search" | "ledger" | "confirm";
 
-// Temporary switch for previewing the dashboard's empty states — clears every mock/derived
-// data source on the page without touching the underlying data providers.
-const DEMO_EMPTY_STATE = false;
-
 export default function Dashboard() {
-  const { tenants: tenantsFromContext, logPayment } = useTenants();
-  const { reports: reportsFromContext } = useMaintenance();
-  const tenants = DEMO_EMPTY_STATE ? [] : tenantsFromContext;
-  const reports = DEMO_EMPTY_STATE ? [] : reportsFromContext;
-  const collections = DEMO_EMPTY_STATE ? [] : monthlyCollections;
-  const payments = DEMO_EMPTY_STATE ? [] : recentPayments;
-  const briefing = DEMO_EMPTY_STATE ? [] : briefingItems;
-  const payout = DEMO_EMPTY_STATE ? null : upcomingPayout;
-  const totalCollected = DEMO_EMPTY_STATE ? 0 : 184200;
-  const roomsOccupied = DEMO_EMPTY_STATE ? { occupied: 0, total: 0 } : { occupied: 70, total: 76 };
+  const { tenants, logPayment, isReady: tenantsReady } = useTenants();
+  const { reports } = useMaintenance();
+  const rooms = useRoomsView();
+  const { landlordName, managementFeeRate, lencoConnected, bankName, accountNumber, isReady: settingsReady } = useSettings();
+  const { expenses } = useExpenses();
+  const totalCollected = useCollectedRent();
   const navigate = useNavigate();
+  const dataReady = tenantsReady && settingsReady;
+
+  const roomsOccupied = useMemo(
+    () => ({ occupied: rooms.filter((r) => r.status === "occupied").length, total: rooms.length }),
+    [rooms]
+  );
+
+  // Last 12 real calendar months, built from ledger entry timestamps across every tenant —
+  // replaces what used to be a hardcoded 12-month series.
+  const collections = useMemo(() => {
+    const now = new Date();
+    const months = Array.from({ length: 12 }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - (11 - i), 1);
+      return { key: `${d.getFullYear()}-${d.getMonth()}`, label: d.toLocaleDateString("en-US", { month: "short" }), amount: 0 };
+    });
+    const byKey = new Map(months.map((m) => [m.key, m]));
+    for (const t of tenants) {
+      for (const row of t.ledger) {
+        if (!row.createdAt || (row.status !== "paid" && row.status !== "partial")) continue;
+        const created = new Date(row.createdAt);
+        const bucket = byKey.get(`${created.getFullYear()}-${created.getMonth()}`);
+        if (bucket) bucket.amount += row.status === "partial" ? (row.paidAmount ?? 0) : row.amount;
+      }
+    }
+    return months.map(({ label, amount }) => ({ label, amount }));
+  }, [tenants]);
+
+  // Every ledger entry across every tenant, newest first — replaces a hardcoded "recent payments" list.
+  const payments = useMemo(() => {
+    const rows: { tenantId: string; tenant: string; room: string; status: string; date: string; amount: string; createdAt: string }[] = [];
+    for (const t of tenants) {
+      for (const row of t.ledger) {
+        if (!row.createdAt) continue;
+        const collected = row.status === "partial" ? (row.paidAmount ?? 0) : row.amount;
+        rows.push({
+          tenantId: t.id,
+          tenant: t.name,
+          room: t.room,
+          status: ledgerStatusLabel[row.status ?? "paid"] ?? "Paid",
+          date: new Date(row.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
+          amount: `${row.status === "paid" || row.status === "partial" ? "+" : ""}${formatCurrency(collected)}`,
+          createdAt: row.createdAt,
+        });
+      }
+    }
+    return rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 5);
+  }, [tenants]);
+
+  // Overdue/unpaid tenants and unread maintenance reports, worst first — replaces a hardcoded
+  // briefing list. (No "lease ending soon" category: there's no lease-end date in the data model.)
+  const briefing = useMemo<BriefingItem[]>(() => {
+    const items: BriefingItem[] = tenants
+      .filter((t) => t.active && (t.status === "overdue" || t.status === "unpaid"))
+      .sort((a, b) => (b.daysOverdue ?? 0) - (a.daysOverdue ?? 0))
+      .map((t) => ({
+        label: `${t.name} - ${t.room}`,
+        detail: t.daysOverdue ? `${t.daysOverdue} days overdue` : "Unpaid",
+        tone: "red",
+        to: "/rent",
+        tenantId: t.id,
+      }));
+    for (const r of reports.filter((r) => r.unread)) {
+      items.push({ label: `Maintenance - ${r.location}`, detail: "Unread", tone: "amber", to: "/maintenance", reportId: r.id });
+    }
+    return items;
+  }, [tenants, reports]);
+
+  // Same net-to-owner math as the Owner Payout Statement report: gross rent collected this month,
+  // minus the management fee, minus this month's logged expenses.
+  const payout = useMemo<UpcomingPayout | null>(() => {
+    if (totalCollected <= 0) return null;
+    const now = new Date();
+    const periodKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const expensesTotal = expenses.filter((e) => e.date.startsWith(periodKey)).reduce((sum, e) => sum + e.amount, 0);
+    const netToOwner = totalCollected - totalCollected * managementFeeRate - expensesTotal;
+    return {
+      amount: formatCurrency(netToOwner),
+      date: `As of ${now.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`,
+      status: lencoConnected ? "Ready to withdraw" : "Connect a bank account to receive this",
+      bankAccount: lencoConnected && bankName ? `${bankName}${accountNumber ? ` · •••• ${accountNumber.slice(-4)}` : ""}` : "Not connected",
+      schedule: lencoConnected ? "Automatic via Lenco" : "Not set up yet",
+    };
+  }, [totalCollected, expenses, managementFeeRate, lencoConnected, bankName, accountNumber]);
 
   const [paymentStep, setPaymentStep] = useState<PaymentStep | null>(null);
   const [payingTenant, setPayingTenant] = useState<Tenant | null>(null);
@@ -241,32 +285,55 @@ export default function Dashboard() {
 
   return (
     <>
-      <Greeting onAction={handleAction} />
+      <Greeting name={landlordName} onAction={handleAction} />
 
       <div className="grid grid-cols-1 gap-4 px-4 sm:px-8 pb-10 lg:grid-cols-3">
         {/* Left / main column */}
         <div className="space-y-4 lg:col-span-2">
-          {/* Stat cards */}
+          {/* Stat cards — card chrome renders immediately; only the figures inside shimmer while loading. */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div className="rounded-lg border border-line bg-paper p-5">
               <p className="text-xs text-muted">Total collected</p>
-              <p className="mt-3 font-display text-2xl font-semibold text-ink">K{totalCollected.toLocaleString()}</p>
-              <p className="mt-1 text-[11px] text-muted">
-                {totalCollected > 0 ? "+6% compared to last month" : "No payments collected yet"}
-              </p>
+              {!dataReady ? (
+                <>
+                  <Skeleton className="mt-3 h-7 w-28" />
+                  <Skeleton className="mt-2 h-3 w-32" />
+                </>
+              ) : (
+                <>
+                  <p className="mt-3 font-display text-2xl font-semibold text-ink">K{totalCollected.toLocaleString()}</p>
+                  <p className="mt-1 text-[11px] text-muted">
+                    {totalCollected > 0 ? "Collected this month" : "No payments collected yet"}
+                  </p>
+                </>
+              )}
             </div>
-            <div className={`rounded-lg p-5 ${outstanding.total > 0 ? "bg-red-50" : "border border-line bg-paper"}`}>
-              <p className={`text-xs ${outstanding.total > 0 ? "text-red-600/70" : "text-muted"}`}>Outstanding balance</p>
-              <p className={`mt-3 font-display text-2xl font-semibold ${outstanding.total > 0 ? "text-red-600" : "text-ink"}`}>
-                K{outstanding.total.toLocaleString()}
-              </p>
-              <p className={`mt-1 text-[11px] ${outstanding.total > 0 ? "text-red-600/70" : "text-muted"}`}>
-                {outstanding.count} tenant{outstanding.count === 1 ? "" : "s"} behind on rent
-              </p>
+            <div className={`rounded-lg p-5 ${dataReady && outstanding.total > 0 ? "bg-red-50" : "border border-line bg-paper"}`}>
+              <p className={`text-xs ${dataReady && outstanding.total > 0 ? "text-red-600/70" : "text-muted"}`}>Outstanding balance</p>
+              {!dataReady ? (
+                <>
+                  <Skeleton className="mt-3 h-7 w-28" />
+                  <Skeleton className="mt-2 h-3 w-32" />
+                </>
+              ) : (
+                <>
+                  <p className={`mt-3 font-display text-2xl font-semibold ${outstanding.total > 0 ? "text-red-600" : "text-ink"}`}>
+                    K{outstanding.total.toLocaleString()}
+                  </p>
+                  <p className={`mt-1 text-[11px] ${outstanding.total > 0 ? "text-red-600/70" : "text-muted"}`}>
+                    {outstanding.count} tenant{outstanding.count === 1 ? "" : "s"} behind on rent
+                  </p>
+                </>
+              )}
             </div>
             <div className="rounded-lg border border-line bg-paper p-5">
               <p className="text-xs text-muted">Rooms occupied</p>
-              {roomsOccupied.total > 0 ? (
+              {!dataReady ? (
+                <>
+                  <Skeleton className="mt-3 h-7 w-20" />
+                  <Skeleton className="mt-2 h-3 w-24" />
+                </>
+              ) : roomsOccupied.total > 0 ? (
                 <>
                   <p className="mt-3 font-display text-2xl font-semibold text-ink">
                     {roomsOccupied.occupied} / {roomsOccupied.total}
@@ -299,7 +366,13 @@ export default function Dashboard() {
               />
             </div>
 
-            {collections.length === 0 ? (
+            {!dataReady ? (
+              <div className="mt-6 flex h-48 items-end gap-3 border-l border-line pl-3">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="w-full" style={{ height: `${30 + ((i * 17) % 60)}%` }} />
+                ))}
+              </div>
+            ) : collections.length === 0 ? (
               <div className="mt-6 flex h-48 flex-col items-center justify-center gap-3 text-center">
                 <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
                   <ChartBarIcon size={22} weight="duotone" />
@@ -376,7 +449,20 @@ export default function Dashboard() {
               </Link>
             </div>
 
-            {payments.length === 0 ? (
+            {!dataReady ? (
+              <div className="mt-4 space-y-3">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-2.5">
+                    <Skeleton className="h-7 w-7 shrink-0 rounded-full" />
+                    <div className="flex-1 space-y-1.5">
+                      <Skeleton className="h-3 w-1/3" />
+                      <Skeleton className="h-2.5 w-1/5" />
+                    </div>
+                    <Skeleton className="h-3 w-14" />
+                  </div>
+                ))}
+              </div>
+            ) : payments.length === 0 ? (
               <div className="mt-4 flex flex-col items-center justify-center gap-3 py-10 text-center">
                 <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
                   <ReceiptIcon size={22} weight="duotone" />
@@ -398,13 +484,12 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {payments.map((p) => {
-                  const tenant = tenants.find((t) => t.name === p.tenant);
+                {payments.map((p, i) => {
                   return (
                     <tr
-                      key={p.tenant}
-                      onClick={() => tenant && navigate("/rent", { state: { openTenantId: tenant.id } })}
-                      className={`border-t border-line ${tenant ? "cursor-pointer transition-colors hover:bg-mist" : ""}`}
+                      key={`${p.tenantId}-${p.createdAt}-${i}`}
+                      onClick={() => navigate("/rent", { state: { openTenantId: p.tenantId } })}
+                      className="cursor-pointer border-t border-line transition-colors hover:bg-mist"
                     >
                       <td className="py-2.5">
                         <div className="flex items-center gap-2.5">
@@ -449,7 +534,13 @@ export default function Dashboard() {
               <span className="inline-flex items-center rounded-full bg-brand px-2.5 py-1 text-[11px] font-semibold text-paper">
                 Today&apos;s briefing
               </span>
-              {briefing.length === 0 ? (
+              {!dataReady ? (
+                <div className="mt-4 space-y-2">
+                  <Skeleton className="h-4 w-3/4" />
+                  <Skeleton className="h-9 w-full rounded-lg" />
+                  <Skeleton className="h-9 w-full rounded-lg" />
+                </div>
+              ) : briefing.length === 0 ? (
                 <>
                   <p className="mt-3 font-display text-lg font-semibold tracking-tight text-ink">
                     Nothing needs your attention
@@ -467,7 +558,7 @@ export default function Dashboard() {
 
               <div className="mt-4 space-y-2">
                 {briefing.slice(0, BRIEFING_VISIBLE_LIMIT).map((item) => (
-                  <BriefingRow key={item.label} item={item} tenants={tenants} />
+                  <BriefingRow key={item.label} item={item} />
                 ))}
               </div>
 
@@ -487,7 +578,14 @@ export default function Dashboard() {
           {/* Upcoming payout */}
           <div className="rounded-lg border border-line bg-paper p-5">
             <p className="text-[11px] font-medium text-muted uppercase">Your next payout</p>
-            {payout ? (
+            {!dataReady ? (
+              <div className="mt-3 space-y-2">
+                <Skeleton className="h-4 w-2/3" />
+                <Skeleton className="h-3 w-full" />
+                <Skeleton className="h-3 w-1/2" />
+                <Skeleton className="mt-2 h-8 w-full rounded-lg" />
+              </div>
+            ) : payout ? (
               <>
                 <p className="mt-2 font-display text-base font-semibold text-ink">{payout.status}</p>
                 <p className="mt-1 text-xs text-muted">{payout.amount} will be paid into your bank account.</p>
@@ -607,7 +705,7 @@ export default function Dashboard() {
 
         {addingTenant && <TenantFormDrawer editing={null} onClose={() => setAddingTenant(false)} />}
         {addingExpense && <ExpenseFormDrawer editing={null} onClose={() => setAddingExpense(false)} />}
-        {payoutOpen && <PayoutDetailDrawer payout={upcomingPayout} onClose={() => setPayoutOpen(false)} />}
+        {payoutOpen && payout && <PayoutDetailDrawer payout={payout} onClose={() => setPayoutOpen(false)} />}
         {briefingDrawerOpen && (
           <SlideOver
             onClose={() => setBriefingDrawerOpen(false)}
@@ -616,7 +714,7 @@ export default function Dashboard() {
           >
             <div className="space-y-2">
               {briefing.map((item) => (
-                <BriefingRow key={item.label} item={item} tenants={tenants} />
+                <BriefingRow key={item.label} item={item} />
               ))}
             </div>
           </SlideOver>

@@ -77,16 +77,6 @@ function Row({ label, desc, children }: { label: string; desc?: string; children
   );
 }
 
-function Input({ defaultValue, type = "text" }: { defaultValue?: string; type?: string }) {
-  return (
-    <input
-      type={type}
-      defaultValue={defaultValue}
-      className="w-full max-w-xs rounded-lg border border-line bg-paper px-3 py-2 text-sm outline-none focus:border-brand"
-    />
-  );
-}
-
 const fieldCls = "w-full max-w-xs rounded-lg border border-line bg-paper px-3 py-2 text-sm outline-none focus:border-brand";
 
 const tabs = ["Property", "Billing & invoicing", "Reminders", "Payment link", "Online payments", "Statutory", "Notifications", "Subscription", "Account"] as const;
@@ -175,6 +165,7 @@ export default function Settings() {
     collectionTargetPct, setCollectionTargetPct,
     propertyName, setPropertyName,
     propertyAddress, setPropertyAddress,
+    propertyType, setPropertyType,
     landlordName, setLandlordName,
     landlordPhone, setLandlordPhone,
     paymentMethods, setPaymentMethods,
@@ -192,6 +183,9 @@ export default function Settings() {
     bankName, setBankName,
     accountNumber, setAccountNumber,
     accountHolderName, setAccountHolderName,
+    payoutDay,
+    accountEmail, setAccountEmail,
+    subscriptionPlan, subscriptionRenewsAt,
     napsaInsurableEarningsCeiling, setNapsaInsurableEarningsCeiling,
     minimumWageReference, setMinimumWageReference,
   } = useSettings();
@@ -288,7 +282,15 @@ export default function Settings() {
                 />
               </Row>
               <Row label="Property type">
-                <Input defaultValue="Student accommodation" />
+                <input
+                  value={propertyType}
+                  onChange={(e) => {
+                    setPropertyType(e.target.value);
+                    flash();
+                  }}
+                  placeholder="e.g. Student accommodation"
+                  className={fieldCls}
+                />
               </Row>
               <Row label="Landlord name" desc="Shown on invoices, in the From section.">
                 <input
@@ -522,7 +524,7 @@ export default function Settings() {
                     <span className="text-sm font-medium text-ink">{accountHolderName}</span>
                   </Row>
                   <Row label="Scheduled payout day">
-                    <span className="text-sm font-medium text-ink">Every Friday</span>
+                    <span className="text-sm font-medium text-ink">Every {payoutDay}</span>
                   </Row>
                   <Row label="Payout details">
                     <button
@@ -850,9 +852,16 @@ export default function Settings() {
           )}
 
           {tab === "Subscription" && (
-            <Row label="Current plan" desc="Renews 1 Sep 2026.">
+            <Row
+              label="Current plan"
+              desc={
+                subscriptionRenewsAt
+                  ? `Renews ${new Date(subscriptionRenewsAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}.`
+                  : "No renewal date set."
+              }
+            >
               <div className="flex items-center gap-3">
-                <span className="text-sm font-medium text-ink">Starter</span>
+                <span className="text-sm font-medium text-ink">{subscriptionPlan || "—"}</span>
                 <button type="button" className="rounded-lg bg-brand px-4 py-2 text-xs font-medium text-paper">
                   Upgrade
                 </button>
@@ -863,7 +872,16 @@ export default function Settings() {
           {tab === "Account" && (
             <>
               <Row label="Email address">
-                <Input defaultValue="landlord@kabulongahouse.co.zm" type="email" />
+                <input
+                  value={accountEmail}
+                  onChange={(e) => {
+                    setAccountEmail(e.target.value);
+                    flash();
+                  }}
+                  type="email"
+                  placeholder="you@example.com"
+                  className={fieldCls}
+                />
               </Row>
               <Row label="Password">
                 <button type="button" className="text-sm font-medium text-brand hover:underline">

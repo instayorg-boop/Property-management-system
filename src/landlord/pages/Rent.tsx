@@ -12,6 +12,7 @@ import { useSettings } from "../SettingsContext";
 import { useInvoices } from "../InvoicesContext";
 import { LinkSimple, MagnifyingGlass, Plus, CaretLeft, CaretRight, Receipt } from "@phosphor-icons/react";
 import Pagination, { DEFAULT_PAGE_SIZE } from "../components/Pagination";
+import { Skeleton, SkeletonRow } from "../components/Skeleton";
 
 function LinkIcon() {
   return <LinkSimple size={14} weight="bold" />;
@@ -55,7 +56,7 @@ function rateDiffLabel(t: Tenant, roomTypeRent: Record<string, number>) {
 type PaymentStep = "search" | "ledger" | "confirm";
 
 export default function Rent() {
-  const { tenants, logPayment } = useTenants();
+  const { tenants, logPayment, isReady: tenantsReady } = useTenants();
   const { invoicesOn, collectionTargetPct } = useSettings();
   const { hasSentInvoiceForPeriod } = useInvoices();
   const roomTypeRent = useRoomTypeRent();
@@ -109,9 +110,6 @@ export default function Rent() {
   const currentPage = Math.min(page, pageCount);
   const pageRows = filtered.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
 
-  // TODO(Jackson): mock prior-period benchmark — wire up to real historical collection data once the backend is connected.
-  const LAST_MONTH_RATE = 82;
-
   const stats = useMemo(() => {
     const totalExpected = activeTenants.reduce((sum, t) => sum + t.rentAmount, 0);
 
@@ -128,7 +126,26 @@ export default function Rent() {
     const delinquentCount = activeTenants.filter((t) => t.status === "overdue" || t.status === "unpaid").length;
 
     const collectedPct = totalExpected > 0 ? Math.round((collectedTotal / totalExpected) * 100) : 0;
-    const trend = Math.round((collectedPct - LAST_MONTH_RATE) * 10) / 10;
+
+    // Real prior-month comparison from ledger timestamps — no fabricated benchmark. `null` when
+    // there's nothing recorded last month to compare against, so the UI can just omit the line.
+    const now = new Date();
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    let lastMonthCollected = 0;
+    let hasLastMonthData = false;
+    for (const t of activeTenants) {
+      for (const row of t.ledger) {
+        if (!row.createdAt) continue;
+        const created = new Date(row.createdAt);
+        if (created >= lastMonthStart && created < thisMonthStart && (row.status === "paid" || row.status === "partial")) {
+          hasLastMonthData = true;
+          lastMonthCollected += row.status === "partial" ? (row.paidAmount ?? 0) : row.amount;
+        }
+      }
+    }
+    const trend =
+      hasLastMonthData && lastMonthCollected > 0 ? Math.round(((collectedTotal - lastMonthCollected) / lastMonthCollected) * 1000) / 10 : null;
 
     const outstandingSeverity: "none" | "moderate" | "high" =
       outstanding === 0 ? "none" : delinquentCount >= 3 ? "high" : "moderate";
@@ -242,54 +259,74 @@ export default function Rent() {
           </div>
         </div>
 
-        {/* Stat cards */}
+        {/* Stat cards — card chrome renders immediately; only the figures inside shimmer while loading. */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-lg border border-line bg-paper p-4">
             <p className="text-xs text-muted">Total expected rent</p>
-            <p className="mt-1.5 font-display text-2xl font-semibold tracking-tight text-ink">{formatCurrency(stats.totalExpected)}</p>
+            {!tenantsReady ? (
+              <Skeleton className="mt-2 h-7 w-24" />
+            ) : (
+              <p className="mt-1.5 font-display text-2xl font-semibold tracking-tight text-ink">{formatCurrency(stats.totalExpected)}</p>
+            )}
             <p className="mt-1 text-[11px] text-muted">Target for {month}</p>
           </div>
 
           <div className="rounded-lg border border-line bg-paper p-4">
             <p className="text-xs text-muted">Rent collected</p>
-            <p className="mt-1.5 font-display text-2xl font-semibold tracking-tight text-ink">{formatCurrency(stats.collectedTotal)}</p>
+            {!tenantsReady ? (
+              <Skeleton className="mt-2 h-7 w-24" />
+            ) : (
+              <p className="mt-1.5 font-display text-2xl font-semibold tracking-tight text-ink">{formatCurrency(stats.collectedTotal)}</p>
+            )}
             <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-mist">
               <div
                 className="h-full rounded-full bg-emerald-500 transition-[width]"
-                style={{ width: `${Math.min(100, stats.collectedPct)}%` }}
+                style={{ width: `${tenantsReady ? Math.min(100, stats.collectedPct) : 0}%` }}
               />
             </div>
-            <p className="mt-1 text-[11px] text-muted">{stats.collectedPct}% of target collected</p>
+            <p className="mt-1 text-[11px] text-muted">{tenantsReady ? `${stats.collectedPct}% of target collected` : " "}</p>
           </div>
 
           <div className="rounded-lg border border-line bg-paper p-4">
             <p className="text-xs text-muted">Still owed</p>
-            <p className="mt-1.5 font-display text-2xl font-semibold tracking-tight text-ink">{formatCurrency(stats.outstanding)}</p>
-            <span
-              className={`mt-1.5 inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                stats.outstandingSeverity === "none"
-                  ? "bg-emerald-50 text-emerald-600"
-                  : stats.outstandingSeverity === "moderate"
-                    ? "bg-amber-50 text-amber-600"
-                    : "bg-red-50 text-red-600"
-              }`}
-            >
-              {stats.outstandingSeverity === "none" ? "All paid up" : `${stats.delinquentCount} tenant${stats.delinquentCount === 1 ? "" : "s"} behind on rent`}
-            </span>
+            {!tenantsReady ? (
+              <Skeleton className="mt-2 h-7 w-24" />
+            ) : (
+              <p className="mt-1.5 font-display text-2xl font-semibold tracking-tight text-ink">{formatCurrency(stats.outstanding)}</p>
+            )}
+            {tenantsReady && (
+              <span
+                className={`mt-1.5 inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                  stats.outstandingSeverity === "none"
+                    ? "bg-emerald-50 text-emerald-600"
+                    : stats.outstandingSeverity === "moderate"
+                      ? "bg-amber-50 text-amber-600"
+                      : "bg-red-50 text-red-600"
+                }`}
+              >
+                {stats.outstandingSeverity === "none" ? "All paid up" : `${stats.delinquentCount} tenant${stats.delinquentCount === 1 ? "" : "s"} behind on rent`}
+              </span>
+            )}
           </div>
 
           <div className="rounded-lg border border-line bg-paper p-4">
             <p className="text-xs text-muted">Collection rate</p>
-            <p className="mt-1.5 font-display text-2xl font-semibold tracking-tight text-ink">{stats.collectedPct}%</p>
+            {!tenantsReady ? (
+              <Skeleton className="mt-2 h-7 w-16" />
+            ) : (
+              <p className="mt-1.5 font-display text-2xl font-semibold tracking-tight text-ink">{stats.collectedPct}%</p>
+            )}
             <p className="mt-1 text-[11px] text-muted">Goal is {collectionTargetPct}%</p>
-            <span
-              className={`mt-1 inline-flex items-center gap-1 text-[11px] font-medium ${
-                stats.trend >= 0 ? "text-emerald-600" : "text-red-600"
-              }`}
-            >
-              {stats.trend >= 0 ? "▲" : "▼"} {stats.trend >= 0 ? "+" : ""}
-              {stats.trend}% compared to last month
-            </span>
+            {tenantsReady && stats.trend !== null && (
+              <span
+                className={`mt-1 inline-flex items-center gap-1 text-[11px] font-medium ${
+                  stats.trend >= 0 ? "text-emerald-600" : "text-red-600"
+                }`}
+              >
+                {stats.trend >= 0 ? "▲" : "▼"} {stats.trend >= 0 ? "+" : ""}
+                {stats.trend}% compared to last month
+              </span>
+            )}
           </div>
         </div>
 
@@ -330,7 +367,14 @@ export default function Rent() {
         <div className="rounded-lg border border-line">
           {/* Mobile: cards — an HTML table doesn't have room to breathe on a phone screen */}
           <div className="divide-y divide-line md:hidden">
-            {pageRows.map((t) => {
+            {!tenantsReady &&
+              Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="space-y-2 p-4">
+                  <div className="h-4 w-1/2 rounded skeleton" />
+                  <div className="h-3 w-1/3 rounded skeleton" />
+                </div>
+              ))}
+            {tenantsReady && pageRows.map((t) => {
               const diffLabel = rateDiffLabel(t, roomTypeRent);
               return (
                 <div
@@ -383,7 +427,7 @@ export default function Rent() {
                 </div>
               );
             })}
-            {pageRows.length === 0 && (
+            {tenantsReady && pageRows.length === 0 && (
               <div className="flex flex-col items-center justify-center gap-3 px-4 py-10 text-center">
                 <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
                   <Receipt size={22} weight="duotone" />
@@ -416,7 +460,8 @@ export default function Rent() {
               </tr>
             </thead>
             <tbody>
-              {pageRows.map((t) => {
+              {!tenantsReady && Array.from({ length: 4 }).map((_, i) => <SkeletonRow key={i} cols={6} />)}
+              {tenantsReady && pageRows.map((t) => {
                 const diffLabel = rateDiffLabel(t, roomTypeRent);
                 return (
                   <tr
@@ -467,7 +512,7 @@ export default function Rent() {
                   </tr>
                 );
               })}
-              {pageRows.length === 0 && (
+              {tenantsReady && pageRows.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-4 py-10">
                     <div className="flex flex-col items-center justify-center gap-3 text-center">

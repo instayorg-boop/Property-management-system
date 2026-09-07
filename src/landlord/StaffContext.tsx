@@ -82,6 +82,8 @@ function periodLabelFor(date: Date) {
 
 type StaffContextValue = {
   employees: Employee[];
+  /** False until the initial Supabase fetch resolves. */
+  isReady: boolean;
   addEmployee: (e: Omit<Employee, "id">) => void;
   updateEmployee: (id: string, patch: Partial<Omit<Employee, "id">>) => void;
   /** Soft delete — marks inactive rather than removing, so clock/payroll history stays intact. */
@@ -119,6 +121,7 @@ export function StaffProvider({ children }: { children: ReactNode }) {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [clockEntries, setClockEntries] = useState<ClockEntry[]>([]);
   const [payrollRuns, setPayrollRuns] = useState<PayrollRun[]>([]);
+  const [isReady, setIsReady] = useState(false);
   const [periodOffset, setPeriodOffsetRaw] = useState(0);
   // Draft-cycle workflow state, not yet persisted (see supabase_backend_status memory note): a page
   // refresh mid-cycle-review is an acceptable tradeoff for this phase — the finalized run itself
@@ -138,6 +141,7 @@ export function StaffProvider({ children }: { children: ReactNode }) {
       setEmployees(emps);
       setClockEntries(clocks);
       setPayrollRuns(runs);
+      setIsReady(true);
     })();
     return () => {
       cancelled = true;
@@ -230,6 +234,7 @@ export function StaffProvider({ children }: { children: ReactNode }) {
     <StaffContext.Provider
       value={{
         employees,
+        isReady,
         addEmployee,
         updateEmployee,
         deleteEmployee,

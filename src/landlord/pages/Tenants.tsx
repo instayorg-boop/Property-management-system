@@ -9,6 +9,7 @@ import TenantFormDrawer from "../components/TenantFormDrawer";
 import { useTenants, formatCurrency, type DepositStatus, type PaymentStatus, type Tenant } from "../TenantsContext";
 import { MagnifyingGlass, PencilSimple, Trash, WhatsappLogo, UsersThree } from "@phosphor-icons/react";
 import Pagination, { DEFAULT_PAGE_SIZE } from "../components/Pagination";
+import { Skeleton, SkeletonRow } from "../components/Skeleton";
 
 function SearchIcon() {
   return <MagnifyingGlass size={16} weight="bold" />;
@@ -379,7 +380,7 @@ function ReactivateModal({
 }
 
 export default function Tenants() {
-  const { tenants, deleteTenant, moveOutTenant, reactivateTenant, logPayment } = useTenants();
+  const { tenants, isReady, deleteTenant, moveOutTenant, reactivateTenant, logPayment } = useTenants();
   const location = useLocation();
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
@@ -485,7 +486,14 @@ export default function Tenants() {
 
           {/* Mobile: cards — an HTML table doesn't have room to breathe on a phone screen */}
           <div className="divide-y divide-line md:hidden">
-            {pageRows.map((t) => (
+            {!isReady &&
+              Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="space-y-2 p-4">
+                  <Skeleton className="h-4 w-1/2" />
+                  <Skeleton className="h-3 w-1/3" />
+                </div>
+              ))}
+            {isReady && pageRows.map((t) => (
               <div key={t.id} onClick={() => setSelectedId(t.id)} className="p-4 transition-colors active:bg-mist">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
@@ -531,7 +539,7 @@ export default function Tenants() {
                 </div>
               </div>
             ))}
-            {pageRows.length === 0 && (
+            {isReady && pageRows.length === 0 && (
               <div className="flex flex-col items-center justify-center gap-3 px-4 py-10 text-center">
                 <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
                   <UsersThree size={22} weight="duotone" />
@@ -563,7 +571,8 @@ export default function Tenants() {
                 </tr>
               </thead>
               <tbody>
-                {pageRows.map((t) => (
+                {!isReady && Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={7} />)}
+                {isReady && pageRows.map((t) => (
                   <tr
                     key={t.id}
                     onClick={() => setSelectedId(t.id)}
@@ -607,7 +616,7 @@ export default function Tenants() {
                     </td>
                   </tr>
                 ))}
-                {pageRows.length === 0 && (
+                {isReady && pageRows.length === 0 && (
                   <tr>
                     <td colSpan={7} className="px-4 py-10">
                       <div className="flex flex-col items-center justify-center gap-3 text-center">

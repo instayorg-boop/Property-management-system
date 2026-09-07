@@ -519,6 +519,7 @@ export type Database = {
           created_at: string
           id: string
           name: string
+          property_type: string | null
           slug: string | null
         }
         Insert: {
@@ -526,6 +527,7 @@ export type Database = {
           created_at?: string
           id?: string
           name: string
+          property_type?: string | null
           slug?: string | null
         }
         Update: {
@@ -533,6 +535,7 @@ export type Database = {
           created_at?: string
           id?: string
           name?: string
+          property_type?: string | null
           slug?: string | null
         }
         Relationships: []
@@ -622,6 +625,7 @@ export type Database = {
       }
       settings: {
         Row: {
+          account_email: string | null
           account_holder_name: string | null
           account_number: string | null
           bank_name: string | null
@@ -643,11 +647,15 @@ export type Database = {
           napsa_insurable_earnings_ceiling: number
           notification_prefs: Json
           payment_methods: Json
+          payout_day: string | null
           property_id: string
           reminder_lead_days: number
+          subscription_plan: string | null
+          subscription_renews_at: string | null
           updated_at: string
         }
         Insert: {
+          account_email?: string | null
           account_holder_name?: string | null
           account_number?: string | null
           bank_name?: string | null
@@ -669,11 +677,15 @@ export type Database = {
           napsa_insurable_earnings_ceiling?: number
           notification_prefs?: Json
           payment_methods?: Json
+          payout_day?: string | null
           property_id: string
           reminder_lead_days?: number
+          subscription_plan?: string | null
+          subscription_renews_at?: string | null
           updated_at?: string
         }
         Update: {
+          account_email?: string | null
           account_holder_name?: string | null
           account_number?: string | null
           bank_name?: string | null
@@ -695,8 +707,11 @@ export type Database = {
           napsa_insurable_earnings_ceiling?: number
           notification_prefs?: Json
           payment_methods?: Json
+          payout_day?: string | null
           property_id?: string
           reminder_lead_days?: number
+          subscription_plan?: string | null
+          subscription_renews_at?: string | null
           updated_at?: string
         }
         Relationships: [

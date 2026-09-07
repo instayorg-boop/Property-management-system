@@ -3,11 +3,13 @@ import { AnimatePresence } from "framer-motion";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
 import SlideOver from "../components/SlideOver";
-import { Eye, MagnifyingGlass, Paperclip, Wrench } from "@phosphor-icons/react";
+import { Eye, MagnifyingGlass, Paperclip, Wrench, PencilSimple, Trash } from "@phosphor-icons/react";
 import { useMaintenance, type MaintenanceReport, type MaintenanceStatus } from "../MaintenanceContext";
 import { useTenants } from "../TenantsContext";
 import Pagination, { DEFAULT_PAGE_SIZE } from "../components/Pagination";
+import Modal from "../components/Modal";
 import { uploadPhoto } from "../../lib/storage";
+import { Skeleton, SkeletonRow } from "../components/Skeleton";
 
 function EyeIcon() {
   return <Eye size={14} weight="duotone" />;
@@ -36,18 +38,69 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
+function ConfirmDeleteReportModal({ onClose, onConfirm }: { onClose: () => void; onConfirm: () => void }) {
+  return (
+    <Modal
+      onClose={onClose}
+      maxWidth="max-w-sm"
+      title="Delete this report?"
+      footer={
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist">
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-paper transition-colors hover:bg-red-700"
+          >
+            Delete
+          </button>
+        </div>
+      }
+    >
+      <p className="text-sm text-muted">This can't be undone.</p>
+    </Modal>
+  );
+}
+
 function RequestDrawer({
   request,
   onClose,
   onSetStatus,
+  onUpdate,
+  onDelete,
 }: {
   request: MaintenanceReport;
   onClose: () => void;
   onSetStatus: (status: MaintenanceStatus) => void;
+  onUpdate: (patch: { location: string; description: string; photoUrl?: string }) => void;
+  onDelete: () => void;
 }) {
   const { tenants } = useTenants();
   const navigate = useNavigate();
   const reportedByTenant = tenants.find((t) => t.name === request.tenant);
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [location, setLocation] = useState(request.location);
+  const [description, setDescription] = useState(request.description);
+  const [photoUrl, setPhotoUrl] = useState(request.photoUrl);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  const canSave = location.trim().length > 0 && description.trim().length > 0;
+
+  const startEditing = () => {
+    setLocation(request.location);
+    setDescription(request.description);
+    setPhotoUrl(request.photoUrl);
+    setIsEditing(true);
+  };
+
+  const saveEdit = () => {
+    if (!canSave) return;
+    onUpdate({ location: location.trim(), description: description.trim(), photoUrl });
+    setIsEditing(false);
+  };
 
   return (
     <SlideOver
@@ -70,61 +123,168 @@ function RequestDrawer({
           · {formatDate(request.submittedAt)}
         </>
       }
-      footer={
-        <>
-          <div className="grid grid-cols-3 gap-2">
-            {(["open", "in-progress", "resolved"] as const).map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => onSetStatus(s)}
-                className={`rounded-lg border py-2.5 text-sm font-medium transition-colors ${
-                  request.status === s ? "border-brand bg-brand-soft text-brand" : "border-line text-muted hover:bg-mist"
-                }`}
-              >
-                {statusLabel[s]}
-              </button>
-            ))}
-          </div>
-
-          <Link
-            to="/expenses"
-            state={{
-              expensePrefill: {
-                name: `Repair — ${request.location}`,
-                description: request.description,
-                categoryId: "maintenance",
-              },
-            }}
-            className="mt-2 block w-full rounded-lg border border-line py-2.5 text-center text-sm font-medium text-ink transition-colors hover:bg-mist"
+      headerActions={
+        !isEditing && (
+          <button
+            type="button"
+            onClick={startEditing}
+            aria-label="Edit report"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-line text-muted transition-colors hover:bg-mist hover:text-ink"
           >
-            Log a repair cost for this →
-          </Link>
-        </>
+            <PencilSimple size={14} weight="duotone" />
+          </button>
+        )
+      }
+      footer={
+        isEditing ? (
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setIsEditing(false)}
+              className="flex-1 rounded-lg border border-line py-2.5 text-sm font-medium text-ink transition-colors hover:bg-mist"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={saveEdit}
+              disabled={!canSave}
+              className="flex-1 rounded-lg bg-brand py-2.5 text-sm font-medium text-paper transition-transform hover:scale-[1.01] disabled:opacity-50 disabled:hover:scale-100"
+            >
+              Save changes
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-3 gap-2">
+              {(["open", "in-progress", "resolved"] as const).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => onSetStatus(s)}
+                  className={`rounded-lg border py-2.5 text-sm font-medium transition-colors ${
+                    request.status === s ? "border-brand bg-brand-soft text-brand" : "border-line text-muted hover:bg-mist"
+                  }`}
+                >
+                  {statusLabel[s]}
+                </button>
+              ))}
+            </div>
+
+            <Link
+              to="/expenses"
+              state={{
+                expensePrefill: {
+                  name: `Repair — ${request.location}`,
+                  description: request.description,
+                  categoryId: "maintenance",
+                },
+              }}
+              className="mt-2 block w-full rounded-lg border border-line py-2.5 text-center text-sm font-medium text-ink transition-colors hover:bg-mist"
+            >
+              Log a repair cost for this →
+            </Link>
+
+            <button
+              type="button"
+              onClick={() => setConfirmingDelete(true)}
+              className="mt-2.5 flex w-full items-center justify-center gap-1.5 text-xs font-medium text-red-600 hover:underline"
+            >
+              <Trash size={12} weight="bold" />
+              Delete report
+            </button>
+          </>
+        )
       }
     >
-      <div className="flex items-center gap-2">
-        <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ${statusStyle[request.status]}`}>
-          {statusLabel[request.status]}
-        </span>
-        {request.status === "resolved" && request.resolvedAt && (
-          <span className="text-xs text-muted">Resolved {formatDate(request.resolvedAt)}</span>
-        )}
-      </div>
-      <p className="mt-3 rounded-lg bg-mist p-4 text-sm text-ink">{request.description}</p>
-
-      <p className="mt-6 text-sm font-medium text-ink">Photo</p>
-      {request.hasPhoto || request.photoUrl ? (
-        <div className="mt-2 h-48 overflow-hidden rounded-lg border border-line bg-mist">
-          {request.photoUrl ? (
-            <img src={request.photoUrl} alt="Attached to this maintenance request" className="h-full w-full object-cover" />
-          ) : (
-            <div className="flex h-full items-center justify-center text-sm text-muted">Photo attached by tenant</div>
-          )}
+      {isEditing ? (
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted">Location</label>
+            <input
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted">Description</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={4}
+              className="w-full resize-none rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted">Photo (optional)</label>
+            {photoUrl ? (
+              <div className="space-y-2">
+                <div className="h-40 overflow-hidden rounded-lg border border-line bg-mist">
+                  <img src={photoUrl} alt="Attached to this request" className="h-full w-full object-cover" />
+                </div>
+                <button type="button" onClick={() => setPhotoUrl(undefined)} className="text-xs font-medium text-red-600 hover:underline">
+                  Remove photo
+                </button>
+              </div>
+            ) : (
+              <label className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-line py-2.5 text-sm font-medium text-muted transition-colors hover:bg-mist">
+                <Paperclip size={14} weight="duotone" />
+                Attach a photo
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    uploadPhoto("maintenance-photos", file)
+                      .then(setPhotoUrl)
+                      .catch((err) => console.error("Failed to upload photo", err));
+                  }}
+                />
+              </label>
+            )}
+          </div>
         </div>
       ) : (
-        <p className="mt-2 text-xs text-muted">No photo attached to this request.</p>
+        <>
+          <div className="flex items-center gap-2">
+            <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ${statusStyle[request.status]}`}>
+              {statusLabel[request.status]}
+            </span>
+            {request.status === "resolved" && request.resolvedAt && (
+              <span className="text-xs text-muted">Resolved {formatDate(request.resolvedAt)}</span>
+            )}
+          </div>
+          <p className="mt-3 rounded-lg bg-mist p-4 text-sm text-ink">{request.description}</p>
+
+          <p className="mt-6 text-sm font-medium text-ink">Photo</p>
+          {request.hasPhoto || request.photoUrl ? (
+            <div className="mt-2 h-48 overflow-hidden rounded-lg border border-line bg-mist">
+              {request.photoUrl ? (
+                <img src={request.photoUrl} alt="Attached to this maintenance request" className="h-full w-full object-cover" />
+              ) : (
+                <div className="flex h-full items-center justify-center text-sm text-muted">Photo attached by tenant</div>
+              )}
+            </div>
+          ) : (
+            <p className="mt-2 text-xs text-muted">No photo attached to this request.</p>
+          )}
+        </>
       )}
+
+      <AnimatePresence>
+        {confirmingDelete && (
+          <ConfirmDeleteReportModal
+            onClose={() => setConfirmingDelete(false)}
+            onConfirm={() => {
+              setConfirmingDelete(false);
+              onDelete();
+            }}
+          />
+        )}
+      </AnimatePresence>
     </SlideOver>
   );
 }
@@ -221,7 +381,7 @@ function AddRequestDrawer({ onClose, onSave }: { onClose: () => void; onSave: (r
 }
 
 export default function Maintenance() {
-  const { reports, setStatus, markRead, addReport } = useMaintenance();
+  const { reports, isReady, setStatus, markRead, addReport, updateReport, deleteReport } = useMaintenance();
   const location = useLocation();
   const navigate = useNavigate();
   const [filter, setFilter] = useState("all");
@@ -289,15 +449,27 @@ export default function Maintenance() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div className="rounded-lg border border-line bg-paper p-5">
             <p className="text-xs text-muted">Open</p>
-            <p className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink">{counts.open}</p>
+            {isReady ? (
+              <p className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink">{counts.open}</p>
+            ) : (
+              <Skeleton className="mt-2 h-7 w-10" />
+            )}
           </div>
           <div className="rounded-lg border border-line bg-paper p-5">
             <p className="text-xs text-muted">In progress</p>
-            <p className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink">{counts.inProgress}</p>
+            {isReady ? (
+              <p className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink">{counts.inProgress}</p>
+            ) : (
+              <Skeleton className="mt-2 h-7 w-10" />
+            )}
           </div>
           <div className="rounded-lg border border-line bg-paper p-5">
             <p className="text-xs text-muted">Unread</p>
-            <p className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink">{counts.unread}</p>
+            {isReady ? (
+              <p className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink">{counts.unread}</p>
+            ) : (
+              <Skeleton className="mt-2 h-7 w-10" />
+            )}
           </div>
         </div>
 
@@ -338,7 +510,14 @@ export default function Maintenance() {
         <div className="rounded-lg border border-line">
           {/* Mobile: cards — an HTML table doesn't have room to breathe on a phone screen */}
           <div className="divide-y divide-line md:hidden">
-            {pageRows.map((r) => (
+            {!isReady &&
+              Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="space-y-2 p-4">
+                  <Skeleton className="h-4 w-1/2" />
+                  <Skeleton className="h-3 w-1/3" />
+                </div>
+              ))}
+            {isReady && pageRows.map((r) => (
               <button
                 key={r.id}
                 type="button"
@@ -360,7 +539,7 @@ export default function Maintenance() {
                 </span>
               </button>
             ))}
-            {pageRows.length === 0 && (
+            {isReady && pageRows.length === 0 && (
               <div className="flex flex-col items-center justify-center gap-3 px-4 py-10 text-center">
                 <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
                   <Wrench size={22} weight="duotone" />
@@ -399,7 +578,8 @@ export default function Maintenance() {
               </tr>
             </thead>
             <tbody>
-              {pageRows.map((r) => (
+              {!isReady && Array.from({ length: 4 }).map((_, i) => <SkeletonRow key={i} cols={6} />)}
+              {isReady && pageRows.map((r) => (
                 <tr key={r.id} className="border-t border-line transition-colors hover:bg-mist">
                   <td className="px-3 py-2.5">
                     <div className="flex items-center gap-1.5">
@@ -431,7 +611,7 @@ export default function Maintenance() {
                   </td>
                 </tr>
               ))}
-              {pageRows.length === 0 && (
+              {isReady && pageRows.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-4 py-10">
                     <div className="flex flex-col items-center justify-center gap-3 text-center">
@@ -478,6 +658,11 @@ export default function Maintenance() {
             request={selected}
             onClose={() => setSelectedId(null)}
             onSetStatus={(status) => setStatus(selected.id, status)}
+            onUpdate={(patch) => updateReport(selected.id, patch)}
+            onDelete={() => {
+              deleteReport(selected.id);
+              setSelectedId(null);
+            }}
           />
         )}
         {addingRequest && (

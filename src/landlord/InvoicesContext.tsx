@@ -6,6 +6,8 @@ export type { Invoice, InvoiceStatus };
 
 type InvoicesContextValue = {
   invoices: Invoice[];
+  /** False until the initial Supabase fetch resolves. */
+  isReady: boolean;
   /** Generates the invoice number and id, appends the invoice, persists it, and returns it. */
   recordInvoice: (invoice: Omit<Invoice, "id" | "invoiceNumber">) => Invoice;
   /** Whether a "sent" invoice already exists for this tenant + period — drives the "Invoice sent" badge. */
@@ -17,6 +19,7 @@ const InvoicesContext = createContext<InvoicesContextValue | null>(null);
 export function InvoicesProvider({ children }: { children: ReactNode }) {
   const { propertyId } = useSettings();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [isReady, setIsReady] = useState(false);
   // A ref (not state) for the sequence counter — "Send all" records several invoices in the same
   // tick, and only a ref guarantees each of those calls sees the previous one's increment
   // immediately, rather than racing on a stale `useState` closure until the next render.
@@ -34,6 +37,7 @@ export function InvoicesProvider({ children }: { children: ReactNode }) {
       if (cancelled) return;
       setInvoices(rows);
       sequenceRef.current = { year: thisYear, count: maxSequence };
+      setIsReady(true);
     })();
     return () => {
       cancelled = true;
@@ -57,7 +61,7 @@ export function InvoicesProvider({ children }: { children: ReactNode }) {
     );
 
   return (
-    <InvoicesContext.Provider value={{ invoices, recordInvoice, hasSentInvoiceForPeriod }}>
+    <InvoicesContext.Provider value={{ invoices, isReady, recordInvoice, hasSentInvoiceForPeriod }}>
       {children}
     </InvoicesContext.Provider>
   );

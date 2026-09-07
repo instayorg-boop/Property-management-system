@@ -5,6 +5,10 @@ import {
   listRoomTypeConfigs,
   listRooms,
   markRoomReady,
+  markRoomNotReady,
+  deleteRoomRow,
+  updateRoomTypeRow,
+  deleteRoomTypeRow,
   addRoomTypeWithRooms,
   type RoomTypeConfig,
   type RoomRecord,
@@ -34,9 +38,20 @@ export function roomLabel(number: string) {
 type RoomsContextValue = {
   rooms: RoomRecord[];
   roomTypeConfigs: RoomTypeConfig[];
+  /** False until the initial Supabase fetch resolves. */
+  isReady: boolean;
   markReady: (number: string) => void;
+  /** Takes a vacant room out of service (cleaning/repairs) — the reverse of markReady. */
+  markNotReady: (number: string) => void;
+  /** Removes a room from the inventory. Caller is responsible for only offering this on a vacant room. */
+  deleteRoom: (number: string) => void;
   /** Adds a new room type and appends `roomCount` new rooms of it to the inventory. */
   addRoomType: (config: Omit<RoomTypeConfig, "id">, roomCount: number) => void;
+  /** Edits an existing room type's name/rent/deposit terms — not its capacity or bed count. */
+  updateRoomType: (id: string, patch: Partial<Pick<RoomTypeConfig, "name" | "rent" | "depositAmount" | "depositRefundability">>) => void;
+  /** Deletes a room type. Only succeeds when no rooms reference it (Postgres FK rejects it
+   * otherwise) — callers should remove or reassign its rooms first and check `rooms` themselves. */
+  deleteRoomType: (id: string) => Promise<void>;
 };
 
 const RoomsContext = createContext<RoomsContextValue | null>(null);
@@ -45,6 +60,7 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
   const { propertyId } = useSettings();
   const [rooms, setRooms] = useState<RoomRecord[]>([]);
   const [roomTypeConfigs, setRoomTypeConfigs] = useState<RoomTypeConfig[]>([]);
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
     if (!propertyId) return;
@@ -54,6 +70,7 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
       if (cancelled) return;
       setRoomTypeConfigs(types);
       setRooms(roomRows);
+      setIsReady(true);
     })();
     return () => {
       cancelled = true;
@@ -65,6 +82,16 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
     if (propertyId) void markRoomReady(propertyId, number);
   };
 
+  const markNotReady = (number: string) => {
+    setRooms((prev) => prev.map((r) => (r.number === number ? { ...r, override: "not-ready" } : r)));
+    if (propertyId) void markRoomNotReady(propertyId, number);
+  };
+
+  const deleteRoom = (number: string) => {
+    setRooms((prev) => prev.filter((r) => r.number !== number));
+    if (propertyId) void deleteRoomRow(propertyId, number).catch((e) => console.error("Failed to delete room", e));
+  };
+
   const addRoomType = async (config: Omit<RoomTypeConfig, "id">, roomCount: number) => {
     if (!propertyId) return;
     const startingRoomNumber = rooms.length + 1;
@@ -73,8 +100,28 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
     setRooms((prev) => [...prev, ...newRooms]);
   };
 
+  const updateRoomType = (
+    id: string,
+    patch: Partial<Pick<RoomTypeConfig, "name" | "rent" | "depositAmount" | "depositRefundability">>
+  ) => {
+    setRoomTypeConfigs((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+    void updateRoomTypeRow(id, patch).catch((e) => console.error("Failed to update room type", e));
+  };
+
+  // Not optimistic like the other mutators here — a delete that fails (e.g. rooms still reference
+  // this type) needs to be reported to the caller, not silently reverted after the UI already
+  // dropped it from the list.
+  const deleteRoomType = async (id: string) => {
+    await deleteRoomTypeRow(id);
+    setRoomTypeConfigs((prev) => prev.filter((t) => t.id !== id));
+  };
+
   return (
-    <RoomsContext.Provider value={{ rooms, roomTypeConfigs, markReady, addRoomType }}>{children}</RoomsContext.Provider>
+    <RoomsContext.Provider
+      value={{ rooms, roomTypeConfigs, isReady, markReady, markNotReady, deleteRoom, addRoomType, updateRoomType, deleteRoomType }}
+    >
+      {children}
+    </RoomsContext.Provider>
   );
 }
 

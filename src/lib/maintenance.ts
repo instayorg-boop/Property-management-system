@@ -73,6 +73,14 @@ export async function updateReportRow(id: string, patch: Partial<Omit<Maintenanc
   if (patch.status !== undefined) row.status = patch.status;
   if (patch.unread !== undefined) row.unread = patch.unread;
   if (patch.resolvedAt !== undefined) row.resolved_at = patch.resolvedAt ?? null;
+  if (patch.location !== undefined) row.location = patch.location;
+  if (patch.description !== undefined) row.description = patch.description;
+  if (patch.photoUrl !== undefined) row.photo_url = patch.photoUrl ?? null;
   const { error } = await supabase.from("maintenance_reports").update(row).eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteReportRow(id: string): Promise<void> {
+  const { error } = await supabase.from("maintenance_reports").delete().eq("id", id);
   if (error) throw error;
 }

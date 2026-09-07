@@ -244,7 +244,10 @@ export default function TenantFormDrawer({
     // touching rent status/owedAmount at all.
     if (depositCollectedToday === "yes" && selectedRoom.depositAmount > 0) {
       updateTenant(created.id, {
-        ledger: [{ label: "Security deposit", amount: selectedRoom.depositAmount, status: "paid" }, ...created.ledger],
+        ledger: [
+          { label: "Security deposit", amount: selectedRoom.depositAmount, status: "paid", createdAt: new Date().toISOString() },
+          ...created.ledger,
+        ],
       });
     }
 

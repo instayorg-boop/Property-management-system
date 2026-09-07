@@ -213,7 +213,7 @@ export default function GenerateInvoicesOverlay({
       for (const row of rows) {
         const { invoice, tenantIds } = recordRow(row, "sent");
         const primaryTenant: Tenant = row.kind === "individual" ? row.calc.tenant : row.calcs[0].tenant;
-        await sendInvoiceViaWhatsApp(primaryTenant, invoice);
+        await sendInvoiceViaWhatsApp(primaryTenant, invoice, propertyName);
         tenantsCovered += tenantIds.length;
       }
       onSent(tenantsCovered);

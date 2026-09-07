@@ -21,6 +21,8 @@ export type PaymentMethod = {
 type SettingsContextValue = {
   /** id of the property every other module (rooms, tenants, invoices) is scoped to. Null until loaded. */
   propertyId: string | null;
+  /** False until the initial Supabase fetch resolves — pages use this to show skeletons instead of default values. */
+  isReady: boolean;
   invoicesOn: boolean;
   setInvoicesOn: (v: boolean) => void;
   /** Landlord-configurable collection-rate goal shown on the Rent page trend card. Defaults to 90%. */
@@ -31,6 +33,8 @@ type SettingsContextValue = {
   setPropertyName: (v: string) => void;
   propertyAddress: string;
   setPropertyAddress: (v: string) => void;
+  propertyType: string;
+  setPropertyType: (v: string) => void;
   /** Displayed on invoices and elsewhere landlord contact details are needed. */
   landlordName: string;
   setLandlordName: (v: string) => void;
@@ -77,6 +81,18 @@ type SettingsContextValue = {
   setAccountNumber: (v: string) => void;
   accountHolderName: string;
   setAccountHolderName: (v: string) => void;
+  /** Day of the week payouts go out, e.g. "Friday". */
+  payoutDay: string;
+  setPayoutDay: (v: string) => void;
+
+  // Account / subscription
+  accountEmail: string;
+  setAccountEmail: (v: string) => void;
+  subscriptionPlan: string;
+  setSubscriptionPlan: (v: string) => void;
+  /** ISO date the current plan renews, or "" if not set. */
+  subscriptionRenewsAt: string;
+  setSubscriptionRenewsAt: (v: string) => void;
 
   // Statutory — figures NAPSA/government update periodically, kept editable rather than hardcoded.
   napsaInsurableEarningsCeiling: number;
@@ -113,6 +129,10 @@ function fromRow(row: SettingsRow) {
     bankName: row.bank_name ?? "",
     accountNumber: row.account_number ?? "",
     accountHolderName: row.account_holder_name ?? "",
+    payoutDay: row.payout_day ?? "Friday",
+    accountEmail: row.account_email ?? "",
+    subscriptionPlan: row.subscription_plan ?? "",
+    subscriptionRenewsAt: row.subscription_renews_at ?? "",
     napsaInsurableEarningsCeiling: row.napsa_insurable_earnings_ceiling,
     minimumWageReference: row.minimum_wage_reference,
   };
@@ -120,12 +140,14 @@ function fromRow(row: SettingsRow) {
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [propertyId, setPropertyId] = useState<string | null>(null);
+  const [isReady, setIsReady] = useState(false);
 
   const [invoicesOn, setInvoicesOnState] = useState(false);
   const [collectionTargetPct, setCollectionTargetPctState] = useState(90);
   const [propertyName, setPropertyNameState] = useState("Kabulonga House");
   const [propertyAddress, setPropertyAddressState] = useState("Plot 14, Kabulonga, Lusaka");
-  const [landlordName, setLandlordNameState] = useState("Bernard Mwansa");
+  const [propertyType, setPropertyTypeState] = useState("");
+  const [landlordName, setLandlordNameState] = useState("");
   const [landlordPhone, setLandlordPhoneState] = useState("0977 000 000");
   const [paymentMethods, setPaymentMethodsState] = useState<PaymentMethod[]>([
     { type: "mtn", number: "0977 000 111" },
@@ -154,6 +176,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [bankName, setBankNameState] = useState("");
   const [accountNumber, setAccountNumberState] = useState("");
   const [accountHolderName, setAccountHolderNameState] = useState("");
+  const [payoutDay, setPayoutDayState] = useState("Friday");
+
+  const [accountEmail, setAccountEmailState] = useState("");
+  const [subscriptionPlan, setSubscriptionPlanState] = useState("");
+  const [subscriptionRenewsAt, setSubscriptionRenewsAtState] = useState("");
 
   const [napsaInsurableEarningsCeiling, setNapsaInsurableEarningsCeilingState] = useState(37236);
   const [minimumWageReference, setMinimumWageReferenceState] = useState(1978.99);
@@ -166,6 +193,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       setPropertyId(property.id);
       setPropertyNameState(property.name);
       setPropertyAddressState(property.address ?? "");
+      setPropertyTypeState(property.property_type ?? "");
 
       const [settingsRow, allProperties] = await Promise.all([
         getOrCreateSettings(property.id),
@@ -192,9 +220,14 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       setBankNameState(s.bankName);
       setAccountNumberState(s.accountNumber);
       setAccountHolderNameState(s.accountHolderName);
+      setPayoutDayState(s.payoutDay);
+      setAccountEmailState(s.accountEmail);
+      setSubscriptionPlanState(s.subscriptionPlan);
+      setSubscriptionRenewsAtState(s.subscriptionRenewsAt);
       setNapsaInsurableEarningsCeilingState(s.napsaInsurableEarningsCeiling);
       setMinimumWageReferenceState(s.minimumWageReference);
       setProperties(allProperties.map((p) => p.name));
+      setIsReady(true);
     })();
     return () => {
       cancelled = true;
@@ -221,6 +254,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const setPropertyAddress = (v: string) => {
     setPropertyAddressState(v);
     if (propertyId) void updateProperty(propertyId, { address: v });
+  };
+  const setPropertyType = (v: string) => {
+    setPropertyTypeState(v);
+    if (propertyId) void updateProperty(propertyId, { property_type: v });
   };
   const setLandlordName = (v: string) => {
     setLandlordNameState(v);
@@ -282,6 +319,22 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setAccountHolderNameState(v);
     persist({ account_holder_name: v });
   };
+  const setPayoutDay = (v: string) => {
+    setPayoutDayState(v);
+    persist({ payout_day: v });
+  };
+  const setAccountEmail = (v: string) => {
+    setAccountEmailState(v);
+    persist({ account_email: v });
+  };
+  const setSubscriptionPlan = (v: string) => {
+    setSubscriptionPlanState(v);
+    persist({ subscription_plan: v });
+  };
+  const setSubscriptionRenewsAt = (v: string) => {
+    setSubscriptionRenewsAtState(v);
+    persist({ subscription_renews_at: v || null });
+  };
   const setNapsaInsurableEarningsCeiling = (v: number) => {
     setNapsaInsurableEarningsCeilingState(v);
     persist({ napsa_insurable_earnings_ceiling: v });
@@ -310,6 +363,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     <SettingsContext.Provider
       value={{
         propertyId,
+        isReady,
         invoicesOn,
         setInvoicesOn,
         collectionTargetPct,
@@ -318,6 +372,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         setPropertyName,
         propertyAddress,
         setPropertyAddress,
+        propertyType,
+        setPropertyType,
         landlordName,
         setLandlordName,
         landlordPhone,
@@ -352,6 +408,14 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         setAccountNumber,
         accountHolderName,
         setAccountHolderName,
+        payoutDay,
+        setPayoutDay,
+        accountEmail,
+        setAccountEmail,
+        subscriptionPlan,
+        setSubscriptionPlan,
+        subscriptionRenewsAt,
+        setSubscriptionRenewsAt,
         napsaInsurableEarningsCeiling,
         setNapsaInsurableEarningsCeiling,
         minimumWageReference,

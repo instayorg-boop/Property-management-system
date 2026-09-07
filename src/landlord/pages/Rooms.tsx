@@ -8,6 +8,8 @@ import {
   Bed,
   UsersThree,
   DoorOpen,
+  PencilSimple,
+  Trash,
 } from "@phosphor-icons/react";
 import PageHeader from "../components/PageHeader";
 import SlideOver from "../components/SlideOver";
@@ -17,6 +19,7 @@ import TenantSearchDrawer from "../components/TenantSearchDrawer";
 import AddRoomTypeDrawer from "../components/AddRoomTypeDrawer";
 import { useTenants, formatCurrency, type PaymentStatus, type Tenant } from "../TenantsContext";
 import { useRooms, useRoomsView, roomLabel, type RoomTypeConfig, type RoomView, type VacantRoom } from "../RoomsContext";
+import { Skeleton } from "../components/Skeleton";
 
 // ---------- Icons ----------
 
@@ -208,6 +211,8 @@ function RoomDetailDrawer({
   onLogPayment,
   onAssignTenant,
   onMarkReady,
+  onMarkNotReady,
+  onDeleteRoom,
 }: {
   room: RoomView;
   onClose: () => void;
@@ -215,6 +220,8 @@ function RoomDetailDrawer({
   onLogPayment: (tenant: Tenant) => void;
   onAssignTenant: () => void;
   onMarkReady: () => void;
+  onMarkNotReady: () => void;
+  onDeleteRoom: () => void;
 }) {
   const capacity = room.beds.length;
 
@@ -245,6 +252,21 @@ function RoomDetailDrawer({
           >
             Assign tenant
           </button>
+          <button
+            type="button"
+            onClick={onMarkNotReady}
+            className="mt-2 w-full rounded-lg border border-line py-2.5 text-sm font-medium text-ink transition-colors hover:bg-mist"
+          >
+            Take out of service
+          </button>
+          <button
+            type="button"
+            onClick={onDeleteRoom}
+            className="mt-2.5 flex w-full items-center justify-center gap-1.5 text-xs font-medium text-red-600 hover:underline"
+          >
+            <Trash size={12} weight="bold" />
+            Delete this room
+          </button>
         </>
       )}
 
@@ -263,6 +285,14 @@ function RoomDetailDrawer({
             className="mt-6 w-full rounded-lg border border-line py-3 text-sm font-medium text-ink transition-colors hover:bg-mist"
           >
             Mark as ready
+          </button>
+          <button
+            type="button"
+            onClick={onDeleteRoom}
+            className="mt-2.5 flex w-full items-center justify-center gap-1.5 text-xs font-medium text-red-600 hover:underline"
+          >
+            <Trash size={12} weight="bold" />
+            Delete this room
           </button>
         </>
       )}
@@ -338,6 +368,170 @@ function ReassignConfirmModal({
   );
 }
 
+// ---------- Room type edit / delete ----------
+
+const refundabilityOptions: RoomTypeConfig["depositRefundability"][] = ["Refundable", "Partially refundable", "Non-refundable"];
+
+function EditRoomTypeModal({
+  type,
+  onClose,
+  onSave,
+}: {
+  type: RoomTypeConfig;
+  onClose: () => void;
+  onSave: (patch: Pick<RoomTypeConfig, "name" | "rent" | "depositAmount" | "depositRefundability">) => void;
+}) {
+  const [name, setName] = useState(type.name);
+  const [rent, setRent] = useState(type.rent);
+  const [depositAmount, setDepositAmount] = useState(type.depositAmount);
+  const [depositRefundability, setDepositRefundability] = useState(type.depositRefundability);
+
+  const canSave = name.trim().length > 0 && rent > 0;
+
+  return (
+    <Modal
+      onClose={onClose}
+      title="Edit room type"
+      description="Beds per room can't be changed here — that would affect rooms already assigned to tenants."
+      footer={
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist">
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => canSave && onSave({ name: name.trim(), rent, depositAmount, depositRefundability })}
+            disabled={!canSave}
+            className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-paper disabled:opacity-50"
+          >
+            Save changes
+          </button>
+        </div>
+      }
+    >
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="sm:col-span-2">
+          <label className="mb-1.5 block text-xs font-medium text-muted">Name</label>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+          />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-muted">Rent (K/month)</label>
+          <input
+            type="number"
+            min={0}
+            value={rent}
+            onChange={(e) => setRent(Number(e.target.value) || 0)}
+            className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+          />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-muted">Deposit (K)</label>
+          <input
+            type="number"
+            min={0}
+            value={depositAmount}
+            onChange={(e) => setDepositAmount(Number(e.target.value) || 0)}
+            className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+          />
+        </div>
+        <div className="sm:col-span-2">
+          <label className="mb-1.5 block text-xs font-medium text-muted">Deposit terms</label>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            {refundabilityOptions.map((o) => (
+              <button
+                key={o}
+                type="button"
+                onClick={() => setDepositRefundability(o)}
+                className={`rounded-lg border py-2.5 text-xs font-medium transition-colors ${
+                  depositRefundability === o ? "border-brand bg-brand-soft text-brand" : "border-line text-muted hover:bg-mist"
+                }`}
+              >
+                {o}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function ConfirmDeleteRoomTypeModal({
+  type,
+  roomCount,
+  onClose,
+  onConfirm,
+}: {
+  type: RoomTypeConfig;
+  roomCount: number;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Modal
+      onClose={onClose}
+      maxWidth="max-w-sm"
+      title="Delete this room type?"
+      footer={
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist">
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={roomCount > 0}
+            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-paper transition-colors hover:bg-red-700 disabled:opacity-50"
+          >
+            Delete
+          </button>
+        </div>
+      }
+    >
+      {roomCount > 0 ? (
+        <p className="text-sm text-muted">
+          <span className="font-medium text-ink">{type.name}</span> still has {roomCount} room{roomCount === 1 ? "" : "s"}. Delete
+          or reassign {roomCount === 1 ? "it" : "them all"} first.
+        </p>
+      ) : (
+        <p className="text-sm text-muted">
+          This removes <span className="font-medium text-ink">{type.name}</span> for good. This can't be undone.
+        </p>
+      )}
+    </Modal>
+  );
+}
+
+function ConfirmDeleteRoomModal({ number, onClose, onConfirm }: { number: string; onClose: () => void; onConfirm: () => void }) {
+  return (
+    <Modal
+      onClose={onClose}
+      maxWidth="max-w-sm"
+      title={`Delete Room ${number}?`}
+      footer={
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist">
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-paper transition-colors hover:bg-red-700"
+          >
+            Delete
+          </button>
+        </div>
+      }
+    >
+      <p className="text-sm text-muted">This can't be undone.</p>
+    </Modal>
+  );
+}
+
 // ---------- Room type section (accordion) ----------
 
 function RoomTypeSection({
@@ -345,11 +539,15 @@ function RoomTypeSection({
   rooms,
   defaultOpen,
   onSelectRoom,
+  onEdit,
+  onDelete,
 }: {
   type: RoomTypeConfig;
   rooms: RoomView[];
   defaultOpen: boolean;
   onSelectRoom: (room: RoomView) => void;
+  onEdit: () => void;
+  onDelete: () => void;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const occupied = rooms.filter((r) => r.status === "occupied").length;
@@ -357,22 +555,36 @@ function RoomTypeSection({
 
   return (
     <div className="overflow-hidden rounded-lg border border-line bg-paper">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left"
-      >
-        <div className="flex items-center gap-3">
+      <div className="flex w-full items-center justify-between gap-3 px-4 py-3.5">
+        <button type="button" onClick={() => setOpen((o) => !o)} className="flex flex-1 items-center gap-3 text-left">
           <span className="font-display text-sm font-semibold text-ink">{type.name}</span>
           <span className="text-xs text-muted">{rooms.length} rooms</span>
-        </div>
-        <div className="flex items-center gap-3">
+        </button>
+        <div className="flex items-center gap-1">
           <span className="hidden text-xs text-muted sm:inline">
             {occupied} occupied · {vacant} vacant
           </span>
-          <ChevronDownIcon className={`h-4 w-4 text-muted transition-transform ${open ? "rotate-180" : ""}`} />
+          <button
+            type="button"
+            onClick={onEdit}
+            aria-label={`Edit ${type.name}`}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-ink"
+          >
+            <PencilSimple size={13} weight="duotone" />
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            aria-label={`Delete ${type.name}`}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-red-50 hover:text-red-600"
+          >
+            <Trash size={13} weight="duotone" />
+          </button>
+          <button type="button" onClick={() => setOpen((o) => !o)} aria-label={open ? "Collapse" : "Expand"} className="shrink-0 p-1">
+            <ChevronDownIcon className={`h-4 w-4 text-muted transition-transform ${open ? "rotate-180" : ""}`} />
+          </button>
         </div>
-      </button>
+      </div>
 
       <AnimatePresence initial={false}>
         {open && (
@@ -399,7 +611,7 @@ function RoomTypeSection({
 
 export default function Rooms() {
   const navigate = useNavigate();
-  const { markReady, roomTypeConfigs, addRoomType } = useRooms();
+  const { markReady, markNotReady, deleteRoom, roomTypeConfigs, addRoomType, updateRoomType, deleteRoomType, isReady } = useRooms();
   const { logPayment, updateTenant } = useTenants();
   const rooms = useRoomsView();
 
@@ -408,6 +620,15 @@ export default function Rooms() {
   const [reassignCandidate, setReassignCandidate] = useState<Tenant | null>(null);
   const [payingTenant, setPayingTenant] = useState<Tenant | null>(null);
   const [addingType, setAddingType] = useState(false);
+  const [editingType, setEditingType] = useState<RoomTypeConfig | null>(null);
+  const [deletingType, setDeletingType] = useState<RoomTypeConfig | null>(null);
+  const [deletingRoomNumber, setDeletingRoomNumber] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    window.setTimeout(() => setToast((t) => (t === msg ? null : t)), 2500);
+  };
 
   const selected = rooms.find((r) => r.number === selectedNumber) ?? null;
 
@@ -448,11 +669,20 @@ export default function Rooms() {
           {stats.map((s) => (
             <div key={s.label} className="rounded-lg border border-line bg-paper p-5">
               <p className="text-xs text-muted">{s.label}</p>
-              <div className="mt-2 flex items-baseline gap-2">
-                <p className="font-display text-2xl font-semibold tracking-tight text-ink">{s.beds}</p>
-                <span className="text-xs text-muted">beds</span>
-              </div>
-              <p className="mt-0.5 text-[11px] text-muted">{s.rooms} rooms</p>
+              {isReady ? (
+                <>
+                  <div className="mt-2 flex items-baseline gap-2">
+                    <p className="font-display text-2xl font-semibold tracking-tight text-ink">{s.beds}</p>
+                    <span className="text-xs text-muted">beds</span>
+                  </div>
+                  <p className="mt-0.5 text-[11px] text-muted">{s.rooms} rooms</p>
+                </>
+              ) : (
+                <>
+                  <Skeleton className="mt-2 h-7 w-14" />
+                  <Skeleton className="mt-1.5 h-3 w-16" />
+                </>
+              )}
             </div>
           ))}
         </div>
@@ -472,7 +702,23 @@ export default function Rooms() {
         </div>
 
         {/* Room type accordions */}
-        {roomTypeConfigs.length === 0 ? (
+        {!isReady ? (
+          <div className="space-y-3">
+            {Array.from({ length: 2 }).map((_, i) => (
+              <div key={i} className="overflow-hidden rounded-lg border border-line bg-paper">
+                <div className="flex items-center justify-between gap-3 px-4 py-3.5">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-3 w-24" />
+                </div>
+                <div className="grid grid-cols-3 gap-2 border-t border-line px-4 py-4 sm:grid-cols-8 lg:grid-cols-10 xl:grid-cols-12">
+                  {Array.from({ length: 6 }).map((_, j) => (
+                    <Skeleton key={j} className="aspect-square rounded-lg" />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : roomTypeConfigs.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-line bg-paper py-16 text-center">
             <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
               <DoorIcon />
@@ -498,6 +744,8 @@ export default function Rooms() {
                 rooms={rooms.filter((r) => r.typeId === type.id)}
                 defaultOpen={i === 0}
                 onSelectRoom={(r) => setSelectedNumber(r.number)}
+                onEdit={() => setEditingType(type)}
+                onDelete={() => setDeletingType(type)}
               />
             ))}
           </div>
@@ -522,6 +770,48 @@ export default function Rooms() {
             }}
             onMarkReady={() => {
               markReady(selected.number);
+              setSelectedNumber(null);
+            }}
+            onMarkNotReady={() => {
+              markNotReady(selected.number);
+              setSelectedNumber(null);
+            }}
+            onDeleteRoom={() => setDeletingRoomNumber(selected.number)}
+          />
+        )}
+        {editingType && (
+          <EditRoomTypeModal
+            type={editingType}
+            onClose={() => setEditingType(null)}
+            onSave={(patch) => {
+              updateRoomType(editingType.id, patch);
+              setEditingType(null);
+            }}
+          />
+        )}
+        {deletingType && (
+          <ConfirmDeleteRoomTypeModal
+            type={deletingType}
+            roomCount={rooms.filter((r) => r.typeId === deletingType.id).length}
+            onClose={() => setDeletingType(null)}
+            onConfirm={async () => {
+              try {
+                await deleteRoomType(deletingType.id);
+                setDeletingType(null);
+              } catch (e) {
+                console.error("Failed to delete room type", e);
+                showToast("Couldn't delete — remove its rooms first.");
+              }
+            }}
+          />
+        )}
+        {deletingRoomNumber && (
+          <ConfirmDeleteRoomModal
+            number={deletingRoomNumber}
+            onClose={() => setDeletingRoomNumber(null)}
+            onConfirm={() => {
+              deleteRoom(deletingRoomNumber);
+              setDeletingRoomNumber(null);
               setSelectedNumber(null);
             }}
           />
@@ -571,6 +861,20 @@ export default function Rooms() {
               setAddingType(false);
             }}
           />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            transition={{ duration: 0.15 }}
+            className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-ink px-4 py-2 text-xs font-medium text-paper shadow-card"
+          >
+            {toast}
+          </motion.div>
         )}
       </AnimatePresence>
     </>

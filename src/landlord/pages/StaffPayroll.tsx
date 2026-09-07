@@ -20,6 +20,7 @@ import SlideOver from "../components/SlideOver";
 import Modal from "../components/Modal";
 import { useExpenses } from "../ExpensesContext";
 import { useSettings } from "../SettingsContext";
+import { Skeleton, SkeletonRow } from "../components/Skeleton";
 import {
   useStaff,
   currency,
@@ -336,6 +337,7 @@ export default function StaffPayroll() {
     setPeriodOffset,
     periodLabel,
     updateEmployee,
+    isReady,
   } = useStaff();
   const { addExpense } = useExpenses();
   const { napsaInsurableEarningsCeiling } = useSettings();
@@ -479,21 +481,33 @@ export default function StaffPayroll() {
                   <Wallet className="h-4 w-4" />
                   <p className="text-xs font-medium">Total pay before deductions</p>
                 </div>
-                <p className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink">{currency(totals.gross)}</p>
+                {isReady ? (
+                  <p className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink">{currency(totals.gross)}</p>
+                ) : (
+                  <Skeleton className="mt-2 h-7 w-24" />
+                )}
               </div>
               <div className="rounded-lg border border-line bg-paper p-5">
                 <div className="flex items-center gap-2 text-muted">
                   <Banknote className="h-4 w-4" />
                   <p className="text-xs font-medium">Total paid to staff</p>
                 </div>
-                <p className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink">{currency(totals.net)}</p>
+                {isReady ? (
+                  <p className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink">{currency(totals.net)}</p>
+                ) : (
+                  <Skeleton className="mt-2 h-7 w-24" />
+                )}
               </div>
               <div className="rounded-lg border border-line bg-paper p-5">
                 <div className="flex items-center gap-2 text-muted">
                   <Landmark className="h-4 w-4" />
                   <p className="text-xs font-medium">Total tax & pension owed</p>
                 </div>
-                <p className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink">{currency(totals.statutory)}</p>
+                {isReady ? (
+                  <p className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink">{currency(totals.statutory)}</p>
+                ) : (
+                  <Skeleton className="mt-2 h-7 w-24" />
+                )}
                 <p className="mt-1 text-[11px] text-muted">Income tax, pension, health levy and skills levy</p>
               </div>
               <div className="rounded-lg border border-line bg-paper p-5">
@@ -501,15 +515,24 @@ export default function StaffPayroll() {
                   <Users className="h-4 w-4" />
                   <p className="text-xs font-medium">Employees</p>
                 </div>
-                <p className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink">{employees.length} active staff</p>
-                {totals.missing > 0 ? (
-                  <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-red-600">
-                    <AlertTriangle className="h-3 w-3" /> {totals.missing} missing tax ID
-                  </p>
+                {isReady ? (
+                  <>
+                    <p className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink">{employees.length} active staff</p>
+                    {totals.missing > 0 ? (
+                      <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-red-600">
+                        <AlertTriangle className="h-3 w-3" /> {totals.missing} missing tax ID
+                      </p>
+                    ) : (
+                      <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600">
+                        <CheckCircle2 className="h-3 w-3" /> All records complete
+                      </p>
+                    )}
+                  </>
                 ) : (
-                  <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600">
-                    <CheckCircle2 className="h-3 w-3" /> All records complete
-                  </p>
+                  <>
+                    <Skeleton className="mt-2 h-7 w-24" />
+                    <Skeleton className="mt-1.5 h-3 w-28" />
+                  </>
                 )}
               </div>
             </div>
@@ -546,8 +569,9 @@ export default function StaffPayroll() {
                   </tr>
                 </thead>
                 <tbody>
+                  {!isReady && Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={5} />)}
                   <AnimatePresence initial={false}>
-                    {pageRows.map((e) => (
+                    {isReady && pageRows.map((e) => (
                       <motion.tr
                         key={e.id}
                         layout
@@ -584,7 +608,7 @@ export default function StaffPayroll() {
                       </motion.tr>
                     ))}
                   </AnimatePresence>
-                  {pageRows.length === 0 && (
+                  {isReady && pageRows.length === 0 && (
                     <tr>
                       <td colSpan={5} className="px-4 py-8 text-center text-sm text-muted">
                         No employees match.
@@ -632,7 +656,8 @@ export default function StaffPayroll() {
                 </tr>
               </thead>
               <tbody>
-                {payrollRuns.map((r) => (
+                {!isReady && Array.from({ length: 4 }).map((_, i) => <SkeletonRow key={i} cols={4} />)}
+                {isReady && payrollRuns.map((r) => (
                   <tr key={r.id} onClick={() => setOpenRunId(r.id)} className="cursor-pointer border-t border-line transition-colors hover:bg-mist">
                     <td className="px-4 py-3 font-medium text-ink">{r.period}</td>
                     <td className="px-4 py-3 text-muted">{r.employees.length}</td>
@@ -644,7 +669,7 @@ export default function StaffPayroll() {
                     </td>
                   </tr>
                 ))}
-                {payrollRuns.length === 0 && (
+                {isReady && payrollRuns.length === 0 && (
                   <tr>
                     <td colSpan={4} className="px-4 py-8 text-center text-sm text-muted">
                       No payroll has been processed yet.

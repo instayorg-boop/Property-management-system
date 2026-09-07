@@ -1,5 +1,5 @@
 import { supabase } from "./supabaseClient";
-import type { Tables } from "./database.types";
+import type { Tables, TablesUpdate } from "./database.types";
 
 export type RoomTypeConfig = {
   id: string;
@@ -63,6 +63,44 @@ export async function markRoomReady(propertyId: string, number: string): Promise
     .update({ override: null })
     .eq("property_id", propertyId)
     .eq("number", number);
+  if (error) throw error;
+}
+
+/** Takes a vacant room out of service (cleaning/repairs) — the reverse of markRoomReady. */
+export async function markRoomNotReady(propertyId: string, number: string): Promise<void> {
+  const { error } = await supabase
+    .from("rooms")
+    .update({ override: "not-ready" })
+    .eq("property_id", propertyId)
+    .eq("number", number);
+  if (error) throw error;
+}
+
+/** Removes a room from the inventory. Caller must have already confirmed it's vacant — this
+ * doesn't check occupancy itself, since that requires cross-referencing tenants (TenantsContext),
+ * which this module intentionally doesn't depend on. */
+export async function deleteRoomRow(propertyId: string, number: string): Promise<void> {
+  const { error } = await supabase.from("rooms").delete().eq("property_id", propertyId).eq("number", number);
+  if (error) throw error;
+}
+
+export async function updateRoomTypeRow(
+  id: string,
+  patch: Partial<Pick<RoomTypeConfig, "name" | "rent" | "depositAmount" | "depositRefundability">>
+): Promise<void> {
+  const row: TablesUpdate<"room_types"> = {};
+  if (patch.name !== undefined) row.name = patch.name;
+  if (patch.rent !== undefined) row.rent = patch.rent;
+  if (patch.depositAmount !== undefined) row.deposit_amount = patch.depositAmount;
+  if (patch.depositRefundability !== undefined) row.deposit_refundability = patch.depositRefundability;
+  const { error } = await supabase.from("room_types").update(row).eq("id", id);
+  if (error) throw error;
+}
+
+/** Deletes a room type. Caller must ensure no rooms reference it first (the `rooms.room_type_id`
+ * foreign key would otherwise reject this) — surfaced in the UI as "remove its rooms first". */
+export async function deleteRoomTypeRow(id: string): Promise<void> {
+  const { error } = await supabase.from("room_types").delete().eq("id", id);
   if (error) throw error;
 }
 

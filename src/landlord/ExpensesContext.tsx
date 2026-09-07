@@ -17,6 +17,8 @@ export type { Category, Expense };
 type ExpensesContextValue = {
   expenses: Expense[];
   categories: Category[];
+  /** False until the initial Supabase fetch resolves. */
+  isReady: boolean;
   addExpense: (e: Omit<Expense, "id">) => void;
   updateExpense: (id: string, patch: Partial<Omit<Expense, "id">>) => void;
   deleteExpense: (id: string) => void;
@@ -32,6 +34,7 @@ export function ExpensesProvider({ children }: { children: ReactNode }) {
   const { propertyId } = useSettings();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
     if (!propertyId) return;
@@ -41,6 +44,7 @@ export function ExpensesProvider({ children }: { children: ReactNode }) {
       if (cancelled) return;
       setCategories(cats);
       setExpenses(exps);
+      setIsReady(true);
     })();
     return () => {
       cancelled = true;
@@ -84,7 +88,7 @@ export function ExpensesProvider({ children }: { children: ReactNode }) {
 
   return (
     <ExpensesContext.Provider
-      value={{ expenses, categories, addExpense, updateExpense, deleteExpense, addCategory, renameCategory, setCategoryActive, categoryName }}
+      value={{ expenses, categories, isReady, addExpense, updateExpense, deleteExpense, addCategory, renameCategory, setCategoryActive, categoryName }}
     >
       {children}
     </ExpensesContext.Provider>

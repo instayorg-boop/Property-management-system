@@ -26,7 +26,7 @@ export async function createProperty(name: string, address?: string): Promise<Pr
   return data;
 }
 
-export async function updateProperty(id: string, patch: Partial<Pick<Property, "name" | "address">>): Promise<void> {
+export async function updateProperty(id: string, patch: Partial<Pick<Property, "name" | "address" | "property_type">>): Promise<void> {
   const { error } = await supabase.from("properties").update(patch).eq("id", id);
   if (error) throw error;
 }

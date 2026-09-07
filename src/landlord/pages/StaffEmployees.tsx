@@ -6,6 +6,7 @@ import Modal from "../components/Modal";
 import SlideOver from "../components/SlideOver";
 import Select from "../components/Select";
 import { useStaff, type Employee, type PayType, type Gender, type MaritalStatus, type ContractType } from "../StaffContext";
+import { SkeletonRow } from "../components/Skeleton";
 
 function TpinBadge({ tpin }: { tpin: string | null }) {
   if (tpin) {
@@ -694,7 +695,7 @@ function ConfirmDeleteModal({
 }
 
 export default function StaffEmployees() {
-  const { employees, addEmployee, updateEmployee, deleteEmployee, reactivateEmployee } = useStaff();
+  const { employees, isReady, addEmployee, updateEmployee, deleteEmployee, reactivateEmployee } = useStaff();
   const [query, setQuery] = useState("");
   const [showInactive, setShowInactive] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -765,7 +766,8 @@ export default function StaffEmployees() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((e) => (
+              {!isReady && Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={6} />)}
+              {isReady && filtered.map((e) => (
                 <tr
                   key={e.id}
                   onClick={() => setSelectedId(e.id)}
@@ -841,7 +843,7 @@ export default function StaffEmployees() {
                   </td>
                 </tr>
               ))}
-              {filtered.length === 0 && (
+              {isReady && filtered.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-4 py-8 text-center text-sm text-muted">
                     No staff match this search.

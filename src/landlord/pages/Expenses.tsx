@@ -8,6 +8,7 @@ import ExpenseFormDrawer from "../components/ExpenseFormDrawer";
 import { useExpenses, type Expense } from "../ExpensesContext";
 import { useTenants, formatCurrency } from "../TenantsContext";
 import { Paperclip, MagnifyingGlass, GearSix, CaretLeft, CaretRight, DownloadSimple } from "@phosphor-icons/react";
+import { Skeleton, SkeletonRow } from "../components/Skeleton";
 
 function PaperclipIcon() {
   return <Paperclip size={14} weight="duotone" />;
@@ -151,7 +152,7 @@ function ManageCategoriesModal({ onClose }: { onClose: () => void }) {
 }
 
 export default function Expenses() {
-  const { expenses, categories, categoryName } = useExpenses();
+  const { expenses, categories, categoryName, isReady } = useExpenses();
   const { tenants } = useTenants();
   const location = useLocation();
   const navigate = useNavigate();
@@ -256,7 +257,11 @@ export default function Expenses() {
             </div>
             <div>
               <p className="text-xs text-muted">Total spent</p>
-              <p className="font-display text-lg font-semibold text-ink">{formatK(total)}</p>
+              {isReady ? (
+                <p className="font-display text-lg font-semibold text-ink">{formatK(total)}</p>
+              ) : (
+                <Skeleton className="mt-1 h-5 w-20" />
+              )}
             </div>
           </div>
 
@@ -293,7 +298,14 @@ export default function Expenses() {
 
         {/* Category breakdown — grows with however many categories exist */}
         <div className="flex flex-wrap gap-4">
-          {byCategory.map((c) => (
+          {!isReady &&
+            Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="min-w-40 flex-1 rounded-lg border border-line bg-paper p-5">
+                <Skeleton className="h-3 w-16" />
+                <Skeleton className="mt-2 h-7 w-20" />
+              </div>
+            ))}
+          {isReady && byCategory.map((c) => (
             <button
               key={c.category.id}
               type="button"
@@ -371,7 +383,8 @@ export default function Expenses() {
               </tr>
             </thead>
             <tbody>
-              {pageRows.map((e) => (
+              {!isReady && Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={6} />)}
+              {isReady && pageRows.map((e) => (
                 <tr key={e.id} className="border-t border-line transition-colors hover:bg-mist">
                   <td className="truncate px-3 py-2.5 text-ink">
                     {e.name}
@@ -416,7 +429,7 @@ export default function Expenses() {
                   </td>
                 </tr>
               ))}
-              {pageRows.length === 0 && (
+              {isReady && pageRows.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-4 py-8 text-center text-sm text-muted">
                     No expenses found.

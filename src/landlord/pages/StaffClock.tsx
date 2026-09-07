@@ -5,6 +5,7 @@ import PageHeader from "../components/PageHeader";
 import Modal from "../components/Modal";
 import Select from "../components/Select";
 import { useStaff, type ClockEntry } from "../StaffContext";
+import { SkeletonRow } from "../components/Skeleton";
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -103,7 +104,7 @@ function ConfirmDeleteModal({ onClose, onConfirm }: { onClose: () => void; onCon
 }
 
 export default function StaffClock() {
-  const { employees, clockEntries, addClockEntry, updateClockEntry, deleteClockEntry } = useStaff();
+  const { employees, clockEntries, isReady, addClockEntry, updateClockEntry, deleteClockEntry } = useStaff();
   const [query, setQuery] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<ClockEntry | null>(null);
@@ -173,7 +174,8 @@ export default function StaffClock() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((c) => (
+              {!isReady && Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={6} />)}
+              {isReady && filtered.map((c) => (
                 <tr key={c.id} className="border-t border-line transition-colors hover:bg-mist">
                   <td className="truncate px-4 py-3 font-medium text-ink">{employeeName(c.employeeId)}</td>
                   <td className="px-4 py-3 text-muted whitespace-nowrap">{formatDate(c.date)}</td>
@@ -211,7 +213,7 @@ export default function StaffClock() {
                   </td>
                 </tr>
               ))}
-              {filtered.length === 0 && (
+              {isReady && filtered.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-4 py-8 text-center text-sm text-muted">
                     No time entries yet.
