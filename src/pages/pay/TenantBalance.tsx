@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { CaretLeft, Wrench, DeviceMobile, CreditCard, CaretRight } from "@phosphor-icons/react";
-import { useTenants, formatCurrency } from "../../landlord/TenantsContext";
-import { useSettings } from "../../landlord/SettingsContext";
+import { formatCurrency } from "../../landlord/TenantsContext";
+import { getPortalProperty, getPortalTenant, getPortalLedger, logPortalPayment, type PortalTenant, type PortalLedgerRow } from "../../lib/payPortal";
 import PayShell, { type PayStep } from "./PayShell";
 
 const statusStyle: Record<string, string> = {
@@ -20,8 +20,9 @@ const PROVIDERS = ["MTN", "Airtel", "Zamtel"] as const;
 export default function TenantBalance() {
   const { propertySlug, tenantId } = useParams();
   const navigate = useNavigate();
-  const { propertyName } = useSettings();
-  const { tenants, logPayment } = useTenants();
+  const [propertyName, setPropertyName] = useState("");
+  const [tenant, setTenant] = useState<PortalTenant | null | undefined>(undefined);
+  const [ledger, setLedger] = useState<PortalLedgerRow[]>([]);
 
   const [flowStep, setFlowStep] = useState<FlowStep>("review");
   const [method, setMethod] = useState<Method | null>(null);
@@ -31,7 +32,22 @@ export default function TenantBalance() {
   const [cardExpiry, setCardExpiry] = useState("");
   const [cardCvv, setCardCvv] = useState("");
 
-  const tenant = tenants.find((t) => t.id === tenantId);
+  useEffect(() => {
+    if (!propertySlug || !tenantId) return;
+    let cancelled = false;
+    (async () => {
+      const [property, t] = await Promise.all([getPortalProperty(propertySlug), getPortalTenant(propertySlug, tenantId)]);
+      if (cancelled) return;
+      setPropertyName(property?.name ?? "");
+      setTenant(t);
+      if (t) setLedger(await getPortalLedger(t.id));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [propertySlug, tenantId]);
+
+  if (tenant === undefined) return <PayShell propertyName={propertyName}>{null}</PayShell>;
 
   if (!tenant) {
     return (
@@ -46,7 +62,7 @@ export default function TenantBalance() {
 
   const amountDue = tenant.owedAmount || tenant.rentAmount;
   const fullyPaid = tenant.status === "paid";
-  const openLedger = tenant.ledger.filter((row) => row.status !== "paid");
+  const openLedger = ledger.filter((row) => row.status !== "paid");
 
   const canPay =
     method === "mobile" ? phone.trim().length >= 9 : cardNumber.replace(/\s/g, "").length >= 12 && cardExpiry.length >= 4 && cardCvv.length >= 3;
@@ -54,7 +70,7 @@ export default function TenantBalance() {
   const submitPayment = () => {
     setFlowStep("processing");
     window.setTimeout(() => {
-      logPayment(tenant.id, amountDue);
+      void logPortalPayment(tenant.id, amountDue).catch((e) => console.error("Failed to log payment", e));
       navigate(`/pay/${propertySlug}/${tenant.id}/success`, {
         state: { amount: amountDue, method, provider: method === "mobile" ? provider : "Card" },
       });

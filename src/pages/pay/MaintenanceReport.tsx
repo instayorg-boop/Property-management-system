@@ -1,23 +1,35 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { CaretLeft, Paperclip, CheckCircle } from "@phosphor-icons/react";
-import { useTenants } from "../../landlord/TenantsContext";
-import { useMaintenance } from "../../landlord/MaintenanceContext";
-import { useSettings } from "../../landlord/SettingsContext";
+import { getPortalProperty, getPortalTenant, submitPortalMaintenanceReport, type PortalTenant } from "../../lib/payPortal";
+import { uploadPhoto } from "../../lib/storage";
 import PayShell from "./PayShell";
 
 export default function MaintenanceReport() {
   const { propertySlug, tenantId } = useParams();
   const navigate = useNavigate();
-  const { propertyName } = useSettings();
-  const { tenants } = useTenants();
-  const { addReport } = useMaintenance();
-
-  const tenant = tenants.find((t) => t.id === tenantId);
+  const [propertyName, setPropertyName] = useState("");
+  const [tenant, setTenant] = useState<PortalTenant | null | undefined>(undefined);
 
   const [description, setDescription] = useState("");
   const [photoUrl, setPhotoUrl] = useState<string | undefined>(undefined);
   const [submitted, setSubmitted] = useState(false);
+
+  useEffect(() => {
+    if (!propertySlug || !tenantId) return;
+    let cancelled = false;
+    (async () => {
+      const [property, t] = await Promise.all([getPortalProperty(propertySlug), getPortalTenant(propertySlug, tenantId)]);
+      if (cancelled) return;
+      setPropertyName(property?.name ?? "");
+      setTenant(t);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [propertySlug, tenantId]);
+
+  if (tenant === undefined) return <PayShell propertyName={propertyName}>{null}</PayShell>;
 
   if (!tenant) {
     return (
@@ -51,16 +63,10 @@ export default function MaintenanceReport() {
   }
 
   const submit = () => {
-    if (!description.trim()) return;
-    addReport({
-      tenant: tenant.name,
-      location: tenant.room,
-      description: description.trim(),
-      submittedAt: new Date().toISOString(),
-      status: "open",
-      hasPhoto: !!photoUrl,
-      photoUrl,
-    });
+    if (!description.trim() || !propertySlug) return;
+    void submitPortalMaintenanceReport(propertySlug, tenant.id, description.trim(), photoUrl).catch((e) =>
+      console.error("Failed to submit report", e)
+    );
     setSubmitted(true);
   };
 
@@ -113,7 +119,10 @@ export default function MaintenanceReport() {
                 className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
-                  if (file) setPhotoUrl(URL.createObjectURL(file));
+                  if (!file) return;
+                  uploadPhoto("maintenance-photos", file)
+                    .then(setPhotoUrl)
+                    .catch((err) => console.error("Failed to upload photo", err));
                 }}
               />
             </label>

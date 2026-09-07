@@ -1,49 +1,18 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { useSettings } from "./SettingsContext";
+import {
+  listCategories,
+  listExpenses,
+  insertExpense,
+  updateExpenseRow,
+  deleteExpenseRow,
+  insertCategory,
+  updateCategoryRow,
+  type Category,
+  type Expense,
+} from "../lib/expenses";
 
-export type Category = {
-  id: string;
-  name: string;
-  active: boolean;
-};
-
-export type Expense = {
-  id: string;
-  name: string;
-  description?: string;
-  categoryId: string;
-  amount: number;
-  date: string; // ISO
-  hasPhoto: boolean;
-  source: "manual" | "payroll";
-};
-
-const defaultCategories: Category[] = [
-  { id: "maintenance", name: "Maintenance", active: true },
-  { id: "staff-wages", name: "Staff wages", active: true },
-  { id: "utilities", name: "Utilities", active: true },
-  { id: "other", name: "Other", active: true },
-];
-
-const initialExpenses: Expense[] = [
-  { id: "e1", name: "Plumber — Room 08 leak", categoryId: "maintenance", amount: 450, date: "2026-08-22", hasPhoto: true, source: "manual" },
-  { id: "e2", name: "Security guard salaries", categoryId: "staff-wages", amount: 6200, date: "2026-08-20", hasPhoto: false, source: "manual" },
-  { id: "e3", name: "ZESCO bill", categoryId: "utilities", amount: 1340, date: "2026-08-18", hasPhoto: true, source: "manual" },
-  { id: "e4", name: "Water bill", categoryId: "utilities", amount: 620, date: "2026-08-15", hasPhoto: false, source: "manual" },
-  { id: "e5", name: "Gate repair", categoryId: "maintenance", amount: 890, date: "2026-08-10", hasPhoto: true, source: "manual" },
-  { id: "e6", name: "Office supplies", categoryId: "other", amount: 210, date: "2026-08-06", hasPhoto: false, source: "manual" },
-  { id: "e7", name: "Cleaner — weekly service", categoryId: "staff-wages", amount: 480, date: "2026-08-25", hasPhoto: false, source: "manual" },
-  { id: "e8", name: "Borehole pump repair", categoryId: "maintenance", amount: 1150, date: "2026-08-24", hasPhoto: true, source: "manual" },
-  { id: "e9", name: "Internet — property WiFi", categoryId: "utilities", amount: 380, date: "2026-08-12", hasPhoto: false, source: "manual" },
-  { id: "e10", name: "Paint — common area touch-up", categoryId: "maintenance", amount: 340, date: "2026-08-08", hasPhoto: true, source: "manual" },
-  { id: "e11", name: "Garbage collection", categoryId: "utilities", amount: 260, date: "2026-08-05", hasPhoto: false, source: "manual" },
-  { id: "e12", name: "Stationery & printing", categoryId: "other", amount: 95, date: "2026-08-03", hasPhoto: false, source: "manual" },
-  { id: "e13", name: "Caretaker salary", categoryId: "staff-wages", amount: 2400, date: "2026-08-01", hasPhoto: false, source: "manual" },
-  { id: "e14", name: "Security guard salaries", categoryId: "staff-wages", amount: 6100, date: "2026-07-20", hasPhoto: false, source: "manual" },
-  { id: "e15", name: "ZESCO bill", categoryId: "utilities", amount: 1210, date: "2026-07-18", hasPhoto: true, source: "manual" },
-  { id: "e16", name: "Water bill", categoryId: "utilities", amount: 590, date: "2026-07-15", hasPhoto: false, source: "manual" },
-  { id: "e17", name: "Roof leak repair — Room 22", categoryId: "maintenance", amount: 1620, date: "2026-07-11", hasPhoto: true, source: "manual" },
-  { id: "e18", name: "Caretaker salary", categoryId: "staff-wages", amount: 2400, date: "2026-07-01", hasPhoto: false, source: "manual" },
-];
+export type { Category, Expense };
 
 type ExpensesContextValue = {
   expenses: Expense[];
@@ -60,33 +29,55 @@ type ExpensesContextValue = {
 const ExpensesContext = createContext<ExpensesContextValue | null>(null);
 
 export function ExpensesProvider({ children }: { children: ReactNode }) {
-  const [expenses, setExpenses] = useState<Expense[]>(initialExpenses);
-  const [categories, setCategories] = useState<Category[]>(defaultCategories);
+  const { propertyId } = useSettings();
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+
+  useEffect(() => {
+    if (!propertyId) return;
+    let cancelled = false;
+    (async () => {
+      const [cats, exps] = await Promise.all([listCategories(propertyId), listExpenses(propertyId)]);
+      if (cancelled) return;
+      setCategories(cats);
+      setExpenses(exps);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [propertyId]);
 
   const addExpense = (e: Omit<Expense, "id">) => {
-    setExpenses((prev) => [{ ...e, id: `e${Date.now()}` }, ...prev]);
+    const expense: Expense = { ...e, id: crypto.randomUUID() };
+    setExpenses((prev) => [expense, ...prev]);
+    if (propertyId) void insertExpense(propertyId, expense.id, e).catch((err) => console.error("Failed to save expense", err));
   };
 
   const updateExpense = (id: string, patch: Partial<Omit<Expense, "id">>) => {
     setExpenses((prev) => prev.map((e) => (e.id === id ? { ...e, ...patch } : e)));
+    void updateExpenseRow(id, patch).catch((err) => console.error("Failed to update expense", err));
   };
 
   const deleteExpense = (id: string) => {
     setExpenses((prev) => prev.filter((e) => e.id !== id));
+    void deleteExpenseRow(id).catch((err) => console.error("Failed to delete expense", err));
   };
 
   const addCategory = (name: string) => {
-    const category: Category = { id: `cat${Date.now()}`, name, active: true };
+    const category: Category = { id: crypto.randomUUID(), name, active: true };
     setCategories((prev) => [...prev, category]);
+    if (propertyId) void insertCategory(propertyId, category.id, name).catch((err) => console.error("Failed to save category", err));
     return category;
   };
 
   const renameCategory = (id: string, name: string) => {
     setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, name } : c)));
+    void updateCategoryRow(id, { name }).catch((err) => console.error("Failed to rename category", err));
   };
 
   const setCategoryActive = (id: string, active: boolean) => {
     setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, active } : c)));
+    void updateCategoryRow(id, { active }).catch((err) => console.error("Failed to update category", err));
   };
 
   const categoryName = (id: string) => categories.find((c) => c.id === id)?.name ?? "Uncategorized";

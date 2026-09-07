@@ -1,24 +1,16 @@
 import { Outlet } from "react-router-dom";
-import { SettingsProvider } from "../../landlord/SettingsContext";
-import { TenantsProvider } from "../../landlord/TenantsContext";
-import { MaintenanceProvider } from "../../landlord/MaintenanceContext";
 
 /**
- * Public payment-link surface — no auth, no dashboard chrome. Wraps only the contexts these
- * pages actually need (tenant balances, property name, maintenance reports), reusing the same
- * context code as the dashboard so tenant data and behavior stay consistent, even though this
- * runs as its own provider tree since a real public page won't share the landlord's live session.
+ * Public payment-link surface — no auth, no dashboard chrome. Pages here talk to Supabase only
+ * through the narrow `pay_portal_*` SECURITY DEFINER functions in `src/lib/payPortal.ts`, never
+ * the landlord dashboard's contexts — those fetch entire tables under a permissive pre-auth RLS
+ * policy meant for the landlord's own session, which would leak every tenant's data to any visitor
+ * of this public route if reused here.
  */
 export default function PaymentLayout() {
   return (
-    <SettingsProvider>
-      <TenantsProvider>
-        <MaintenanceProvider>
-          <div className="min-h-screen bg-mist">
-            <Outlet />
-          </div>
-        </MaintenanceProvider>
-      </TenantsProvider>
-    </SettingsProvider>
+    <div className="min-h-screen bg-mist">
+      <Outlet />
+    </div>
   );
 }

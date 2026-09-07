@@ -1,4 +1,6 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { getOrCreatePrimaryProperty, listProperties, createProperty, updateProperty } from "../lib/properties";
+import { getOrCreateSettings, updateSettings, type SettingsRow } from "../lib/settingsApi";
 
 export type NotificationPrefs = {
   newPayment: boolean;
@@ -17,6 +19,8 @@ export type PaymentMethod = {
 };
 
 type SettingsContextValue = {
+  /** id of the property every other module (rooms, tenants, invoices) is scoped to. Null until loaded. */
+  propertyId: string | null;
   invoicesOn: boolean;
   setInvoicesOn: (v: boolean) => void;
   /** Landlord-configurable collection-rate goal shown on the Rent page trend card. Defaults to 90%. */
@@ -83,57 +87,229 @@ type SettingsContextValue = {
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
 
+function fromRow(row: SettingsRow) {
+  const prefs = (row.notification_prefs ?? {}) as Partial<NotificationPrefs>;
+  return {
+    invoicesOn: row.invoices_on,
+    collectionTargetPct: row.collection_target_pct,
+    landlordName: row.landlord_name ?? "",
+    landlordPhone: row.landlord_phone ?? "",
+    paymentMethods: (row.payment_methods ?? []) as PaymentMethod[],
+    managementFeeRate: row.management_fee_rate,
+    billingPeriod: row.billing_period,
+    dueDay: row.due_day,
+    gracePeriodDays: row.grace_period_days,
+    dailyPenaltyRate: row.daily_penalty_rate,
+    reminderLeadDays: row.reminder_lead_days,
+    escalationDays: row.escalation_days,
+    contactOrder: row.contact_order as "student" | "guardian",
+    notificationPrefs: {
+      newPayment: prefs.newPayment ?? true,
+      newMaintenanceReport: prefs.newMaintenanceReport ?? true,
+      upcomingPayout: prefs.upcomingPayout ?? true,
+      overdueEscalated: prefs.overdueEscalated ?? true,
+    },
+    lencoConnected: row.lenco_connected,
+    bankName: row.bank_name ?? "",
+    accountNumber: row.account_number ?? "",
+    accountHolderName: row.account_holder_name ?? "",
+    napsaInsurableEarningsCeiling: row.napsa_insurable_earnings_ceiling,
+    minimumWageReference: row.minimum_wage_reference,
+  };
+}
+
 export function SettingsProvider({ children }: { children: ReactNode }) {
-  const [invoicesOn, setInvoicesOn] = useState(false);
-  const [collectionTargetPct, setCollectionTargetPct] = useState(90);
-  const [propertyName, setPropertyName] = useState("Kabulonga House");
-  const [propertyAddress, setPropertyAddress] = useState("Plot 14, Kabulonga, Lusaka");
-  const [landlordName, setLandlordName] = useState("Bernard Mwansa");
-  const [landlordPhone, setLandlordPhone] = useState("0977 000 000");
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([
+  const [propertyId, setPropertyId] = useState<string | null>(null);
+
+  const [invoicesOn, setInvoicesOnState] = useState(false);
+  const [collectionTargetPct, setCollectionTargetPctState] = useState(90);
+  const [propertyName, setPropertyNameState] = useState("Kabulonga House");
+  const [propertyAddress, setPropertyAddressState] = useState("Plot 14, Kabulonga, Lusaka");
+  const [landlordName, setLandlordNameState] = useState("Bernard Mwansa");
+  const [landlordPhone, setLandlordPhoneState] = useState("0977 000 000");
+  const [paymentMethods, setPaymentMethodsState] = useState<PaymentMethod[]>([
     { type: "mtn", number: "0977 000 111" },
     { type: "cash" },
   ]);
   const [properties, setProperties] = useState<string[]>(["Kabulonga House"]);
-  const [managementFeeRate, setManagementFeeRate] = useState(0.1);
+  const [managementFeeRate, setManagementFeeRateState] = useState(0.1);
 
-  const [billingPeriod, setBillingPeriod] = useState("Monthly");
-  const [dueDay, setDueDay] = useState(30);
-  const [gracePeriodDays, setGracePeriodDays] = useState(5);
-  const [dailyPenaltyRate, setDailyPenaltyRate] = useState(15);
+  const [billingPeriod, setBillingPeriodState] = useState("Monthly");
+  const [dueDay, setDueDayState] = useState(30);
+  const [gracePeriodDays, setGracePeriodDaysState] = useState(5);
+  const [dailyPenaltyRate, setDailyPenaltyRateState] = useState(15);
 
-  const [reminderLeadDays, setReminderLeadDays] = useState(3);
-  const [escalationDays, setEscalationDays] = useState(7);
-  const [contactOrder, setContactOrder] = useState<"student" | "guardian">("student");
+  const [reminderLeadDays, setReminderLeadDaysState] = useState(3);
+  const [escalationDays, setEscalationDaysState] = useState(7);
+  const [contactOrder, setContactOrderState] = useState<"student" | "guardian">("student");
 
-  const [notificationPrefs, setNotificationPrefs] = useState<NotificationPrefs>({
+  const [notificationPrefs, setNotificationPrefsState] = useState<NotificationPrefs>({
     newPayment: true,
     newMaintenanceReport: true,
     upcomingPayout: true,
     overdueEscalated: true,
   });
 
-  const [lencoConnected, setLencoConnected] = useState(false);
-  const [bankName, setBankName] = useState("");
-  const [accountNumber, setAccountNumber] = useState("");
-  const [accountHolderName, setAccountHolderName] = useState("");
+  const [lencoConnected, setLencoConnectedState] = useState(false);
+  const [bankName, setBankNameState] = useState("");
+  const [accountNumber, setAccountNumberState] = useState("");
+  const [accountHolderName, setAccountHolderNameState] = useState("");
 
-  const [napsaInsurableEarningsCeiling, setNapsaInsurableEarningsCeiling] = useState(37236);
-  const [minimumWageReference, setMinimumWageReference] = useState(1978.99);
+  const [napsaInsurableEarningsCeiling, setNapsaInsurableEarningsCeilingState] = useState(37236);
+  const [minimumWageReference, setMinimumWageReferenceState] = useState(1978.99);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const property = await getOrCreatePrimaryProperty();
+      if (cancelled) return;
+      setPropertyId(property.id);
+      setPropertyNameState(property.name);
+      setPropertyAddressState(property.address ?? "");
+
+      const [settingsRow, allProperties] = await Promise.all([
+        getOrCreateSettings(property.id),
+        listProperties(),
+      ]);
+      if (cancelled) return;
+
+      const s = fromRow(settingsRow);
+      setInvoicesOnState(s.invoicesOn);
+      setCollectionTargetPctState(s.collectionTargetPct);
+      setLandlordNameState(s.landlordName);
+      setLandlordPhoneState(s.landlordPhone);
+      setPaymentMethodsState(s.paymentMethods);
+      setManagementFeeRateState(s.managementFeeRate);
+      setBillingPeriodState(s.billingPeriod);
+      setDueDayState(s.dueDay);
+      setGracePeriodDaysState(s.gracePeriodDays);
+      setDailyPenaltyRateState(s.dailyPenaltyRate);
+      setReminderLeadDaysState(s.reminderLeadDays);
+      setEscalationDaysState(s.escalationDays);
+      setContactOrderState(s.contactOrder);
+      setNotificationPrefsState(s.notificationPrefs);
+      setLencoConnectedState(s.lencoConnected);
+      setBankNameState(s.bankName);
+      setAccountNumberState(s.accountNumber);
+      setAccountHolderNameState(s.accountHolderName);
+      setNapsaInsurableEarningsCeilingState(s.napsaInsurableEarningsCeiling);
+      setMinimumWageReferenceState(s.minimumWageReference);
+      setProperties(allProperties.map((p) => p.name));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const persist = (patch: Parameters<typeof updateSettings>[1]) => {
+    if (!propertyId) return;
+    void updateSettings(propertyId, patch);
+  };
+
+  const setInvoicesOn = (v: boolean) => {
+    setInvoicesOnState(v);
+    persist({ invoices_on: v });
+  };
+  const setCollectionTargetPct = (v: number) => {
+    setCollectionTargetPctState(v);
+    persist({ collection_target_pct: v });
+  };
+  const setPropertyName = (v: string) => {
+    setPropertyNameState(v);
+    if (propertyId) void updateProperty(propertyId, { name: v });
+  };
+  const setPropertyAddress = (v: string) => {
+    setPropertyAddressState(v);
+    if (propertyId) void updateProperty(propertyId, { address: v });
+  };
+  const setLandlordName = (v: string) => {
+    setLandlordNameState(v);
+    persist({ landlord_name: v });
+  };
+  const setLandlordPhone = (v: string) => {
+    setLandlordPhoneState(v);
+    persist({ landlord_phone: v });
+  };
+  const setPaymentMethods = (v: PaymentMethod[]) => {
+    setPaymentMethodsState(v);
+    persist({ payment_methods: v });
+  };
+  const setManagementFeeRate = (v: number) => {
+    setManagementFeeRateState(v);
+    persist({ management_fee_rate: v });
+  };
+  const setBillingPeriod = (v: string) => {
+    setBillingPeriodState(v);
+    persist({ billing_period: v });
+  };
+  const setDueDay = (v: number) => {
+    setDueDayState(v);
+    persist({ due_day: v });
+  };
+  const setGracePeriodDays = (v: number) => {
+    setGracePeriodDaysState(v);
+    persist({ grace_period_days: v });
+  };
+  const setDailyPenaltyRate = (v: number) => {
+    setDailyPenaltyRateState(v);
+    persist({ daily_penalty_rate: v });
+  };
+  const setReminderLeadDays = (v: number) => {
+    setReminderLeadDaysState(v);
+    persist({ reminder_lead_days: v });
+  };
+  const setEscalationDays = (v: number) => {
+    setEscalationDaysState(v);
+    persist({ escalation_days: v });
+  };
+  const setContactOrder = (v: "student" | "guardian") => {
+    setContactOrderState(v);
+    persist({ contact_order: v });
+  };
+  const setLencoConnected = (v: boolean) => {
+    setLencoConnectedState(v);
+    persist({ lenco_connected: v });
+  };
+  const setBankName = (v: string) => {
+    setBankNameState(v);
+    persist({ bank_name: v });
+  };
+  const setAccountNumber = (v: string) => {
+    setAccountNumberState(v);
+    persist({ account_number: v });
+  };
+  const setAccountHolderName = (v: string) => {
+    setAccountHolderNameState(v);
+    persist({ account_holder_name: v });
+  };
+  const setNapsaInsurableEarningsCeiling = (v: number) => {
+    setNapsaInsurableEarningsCeilingState(v);
+    persist({ napsa_insurable_earnings_ceiling: v });
+  };
+  const setMinimumWageReference = (v: number) => {
+    setMinimumWageReferenceState(v);
+    persist({ minimum_wage_reference: v });
+  };
 
   const addProperty = (name: string) => {
     const trimmed = name.trim();
     if (!trimmed || properties.includes(trimmed)) return;
     setProperties((prev) => [...prev, trimmed]);
+    void createProperty(trimmed);
   };
 
   const setNotificationPref = (key: keyof NotificationPrefs, value: boolean) => {
-    setNotificationPrefs((prev) => ({ ...prev, [key]: value }));
+    setNotificationPrefsState((prev) => {
+      const next = { ...prev, [key]: value };
+      persist({ notification_prefs: next });
+      return next;
+    });
   };
 
   return (
     <SettingsContext.Provider
       value={{
+        propertyId,
         invoicesOn,
         setInvoicesOn,
         collectionTargetPct,

@@ -7,6 +7,7 @@ import { Eye, MagnifyingGlass, Paperclip, Wrench } from "@phosphor-icons/react";
 import { useMaintenance, type MaintenanceReport, type MaintenanceStatus } from "../MaintenanceContext";
 import { useTenants } from "../TenantsContext";
 import Pagination, { DEFAULT_PAGE_SIZE } from "../components/Pagination";
+import { uploadPhoto } from "../../lib/storage";
 
 function EyeIcon() {
   return <Eye size={14} weight="duotone" />;
@@ -205,7 +206,10 @@ function AddRequestDrawer({ onClose, onSave }: { onClose: () => void; onSave: (r
                 className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
-                  if (file) setPhotoUrl(URL.createObjectURL(file));
+                  if (!file) return;
+                  uploadPhoto("maintenance-photos", file)
+                    .then(setPhotoUrl)
+                    .catch((err) => console.error("Failed to upload photo", err));
                 }}
               />
             </label>

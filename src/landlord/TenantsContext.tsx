@@ -1,135 +1,28 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useSettings } from "./SettingsContext";
+import {
+  listTenants,
+  insertTenant,
+  updateTenantRow,
+  deleteTenantRow,
+  addLedgerEntry,
+  type Tenant,
+  type PaymentStatus,
+  type DepositStatus,
+  type DepositMethod,
+  type LedgerRow,
+} from "../lib/tenants";
 
 // --- Types -------------------------------------------------------------------
 
-export type PaymentStatus = "paid" | "overdue" | "unpaid" | "partial";
+export type { Tenant, PaymentStatus, DepositStatus, DepositMethod, LedgerRow };
 /** The room type's name, e.g. "Single" — an open string since landlords can add their own room types on the Rooms page. */
 export type RoomType = string;
-export type DepositStatus = "Held" | "Refunded" | "Forfeited" | "Partially refunded";
-export type DepositMethod = "mobile" | "cash" | "bank";
 export type DepositRefundability = "Refundable" | "Non-refundable" | "Partially refundable";
-export type LedgerRow = {
-  label: string;
-  /** Amount due for this period, in Kwacha. */
-  amount: number;
-  /** For partial rows only: how much of `amount` has actually been paid. */
-  paidAmount?: number;
-  status?: PaymentStatus;
-};
-
-export type Tenant = {
-  id: string;
-  name: string;
-  phone: string;
-  guardianName: string;
-  guardianPhone: string;
-  property: string;
-  room: string;
-  roomType: RoomType;
-  moveInDate: string;
-  /** Agreed monthly rent, in Kwacha. */
-  rentAmount: number;
-  status: PaymentStatus;
-  daysOverdue?: number;
-  /** Outstanding balance, in Kwacha. 0 means nothing owed. */
-  owedAmount: number;
-  depositAmount: number;
-  depositDate: string;
-  depositMethod: DepositMethod;
-  depositStatus: DepositStatus;
-  /** Free-text note only the landlord sees — payment arrangements, special circumstances, etc. */
-  notes: string;
-  onTimeCount: number;
-  /** Total number of rent periods billed so far — the denominator for onTimeCount. */
-  totalMonthsCount: number;
-  active: boolean;
-  /** Institution (school/employer) covering this tenant's rent, if any — tenants sharing the same
-   * name here can be billed together as one combined invoice instead of individually. */
-  institution?: string;
-  moveOutDate?: string;
-  /** How the deposit was resolved on move-out, e.g. "Refunded in full" or "K200 deducted for cleaning". */
-  depositResolutionNote?: string;
-  ledger: LedgerRow[];
-};
 
 export function formatCurrency(n: number) {
   return `K${Math.round(n).toLocaleString("en-US")}`;
 }
-
-// Temporary switch for previewing empty states across the app — flip back to `initialTenantsSeed`
-// once the preview is done.
-const DEMO_EMPTY_STATE = false;
-
-const initialTenantsSeed: Tenant[] = [
-  {
-    id: "t1", name: "A. Mwansa", phone: "0977 123 456", guardianName: "P. Mwansa", guardianPhone: "0966 234 567",
-    property: "Kabulonga House", room: "Room 12", roomType: "Single", moveInDate: "12 Jan 2025", rentAmount: 1200, status: "paid",
-    owedAmount: 0, depositAmount: 1200, depositDate: "12 Jan 2025", depositMethod: "mobile", depositStatus: "Held",
-    notes: "", onTimeCount: 7, totalMonthsCount: 7, active: true,
-    ledger: [
-      { label: "August 2026 rent", amount: 1200, status: "paid" },
-      { label: "July 2026 rent", amount: 1200, status: "paid" },
-      { label: "June 2026 rent", amount: 1200, status: "paid" },
-    ],
-  },
-  {
-    id: "t2", name: "B. Phiri", phone: "0955 345 678", guardianName: "R. Phiri", guardianPhone: "0977 456 789",
-    property: "Kabulonga House", room: "Room 08", roomType: "Single", moveInDate: "3 Mar 2025", rentAmount: 950, status: "overdue", daysOverdue: 12, owedAmount: 1140,
-    depositAmount: 950, depositDate: "3 Mar 2025", depositMethod: "cash", depositStatus: "Held",
-    notes: "Asked for a payment plan in June — pays in two installments most months.", onTimeCount: 3, totalMonthsCount: 5, active: true,
-    ledger: [
-      { label: "August 2026 rent", amount: 1140, status: "overdue" },
-      { label: "July 2026 rent", amount: 950, status: "paid" },
-      { label: "June 2026 rent", amount: 950, status: "paid" },
-    ],
-  },
-  {
-    id: "t3", name: "C. Banda", phone: "0966 456 789", guardianName: "S. Banda", guardianPhone: "0955 567 890",
-    property: "Kabulonga House", room: "Room 03", roomType: "Two sharing", moveInDate: "20 Feb 2025", rentAmount: 900, status: "partial", owedAmount: 400,
-    depositAmount: 900, depositDate: "20 Feb 2025", depositMethod: "mobile", depositStatus: "Held",
-    notes: "", onTimeCount: 5, totalMonthsCount: 6, active: true,
-    ledger: [
-      { label: "August 2026 rent", amount: 900, paidAmount: 500, status: "partial" },
-      { label: "July 2026 rent", amount: 900, status: "paid" },
-    ],
-  },
-  {
-    id: "t4", name: "D. Zulu", phone: "0977 567 890", guardianName: "T. Zulu", guardianPhone: "0966 678 901",
-    property: "Kabulonga House", room: "Room 05", roomType: "Two sharing", moveInDate: "1 Apr 2025", rentAmount: 1000, status: "paid",
-    owedAmount: 0, depositAmount: 1000, depositDate: "1 Apr 2025", depositMethod: "mobile", depositStatus: "Held",
-    notes: "", onTimeCount: 9, totalMonthsCount: 9, active: true,
-    ledger: [{ label: "August 2026 rent", amount: 1000, status: "paid" }],
-  },
-  {
-    id: "t5", name: "F. Chileshe", phone: "0955 678 901", guardianName: "U. Chileshe", guardianPhone: "0977 789 012",
-    property: "Kabulonga House", room: "Room 19", roomType: "Two sharing", moveInDate: "15 May 2025", rentAmount: 950, status: "paid",
-    owedAmount: 0, depositAmount: 950, depositDate: "15 May 2025", depositMethod: "cash", depositStatus: "Held",
-    notes: "", onTimeCount: 4, totalMonthsCount: 4, active: true,
-    ledger: [{ label: "August 2026 rent", amount: 950, status: "paid" }],
-  },
-  {
-    id: "t6", name: "G. Mwape", phone: "0977 890 123", guardianName: "W. Mwape", guardianPhone: "0966 901 234",
-    property: "Kabulonga House", room: "Room 22", roomType: "Two sharing", moveInDate: "8 Jun 2025", rentAmount: 1100, status: "paid",
-    owedAmount: 0, depositAmount: 1100, depositDate: "8 Jun 2025", depositMethod: "mobile", depositStatus: "Held",
-    notes: "", onTimeCount: 3, totalMonthsCount: 3, active: true,
-    ledger: [{ label: "August 2026 rent", amount: 1100, status: "paid" }],
-  },
-  {
-    id: "t7", name: "H. Banda", phone: "0955 901 234", guardianName: "X. Banda", guardianPhone: "0977 012 345",
-    property: "Kabulonga House", room: "Room 14", roomType: "Single", moveInDate: "2 Jul 2025", rentAmount: 1200, status: "overdue", daysOverdue: 4, owedAmount: 1200,
-    depositAmount: 1200, depositDate: "2 Jul 2025", depositMethod: "mobile", depositStatus: "Held",
-    notes: "", onTimeCount: 2, totalMonthsCount: 3, active: true,
-    ledger: [{ label: "August 2026 rent", amount: 1200, status: "overdue" }],
-  },
-  {
-    id: "t8", name: "M. Ngoma", phone: "0966 789 012", guardianName: "V. Ngoma", guardianPhone: "0955 890 123",
-    property: "Kabulonga House", room: "Room 30", roomType: "Two sharing", moveInDate: "10 Nov 2024", rentAmount: 900, status: "paid",
-    owedAmount: 0, depositAmount: 900, depositDate: "10 Nov 2024", depositMethod: "cash", depositStatus: "Refunded",
-    notes: "", onTimeCount: 10, totalMonthsCount: 10, active: false,
-    moveOutDate: "31 Jul 2026", depositResolutionNote: "Refunded in full — end of semester, no damage.",
-    ledger: [{ label: "July 2026 rent", amount: 900, status: "paid" }],
-  },
-];
 
 // --- Context -------------------------------------------------------------------
 
@@ -148,20 +41,41 @@ type TenantsContextValue = {
 const TenantsContext = createContext<TenantsContextValue | null>(null);
 
 export function TenantsProvider({ children }: { children: ReactNode }) {
-  const [tenants, setTenants] = useState<Tenant[]>(DEMO_EMPTY_STATE ? [] : initialTenantsSeed);
+  const { propertyId, propertyName } = useSettings();
+  const [tenants, setTenants] = useState<Tenant[]>([]);
 
-  const addTenant = (t: Omit<Tenant, "id">) => {
-    const tenant: Tenant = { ...t, id: `t${Date.now()}` };
+  useEffect(() => {
+    if (!propertyId) return;
+    let cancelled = false;
+    (async () => {
+      const rows = await listTenants(propertyId, propertyName);
+      if (!cancelled) setTenants(rows);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // propertyName intentionally excluded: it can change via Settings without needing a full tenant refetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [propertyId]);
+
+  const addTenant = (t: Omit<Tenant, "id">): Tenant => {
+    const tenant: Tenant = { ...t, id: crypto.randomUUID() };
     setTenants((prev) => [tenant, ...prev]);
+    if (propertyId) void insertTenant(propertyId, tenant.id, t).catch((e) => console.error("Failed to save tenant", e));
     return tenant;
   };
 
   const updateTenant = (id: string, patch: Partial<Omit<Tenant, "id">>) => {
     setTenants((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+    if (propertyId) {
+      const { ledger: _ledger, ...rowPatch } = patch;
+      void updateTenantRow(propertyId, id, rowPatch).catch((e) => console.error("Failed to update tenant", e));
+    }
   };
 
   const deleteTenant = (id: string) => {
     setTenants((prev) => prev.filter((t) => t.id !== id));
+    void deleteTenantRow(id).catch((e) => console.error("Failed to delete tenant", e));
   };
 
   const moveOutTenant = (
@@ -173,6 +87,7 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
     );
     // The Rooms page derives occupancy from active tenants' `room` field (see RoomsContext's
     // useRoomsView), so setting active: false here is what actually frees the room up there too.
+    if (propertyId) void updateTenantRow(propertyId, id, { active: false, ...details }).catch((e) => console.error("Failed to move out tenant", e));
   };
 
   const reactivateTenant = (id: string, newMoveInDate: string) => {
@@ -183,23 +98,44 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
           : t
       )
     );
+    if (propertyId)
+      void updateTenantRow(propertyId, id, {
+        active: true,
+        moveInDate: newMoveInDate,
+        moveOutDate: undefined,
+        depositResolutionNote: undefined,
+      }).catch((e) => console.error("Failed to reactivate tenant", e));
   };
 
   const logPayment = (id: string, amount: number, label?: string) => {
+    let updated: Tenant | undefined;
     setTenants((prev) =>
-      prev.map((t) =>
-        t.id === id
-          ? {
-              ...t,
-              status: "paid",
-              owedAmount: 0,
-              onTimeCount: t.status === "overdue" || t.status === "unpaid" ? t.onTimeCount : t.onTimeCount + 1,
-              totalMonthsCount: t.totalMonthsCount + 1,
-              ledger: [{ label: label ?? "August 2026 rent", amount, status: "paid" }, ...t.ledger],
-            }
-          : t
-      )
+      prev.map((t) => {
+        if (t.id !== id) return t;
+        const next: Tenant = {
+          ...t,
+          status: "paid",
+          owedAmount: 0,
+          onTimeCount: t.status === "overdue" || t.status === "unpaid" ? t.onTimeCount : t.onTimeCount + 1,
+          totalMonthsCount: t.totalMonthsCount + 1,
+          ledger: [{ label: label ?? "August 2026 rent", amount, status: "paid" }, ...t.ledger],
+        };
+        updated = next;
+        return next;
+      })
     );
+    if (propertyId && updated) {
+      const newEntry = updated.ledger[0];
+      void Promise.all([
+        updateTenantRow(propertyId, id, {
+          status: "paid",
+          owedAmount: 0,
+          onTimeCount: updated.onTimeCount,
+          totalMonthsCount: updated.totalMonthsCount,
+        }),
+        addLedgerEntry(id, newEntry),
+      ]).catch((e) => console.error("Failed to log payment", e));
+    }
   };
 
   return (

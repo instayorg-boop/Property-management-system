@@ -1,17 +1,29 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useParams, Link } from "react-router-dom";
 import { CheckCircle, DownloadSimple } from "@phosphor-icons/react";
-import { useTenants, formatCurrency } from "../../landlord/TenantsContext";
-import { useSettings } from "../../landlord/SettingsContext";
+import { formatCurrency } from "../../landlord/TenantsContext";
+import { getPortalProperty, getPortalTenant, type PortalTenant } from "../../lib/payPortal";
 import PayShell from "./PayShell";
 
 export default function PaymentSuccess() {
   const { propertySlug, tenantId } = useParams();
   const location = useLocation();
-  const { propertyName } = useSettings();
-  const { tenants } = useTenants();
+  const [propertyName, setPropertyName] = useState("");
+  const [tenant, setTenant] = useState<PortalTenant | null>(null);
 
-  const tenant = tenants.find((t) => t.id === tenantId);
+  useEffect(() => {
+    if (!propertySlug || !tenantId) return;
+    let cancelled = false;
+    (async () => {
+      const [property, t] = await Promise.all([getPortalProperty(propertySlug), getPortalTenant(propertySlug, tenantId)]);
+      if (cancelled) return;
+      setPropertyName(property?.name ?? "");
+      setTenant(t);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [propertySlug, tenantId]);
   const state = (location.state as { amount?: number; method?: "mobile" | "card"; provider?: string } | null) ?? null;
   const amount = state?.amount;
   const methodLabel = state?.method === "card" ? "Card" : state?.provider ? `${state.provider} mobile money` : undefined;

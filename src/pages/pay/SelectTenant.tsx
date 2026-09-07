@@ -1,22 +1,34 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { MagnifyingGlass, CaretRight, House } from "@phosphor-icons/react";
-import { useTenants, formatCurrency } from "../../landlord/TenantsContext";
-import { useSettings } from "../../landlord/SettingsContext";
+import { formatCurrency } from "../../landlord/TenantsContext";
+import { getPortalProperty, searchPortalTenants, type PortalTenantSummary } from "../../lib/payPortal";
 import PayShell from "./PayShell";
 
 export default function SelectTenant() {
   const { propertySlug } = useParams();
   const navigate = useNavigate();
-  const { propertyName } = useSettings();
-  const { tenants } = useTenants();
+  const [propertyName, setPropertyName] = useState("");
+  const [tenants, setTenants] = useState<PortalTenantSummary[]>([]);
   const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    if (!propertySlug) return;
+    let cancelled = false;
+    (async () => {
+      const [property, results] = await Promise.all([getPortalProperty(propertySlug), searchPortalTenants(propertySlug)]);
+      if (cancelled) return;
+      setPropertyName(property?.name ?? "");
+      setTenants(results);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [propertySlug]);
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return tenants
-      .filter((t) => t.active)
-      .filter((t) => !q || t.name.toLowerCase().includes(q) || t.room.toLowerCase().includes(q));
+    return tenants.filter((t) => !q || t.name.toLowerCase().includes(q) || t.room.toLowerCase().includes(q));
   }, [tenants, query]);
 
   return (
