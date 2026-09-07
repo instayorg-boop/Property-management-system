@@ -1,4 +1,6 @@
-import { Link, useNavigate } from "react-router-dom";
+import { useState } from "react";
+import { Link, useNavigate, useLocation } from "react-router-dom";
+import { signIn } from "../lib/auth";
 
 function GoogleIcon() {
   return (
@@ -22,10 +24,25 @@ function GoogleIcon() {
 
 export default function SignIn() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    navigate("/dashboard");
+    setError(null);
+    setLoading(true);
+    try {
+      await signIn(email, password);
+      const from = (location.state as { from?: { pathname: string } } | null)?.from?.pathname;
+      navigate(from ?? "/dashboard", { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't sign in. Check your details and try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -47,8 +64,9 @@ export default function SignIn() {
           <div className="mt-4 space-y-2">
             <button
               type="button"
-              onClick={() => navigate("/dashboard")}
-              className="flex w-full items-center justify-center gap-2 rounded-lg border border-line bg-paper py-2 text-[13px] font-medium text-ink transition-colors hover:bg-mist"
+              disabled
+              title="Coming soon"
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-line bg-paper py-2 text-[13px] font-medium text-ink opacity-50 transition-colors"
             >
               <GoogleIcon />
               Continue with Google
@@ -62,6 +80,9 @@ export default function SignIn() {
           </div>
 
           <form className="space-y-2.5" onSubmit={handleSubmit}>
+            {error && (
+              <p className="rounded-lg bg-red-50 px-3 py-2 text-[12px] font-medium text-red-600">{error}</p>
+            )}
             <div>
               <label htmlFor="email" className="mb-1 block text-[11px] font-medium text-muted">
                 Email address
@@ -70,6 +91,8 @@ export default function SignIn() {
                 id="email"
                 type="email"
                 required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@property.co"
                 className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-[13px] outline-none transition-colors placeholder:text-muted/60 focus:border-brand"
               />
@@ -88,6 +111,8 @@ export default function SignIn() {
                 id="password"
                 type="password"
                 required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
                 className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-[13px] outline-none transition-colors focus:border-brand"
               />
@@ -95,9 +120,10 @@ export default function SignIn() {
 
             <button
               type="submit"
-              className="w-full rounded-lg bg-brand py-2 text-[13px] font-medium text-paper transition-transform hover:scale-[1.01]"
+              disabled={loading}
+              className="w-full rounded-lg bg-brand py-2 text-[13px] font-medium text-paper transition-transform hover:scale-[1.01] disabled:opacity-60 disabled:hover:scale-100"
             >
-              Sign in
+              {loading ? "Signing in…" : "Sign in"}
             </button>
           </form>
 

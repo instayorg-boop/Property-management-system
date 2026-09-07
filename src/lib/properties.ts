@@ -16,10 +16,11 @@ function slugify(name: string) {
   return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || `property-${Date.now()}`;
 }
 
-export async function createProperty(name: string, address?: string): Promise<Property> {
+export async function createProperty(name: string, address?: string, propertyType?: string): Promise<Property> {
+  const { data: userData } = await supabase.auth.getUser();
   const { data, error } = await supabase
     .from("properties")
-    .insert({ name, address, slug: slugify(name) })
+    .insert({ name, address, property_type: propertyType, slug: slugify(name), owner_id: userData.user?.id })
     .select()
     .single();
   if (error) throw error;
@@ -32,12 +33,11 @@ export async function updateProperty(id: string, patch: Partial<Pick<Property, "
 }
 
 /**
- * The app is currently single-workspace: the first property created is the
- * one every other table (settings, rooms, tenants, invoices) is scoped to.
- * Creates a default property if none exists yet.
+ * The active property every other table (settings, rooms, tenants, invoices) is scoped to —
+ * the first one this owner has, or null if they haven't finished onboarding yet. Never
+ * auto-creates: a fresh landlord account with no property is what sends them to /onboarding.
  */
-export async function getOrCreatePrimaryProperty(): Promise<Property> {
+export async function getPrimaryProperty(): Promise<Property | null> {
   const existing = await listProperties();
-  if (existing.length > 0) return existing[0];
-  return createProperty("Kabulonga House", "Plot 14, Kabulonga, Lusaka");
+  return existing[0] ?? null;
 }

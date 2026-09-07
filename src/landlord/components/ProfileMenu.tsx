@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { User as UserIcon, GearSix as SettingsIcon, SignOut as LogoutIcon, UserCircle as UserAvatarIcon } from "@phosphor-icons/react";
 import { useSettings } from "../SettingsContext";
+import { signOut as signOutRequest } from "../../lib/auth";
 
 export default function ProfileMenu({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
@@ -14,7 +15,7 @@ export default function ProfileMenu({ onClose }: { onClose: () => void }) {
 
   const signOut = () => {
     onClose();
-    navigate("/sign-in");
+    void signOutRequest().finally(() => navigate("/sign-in"));
   };
 
   return (

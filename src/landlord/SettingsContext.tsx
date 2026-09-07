@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { getOrCreatePrimaryProperty, listProperties, createProperty, updateProperty } from "../lib/properties";
+import { getPrimaryProperty, listProperties, createProperty, updateProperty } from "../lib/properties";
 import { getOrCreateSettings, updateSettings, type SettingsRow } from "../lib/settingsApi";
 
 export type NotificationPrefs = {
@@ -19,10 +19,18 @@ export type PaymentMethod = {
 };
 
 type SettingsContextValue = {
-  /** id of the property every other module (rooms, tenants, invoices) is scoped to. Null until loaded. */
+  /** id of the property every other module (rooms, tenants, invoices) is scoped to. Null until loaded,
+   * and stays null for a signed-in landlord who hasn't finished onboarding yet. */
   propertyId: string | null;
   /** False until the initial Supabase fetch resolves — pages use this to show skeletons instead of default values. */
   isReady: boolean;
+  /** False for a brand-new landlord (no property yet) or one who started onboarding and didn't finish it. */
+  onboardingCompleted: boolean;
+  /** Creates the landlord's first property + settings row — called from step one of onboarding, the
+   * only place a property gets created without one already existing. */
+  createFirstProperty: (name: string, address: string, propertyType: string) => Promise<void>;
+  /** Marks onboarding done (finished or explicitly skipped) so the landlord isn't sent back to it. */
+  completeOnboarding: () => void;
   invoicesOn: boolean;
   setInvoicesOn: (v: boolean) => void;
   /** Landlord-configurable collection-rate goal shown on the Rent page trend card. Defaults to 90%. */
@@ -141,6 +149,7 @@ function fromRow(row: SettingsRow) {
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [propertyId, setPropertyId] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
+  const [onboardingCompleted, setOnboardingCompleted] = useState(false);
 
   const [invoicesOn, setInvoicesOnState] = useState(false);
   const [collectionTargetPct, setCollectionTargetPctState] = useState(90);
@@ -188,8 +197,14 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const property = await getOrCreatePrimaryProperty();
+      const property = await getPrimaryProperty();
       if (cancelled) return;
+      if (!property) {
+        // Signed in, but hasn't created a property yet — RequireOnboarding sends them to
+        // /onboarding to do that; nothing else here can load until they have.
+        setIsReady(true);
+        return;
+      }
       setPropertyId(property.id);
       setPropertyNameState(property.name);
       setPropertyAddressState(property.address ?? "");
@@ -226,6 +241,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       setSubscriptionRenewsAtState(s.subscriptionRenewsAt);
       setNapsaInsurableEarningsCeilingState(s.napsaInsurableEarningsCeiling);
       setMinimumWageReferenceState(s.minimumWageReference);
+      setOnboardingCompleted(settingsRow.onboarding_completed);
       setProperties(allProperties.map((p) => p.name));
       setIsReady(true);
     })();
@@ -233,6 +249,22 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, []);
+
+  const createFirstProperty = async (name: string, address: string, propertyType: string) => {
+    const property = await createProperty(name, address, propertyType);
+    const settingsRow = await getOrCreateSettings(property.id);
+    setPropertyId(property.id);
+    setPropertyNameState(property.name);
+    setPropertyAddressState(property.address ?? "");
+    setPropertyTypeState(property.property_type ?? "");
+    setOnboardingCompleted(settingsRow.onboarding_completed);
+    setProperties([property.name]);
+  };
+
+  const completeOnboarding = () => {
+    setOnboardingCompleted(true);
+    persist({ onboarding_completed: true });
+  };
 
   const persist = (patch: Parameters<typeof updateSettings>[1]) => {
     if (!propertyId) return;
@@ -364,6 +396,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       value={{
         propertyId,
         isReady,
+        onboardingCompleted,
+        createFirstProperty,
+        completeOnboarding,
         invoicesOn,
         setInvoicesOn,
         collectionTargetPct,

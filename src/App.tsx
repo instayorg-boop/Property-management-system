@@ -1,8 +1,12 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { AuthProvider } from "./landlord/AuthContext";
+import RequireAuth from "./landlord/components/RequireAuth";
+import OnboardingLayout from "./landlord/components/OnboardingLayout";
 import Landing from "./pages/Landing";
 import SignIn from "./pages/SignIn";
 import GetStarted from "./pages/GetStarted";
 import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 import Pricing from "./pages/Pricing";
 import HowItWorks from "./pages/HowItWorks";
 import FeatureDetail from "./pages/FeatureDetail";
@@ -42,12 +46,14 @@ import Settings from "./landlord/pages/Settings";
 export default function App() {
   return (
     <BrowserRouter>
+      <AuthProvider>
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/sign-in" element={<SignIn />} />
         <Route path="/login" element={<SignIn />} />
         <Route path="/get-started" element={<GetStarted />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/pricing" element={<Pricing />} />
         <Route path="/how-it-works" element={<HowItWorks />} />
         <Route path="/features/:slug" element={<FeatureDetail />} />
@@ -67,28 +73,33 @@ export default function App() {
           <Route path="/pay/:propertySlug/:tenantId/report" element={<MaintenanceReport />} />
         </Route>
 
-        <Route element={<DashboardLayout />}>
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/rent" element={<Rent />} />
-          <Route path="/tenants" element={<Tenants />} />
-          <Route path="/rooms" element={<Rooms />} />
-          <Route path="/maintenance" element={<Maintenance />} />
-          <Route path="/expenses" element={<Expenses />} />
-          <Route path="/staff" element={<Navigate to="/staff/employees" replace />} />
-          <Route path="/staff/employees" element={<StaffEmployees />} />
-          <Route path="/staff/payroll" element={<StaffPayroll />} />
-          <Route path="/staff/clock" element={<StaffClock />} />
-          <Route path="/reports" element={<Navigate to="/reports/bed-rent-roll" replace />} />
-          <Route path="/reports/bed-rent-roll" element={<BedRentRoll />} />
-          <Route path="/reports/arrears-delinquency" element={<ArrearsDelinquency />} />
-          <Route path="/reports/owner-payout-statement" element={<OwnerPayoutStatement />} />
-          <Route path="/reports/income-expenses" element={<IncomeExpenses />} />
-          <Route path="/reports/payroll-summary" element={<PayrollSummary />} />
-          <Route path="/reports/occupancy-rate" element={<OccupancyRate />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/settings/:section" element={<Settings />} />
+        <Route element={<RequireAuth />}>
+          <Route path="/onboarding" element={<OnboardingLayout />} />
+
+          <Route element={<DashboardLayout />}>
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/rent" element={<Rent />} />
+            <Route path="/tenants" element={<Tenants />} />
+            <Route path="/rooms" element={<Rooms />} />
+            <Route path="/maintenance" element={<Maintenance />} />
+            <Route path="/expenses" element={<Expenses />} />
+            <Route path="/staff" element={<Navigate to="/staff/employees" replace />} />
+            <Route path="/staff/employees" element={<StaffEmployees />} />
+            <Route path="/staff/payroll" element={<StaffPayroll />} />
+            <Route path="/staff/clock" element={<StaffClock />} />
+            <Route path="/reports" element={<Navigate to="/reports/bed-rent-roll" replace />} />
+            <Route path="/reports/bed-rent-roll" element={<BedRentRoll />} />
+            <Route path="/reports/arrears-delinquency" element={<ArrearsDelinquency />} />
+            <Route path="/reports/owner-payout-statement" element={<OwnerPayoutStatement />} />
+            <Route path="/reports/income-expenses" element={<IncomeExpenses />} />
+            <Route path="/reports/payroll-summary" element={<PayrollSummary />} />
+            <Route path="/reports/occupancy-rate" element={<OccupancyRate />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="/settings/:section" element={<Settings />} />
+          </Route>
         </Route>
       </Routes>
+      </AuthProvider>
     </BrowserRouter>
   );
 }

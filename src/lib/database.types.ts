@@ -519,6 +519,7 @@ export type Database = {
           created_at: string
           id: string
           name: string
+          owner_id: string | null
           property_type: string | null
           slug: string | null
         }
@@ -527,6 +528,7 @@ export type Database = {
           created_at?: string
           id?: string
           name: string
+          owner_id?: string | null
           property_type?: string | null
           slug?: string | null
         }
@@ -535,6 +537,7 @@ export type Database = {
           created_at?: string
           id?: string
           name?: string
+          owner_id?: string | null
           property_type?: string | null
           slug?: string | null
         }
@@ -646,6 +649,7 @@ export type Database = {
           minimum_wage_reference: number
           napsa_insurable_earnings_ceiling: number
           notification_prefs: Json
+          onboarding_completed: boolean
           payment_methods: Json
           payout_day: string | null
           property_id: string
@@ -676,6 +680,7 @@ export type Database = {
           minimum_wage_reference?: number
           napsa_insurable_earnings_ceiling?: number
           notification_prefs?: Json
+          onboarding_completed?: boolean
           payment_methods?: Json
           payout_day?: string | null
           property_id: string
@@ -706,6 +711,7 @@ export type Database = {
           minimum_wage_reference?: number
           napsa_insurable_earnings_ceiling?: number
           notification_prefs?: Json
+          onboarding_completed?: boolean
           payment_methods?: Json
           payout_day?: string | null
           property_id?: string
