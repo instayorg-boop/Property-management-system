@@ -110,6 +110,7 @@ function NavRow({ item, onNavigate, attentionCount }: { item: NavItem; onNavigat
       <NavLink
         to={item.to}
         onClick={onNavigate}
+        data-tour={`nav-${item.icon}`}
         className={({ isActive }) =>
           `relative flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
             isActive ? "font-semibold text-brand" : "text-muted hover:bg-paper hover:text-ink"

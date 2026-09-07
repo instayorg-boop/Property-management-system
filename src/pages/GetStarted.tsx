@@ -25,6 +25,7 @@ function GoogleIcon() {
 export default function GetStarted() {
   const navigate = useNavigate();
   const [name, setName] = useState("");
+  const [propertyName, setPropertyName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -36,9 +37,9 @@ export default function GetStarted() {
     setError(null);
     setLoading(true);
     try {
-      const result = await signUp(email, password, name);
+      const result = await signUp(email, password, name, propertyName);
       if (result.session) {
-        navigate("/onboarding", { replace: true });
+        navigate("/dashboard", { replace: true });
       } else {
         // Email confirmation is required before Supabase issues a session.
         setCheckEmail(true);
@@ -113,6 +114,21 @@ export default function GetStarted() {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="Your name"
+                    className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-[13px] outline-none transition-colors placeholder:text-muted/60 focus:border-brand"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="property-name" className="mb-1 block text-[11px] font-medium text-muted">
+                    Property name
+                  </label>
+                  <input
+                    id="property-name"
+                    type="text"
+                    required
+                    value={propertyName}
+                    onChange={(e) => setPropertyName(e.target.value)}
+                    placeholder="e.g. Kabulonga House"
                     className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-[13px] outline-none transition-colors placeholder:text-muted/60 focus:border-brand"
                   />
                 </div>

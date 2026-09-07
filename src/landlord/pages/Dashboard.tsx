@@ -30,6 +30,7 @@ import {
 } from "@phosphor-icons/react";
 import MetricCard from "../components/MetricCard";
 import SectionLabel from "../components/SectionLabel";
+import SetupChecklist from "../components/SetupChecklist";
 
 type QuickAction = "log-payment" | "add-expense" | "add-tenant";
 
@@ -295,6 +296,8 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 gap-4 px-4 sm:px-8 pb-10 lg:grid-cols-3">
         {/* Left / main column */}
         <div className="space-y-4 lg:col-span-2">
+          {dataReady && <SetupChecklist />}
+
           {/* Stat cards — card chrome renders immediately; only the figures inside shimmer while loading. */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             {!dataReady ? (

@@ -1,7 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./landlord/AuthContext";
 import RequireAuth from "./landlord/components/RequireAuth";
-import OnboardingLayout from "./landlord/components/OnboardingLayout";
 import Landing from "./pages/Landing";
 import SignIn from "./pages/SignIn";
 import GetStarted from "./pages/GetStarted";
@@ -74,8 +73,6 @@ export default function App() {
         </Route>
 
         <Route element={<RequireAuth />}>
-          <Route path="/onboarding" element={<OnboardingLayout />} />
-
           <Route element={<DashboardLayout />}>
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/rent" element={<Rent />} />

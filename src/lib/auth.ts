@@ -3,11 +3,11 @@ import type { Session, User } from "@supabase/supabase-js";
 
 export type { Session, User };
 
-export async function signUp(email: string, password: string, fullName: string) {
+export async function signUp(email: string, password: string, fullName: string, propertyName: string) {
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
-    options: { data: { full_name: fullName } },
+    options: { data: { full_name: fullName, property_name: propertyName } },
   });
   if (error) throw error;
   return data;

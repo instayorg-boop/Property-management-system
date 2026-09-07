@@ -33,11 +33,16 @@ export async function updateProperty(id: string, patch: Partial<Pick<Property, "
 }
 
 /**
- * The active property every other table (settings, rooms, tenants, invoices) is scoped to —
- * the first one this owner has, or null if they haven't finished onboarding yet. Never
- * auto-creates: a fresh landlord account with no property is what sends them to /onboarding.
+ * The active property every other table (settings, rooms, tenants, invoices) is scoped to.
+ * A brand-new owner has none yet, so this creates one automatically — named from whatever
+ * property name they gave at sign-up (stored in their auth user_metadata), falling back to a
+ * generic name if that's missing for some reason (e.g. an account created before this existed).
  */
-export async function getPrimaryProperty(): Promise<Property | null> {
+export async function getOrCreatePrimaryProperty(): Promise<Property> {
   const existing = await listProperties();
-  return existing[0] ?? null;
+  if (existing.length > 0) return existing[0];
+
+  const { data: userData } = await supabase.auth.getUser();
+  const name = (userData.user?.user_metadata?.property_name as string | undefined)?.trim() || "My Property";
+  return createProperty(name);
 }

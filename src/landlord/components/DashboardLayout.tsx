@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Navigate, Outlet, useLocation } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
@@ -9,23 +9,19 @@ import { StaffProvider } from "../StaffContext";
 import { TenantsProvider } from "../TenantsContext";
 import { RoomsProvider } from "../RoomsContext";
 import { MaintenanceProvider } from "../MaintenanceContext";
-import { SettingsProvider, useSettings } from "../SettingsContext";
+import { SettingsProvider } from "../SettingsContext";
 import { InvoicesProvider } from "../InvoicesContext";
 import { SidebarProvider, useSidebar } from "../SidebarContext";
+import ProductTour from "./ProductTour";
 
 const FOCUSABLE_SELECTOR = 'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
 
 function Shell() {
   const { isDark } = useTheme();
   const { open, setOpen } = useSidebar();
-  const { isReady: settingsReady, propertyId, onboardingCompleted } = useSettings();
   const drawerRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLElement>(null);
   const location = useLocation();
-
-  if (settingsReady && (!propertyId || !onboardingCompleted)) {
-    return <Navigate to="/onboarding" replace />;
-  }
 
   // Client-side routing doesn't reset scroll on its own — without this, navigating to a new page
   // keeps whatever scroll position the previous page's content was left at.
@@ -100,6 +96,7 @@ function Shell() {
           </motion.div>
         </main>
       </div>
+      <ProductTour />
     </div>
   );
 }
