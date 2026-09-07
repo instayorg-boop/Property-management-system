@@ -9,6 +9,7 @@ export default function SlideOver({
   description,
   footer,
   headerActions,
+  maxWidth = "max-w-md",
 }: {
   onClose: () => void;
   children: ReactNode;
@@ -16,6 +17,8 @@ export default function SlideOver({
   description?: ReactNode;
   footer?: ReactNode;
   headerActions?: ReactNode;
+  /** Tailwind max-width class — widen for drawers with denser or multi-column content. */
+  maxWidth?: string;
 }) {
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
@@ -32,7 +35,7 @@ export default function SlideOver({
         animate={{ x: 0 }}
         exit={{ x: "100%" }}
         transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-        className="relative flex h-full w-full max-w-md flex-col border-l border-line bg-paper shadow-card"
+        className={`relative flex h-full w-full ${maxWidth} flex-col border-l border-line bg-paper shadow-card`}
       >
         {title && (
           <div className="flex shrink-0 items-start justify-between gap-4 border-b border-line py-4 pr-14 pl-6">

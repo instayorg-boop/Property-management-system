@@ -79,7 +79,7 @@ export default function ArrearsDelinquency() {
                   <th className="px-3 py-2 font-medium">Room</th>
                   <th className="px-3 py-2 font-medium">Days overdue</th>
                   <th className="px-3 py-2 font-medium">Owed</th>
-                  <th className="px-3 py-2 font-medium">Parent/guardian</th>
+                  <th className="px-3 py-2 font-medium">Emergency contact</th>
                 </tr>
               </thead>
               <tbody>
@@ -102,23 +102,25 @@ export default function ArrearsDelinquency() {
                     </td>
                     <td className="px-3 py-2 font-medium text-ink">{currency(a.owed)}</td>
                     <td className="px-3 py-2">
-                      <p className="text-ink">{a.guardianName}</p>
-                      <div className="mt-1 flex items-center gap-2">
-                        <a
-                          href={`tel:${a.guardianPhone}`}
-                          className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-[11px] font-medium text-ink transition-colors hover:bg-mist"
-                        >
-                          <PhoneIcon /> Call
-                        </a>
-                        <a
-                          href={whatsAppLink(a.guardianPhone)}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-[11px] font-medium text-ink transition-colors hover:bg-mist"
-                        >
-                          <ChatIcon /> WhatsApp
-                        </a>
-                      </div>
+                      <p className="text-ink">{a.contactName}</p>
+                      {a.contactPhone && (
+                        <div className="mt-1 flex items-center gap-2">
+                          <a
+                            href={`tel:${a.contactPhone}`}
+                            className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-[11px] font-medium text-ink transition-colors hover:bg-mist"
+                          >
+                            <PhoneIcon /> Call
+                          </a>
+                          <a
+                            href={whatsAppLink(a.contactPhone)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-[11px] font-medium text-ink transition-colors hover:bg-mist"
+                          >
+                            <ChatIcon /> WhatsApp
+                          </a>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}

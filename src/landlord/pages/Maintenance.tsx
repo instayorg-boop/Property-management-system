@@ -7,6 +7,7 @@ import { Eye, MagnifyingGlass, Paperclip, Wrench } from "@phosphor-icons/react";
 import { useMaintenance, type MaintenanceReport, type MaintenanceStatus } from "../MaintenanceContext";
 import { useTenants } from "../TenantsContext";
 import Pagination, { DEFAULT_PAGE_SIZE } from "../components/Pagination";
+import MetricCard from "../components/MetricCard";
 
 function EyeIcon() {
   return <Eye size={14} weight="duotone" />;
@@ -97,7 +98,7 @@ function RequestDrawer({
             }}
             className="mt-2 block w-full rounded-lg border border-line py-2.5 text-center text-sm font-medium text-ink transition-colors hover:bg-mist"
           >
-            Log a repair cost for this →
+            Log a repair cost for this 
           </Link>
         </>
       }
@@ -283,18 +284,26 @@ export default function Maintenance() {
 
         {/* Stat cards */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="rounded-lg border border-line bg-paper p-5">
-            <p className="text-xs text-muted">Open</p>
-            <p className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink">{counts.open}</p>
-          </div>
-          <div className="rounded-lg border border-line bg-paper p-5">
-            <p className="text-xs text-muted">In progress</p>
-            <p className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink">{counts.inProgress}</p>
-          </div>
-          <div className="rounded-lg border border-line bg-paper p-5">
-            <p className="text-xs text-muted">Unread</p>
-            <p className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink">{counts.unread}</p>
-          </div>
+          <MetricCard
+            compact
+            label="Open"
+            value={counts.open}
+            tone={counts.open > 0 ? "warning" : "success"}
+            caption={counts.open > 0 ? "Waiting to be picked up" : "Nothing waiting"}
+          />
+          <MetricCard
+            compact
+            label="In progress"
+            value={counts.inProgress}
+            caption="Currently being worked on"
+          />
+          <MetricCard
+            compact
+            label="Unread"
+            value={counts.unread}
+            tone={counts.unread > 0 ? "danger" : "success"}
+            caption={counts.unread > 0 ? "New reports to review" : "You're all caught up"}
+          />
         </div>
 
         {/* Search + status filter */}

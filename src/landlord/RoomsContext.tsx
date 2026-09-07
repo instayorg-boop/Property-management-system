@@ -76,6 +76,8 @@ type RoomsContextValue = {
   rooms: RoomRecord[];
   roomTypeConfigs: RoomTypeConfig[];
   markReady: (number: string) => void;
+  /** Takes a room out of service (cleaning/repairs) so it stops showing as available to assign. */
+  markNotReady: (number: string) => void;
   /** Adds a new room type and appends `roomCount` new rooms of it to the inventory. */
   addRoomType: (config: Omit<RoomTypeConfig, "id">, roomCount: number) => void;
 };
@@ -94,6 +96,10 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
     setRooms((prev) => prev.map((r) => (r.number === number ? { ...r, override: undefined } : r)));
   };
 
+  const markNotReady = (number: string) => {
+    setRooms((prev) => prev.map((r) => (r.number === number ? { ...r, override: "not-ready" } : r)));
+  };
+
   const addRoomType = (config: Omit<RoomTypeConfig, "id">, roomCount: number) => {
     const id = slugify(config.name);
     setRoomTypeConfigs((prev) => [...prev, { ...config, id }]);
@@ -108,7 +114,7 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <RoomsContext.Provider value={{ rooms, roomTypeConfigs, markReady, addRoomType }}>{children}</RoomsContext.Provider>
+    <RoomsContext.Provider value={{ rooms, roomTypeConfigs, markReady, markNotReady, addRoomType }}>{children}</RoomsContext.Provider>
   );
 }
 

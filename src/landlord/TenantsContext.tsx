@@ -5,9 +5,27 @@ import { createContext, useContext, useMemo, useState, type ReactNode } from "re
 export type PaymentStatus = "paid" | "overdue" | "unpaid" | "partial";
 /** The room type's name, e.g. "Single" — an open string since landlords can add their own room types on the Rooms page. */
 export type RoomType = string;
-export type DepositStatus = "Held" | "Refunded" | "Forfeited" | "Partially refunded";
+export type DepositStatus = "Not collected" | "Held" | "Refunded" | "Forfeited" | "Partially refunded";
 export type DepositMethod = "mobile" | "cash" | "bank";
 export type DepositRefundability = "Refundable" | "Non-refundable" | "Partially refundable";
+
+export const RELATION_OPTIONS = ["Parent", "Guardian", "Spouse", "Sibling", "Friend", "Other"] as const;
+export type RelationType = (typeof RELATION_OPTIONS)[number];
+
+export type EmergencyContact = {
+  id: string;
+  name: string;
+  relation: RelationType;
+  /** Free text used only when `relation` is "Other". */
+  relationOther?: string;
+  phones: string[];
+};
+
+/** What to actually show for a contact's relationship — "Other" alone isn't useful to a landlord
+ * scanning the list, so this falls back to the free-text description when one was given. */
+export function relationLabel(contact: EmergencyContact): string {
+  return contact.relation === "Other" ? contact.relationOther?.trim() || "Other" : contact.relation;
+}
 export type LedgerRow = {
   label: string;
   /** Amount due for this period, in Kwacha. */
@@ -20,9 +38,10 @@ export type LedgerRow = {
 export type Tenant = {
   id: string;
   name: string;
-  phone: string;
-  guardianName: string;
-  guardianPhone: string;
+  /** A tenant can be reachable on more than one number — the first is treated as primary (call/text). */
+  phones: string[];
+  /** Any number of emergency contacts, each with any number of their own phone numbers. */
+  emergencyContacts: EmergencyContact[];
   property: string;
   room: string;
   roomType: RoomType;
@@ -62,7 +81,7 @@ const DEMO_EMPTY_STATE = false;
 
 const initialTenantsSeed: Tenant[] = [
   {
-    id: "t1", name: "A. Mwansa", phone: "0977 123 456", guardianName: "P. Mwansa", guardianPhone: "0966 234 567",
+    id: "t1", name: "A. Mwansa", phones: ["0977 123 456"], emergencyContacts: [{ id: "t1-ec1", name: "P. Mwansa", relation: "Guardian", phones: ["0966 234 567"] }],
     property: "Kabulonga House", room: "Room 12", roomType: "Single", moveInDate: "12 Jan 2025", rentAmount: 1200, status: "paid",
     owedAmount: 0, depositAmount: 1200, depositDate: "12 Jan 2025", depositMethod: "mobile", depositStatus: "Held",
     notes: "", onTimeCount: 7, totalMonthsCount: 7, active: true,
@@ -73,7 +92,7 @@ const initialTenantsSeed: Tenant[] = [
     ],
   },
   {
-    id: "t2", name: "B. Phiri", phone: "0955 345 678", guardianName: "R. Phiri", guardianPhone: "0977 456 789",
+    id: "t2", name: "B. Phiri", phones: ["0955 345 678"], emergencyContacts: [{ id: "t2-ec1", name: "R. Phiri", relation: "Guardian", phones: ["0977 456 789"] }],
     property: "Kabulonga House", room: "Room 08", roomType: "Single", moveInDate: "3 Mar 2025", rentAmount: 950, status: "overdue", daysOverdue: 12, owedAmount: 1140,
     depositAmount: 950, depositDate: "3 Mar 2025", depositMethod: "cash", depositStatus: "Held",
     notes: "Asked for a payment plan in June — pays in two installments most months.", onTimeCount: 3, totalMonthsCount: 5, active: true,
@@ -84,7 +103,7 @@ const initialTenantsSeed: Tenant[] = [
     ],
   },
   {
-    id: "t3", name: "C. Banda", phone: "0966 456 789", guardianName: "S. Banda", guardianPhone: "0955 567 890",
+    id: "t3", name: "C. Banda", phones: ["0966 456 789"], emergencyContacts: [{ id: "t3-ec1", name: "S. Banda", relation: "Guardian", phones: ["0955 567 890"] }],
     property: "Kabulonga House", room: "Room 03", roomType: "Two sharing", moveInDate: "20 Feb 2025", rentAmount: 900, status: "partial", owedAmount: 400,
     depositAmount: 900, depositDate: "20 Feb 2025", depositMethod: "mobile", depositStatus: "Held",
     notes: "", onTimeCount: 5, totalMonthsCount: 6, active: true,
@@ -94,35 +113,35 @@ const initialTenantsSeed: Tenant[] = [
     ],
   },
   {
-    id: "t4", name: "D. Zulu", phone: "0977 567 890", guardianName: "T. Zulu", guardianPhone: "0966 678 901",
+    id: "t4", name: "D. Zulu", phones: ["0977 567 890"], emergencyContacts: [{ id: "t4-ec1", name: "T. Zulu", relation: "Guardian", phones: ["0966 678 901"] }],
     property: "Kabulonga House", room: "Room 05", roomType: "Two sharing", moveInDate: "1 Apr 2025", rentAmount: 1000, status: "paid",
     owedAmount: 0, depositAmount: 1000, depositDate: "1 Apr 2025", depositMethod: "mobile", depositStatus: "Held",
     notes: "", onTimeCount: 9, totalMonthsCount: 9, active: true,
     ledger: [{ label: "August 2026 rent", amount: 1000, status: "paid" }],
   },
   {
-    id: "t5", name: "F. Chileshe", phone: "0955 678 901", guardianName: "U. Chileshe", guardianPhone: "0977 789 012",
+    id: "t5", name: "F. Chileshe", phones: ["0955 678 901"], emergencyContacts: [{ id: "t5-ec1", name: "U. Chileshe", relation: "Guardian", phones: ["0977 789 012"] }],
     property: "Kabulonga House", room: "Room 19", roomType: "Two sharing", moveInDate: "15 May 2025", rentAmount: 950, status: "paid",
     owedAmount: 0, depositAmount: 950, depositDate: "15 May 2025", depositMethod: "cash", depositStatus: "Held",
     notes: "", onTimeCount: 4, totalMonthsCount: 4, active: true,
     ledger: [{ label: "August 2026 rent", amount: 950, status: "paid" }],
   },
   {
-    id: "t6", name: "G. Mwape", phone: "0977 890 123", guardianName: "W. Mwape", guardianPhone: "0966 901 234",
+    id: "t6", name: "G. Mwape", phones: ["0977 890 123"], emergencyContacts: [{ id: "t6-ec1", name: "W. Mwape", relation: "Guardian", phones: ["0966 901 234"] }],
     property: "Kabulonga House", room: "Room 22", roomType: "Two sharing", moveInDate: "8 Jun 2025", rentAmount: 1100, status: "paid",
     owedAmount: 0, depositAmount: 1100, depositDate: "8 Jun 2025", depositMethod: "mobile", depositStatus: "Held",
     notes: "", onTimeCount: 3, totalMonthsCount: 3, active: true,
     ledger: [{ label: "August 2026 rent", amount: 1100, status: "paid" }],
   },
   {
-    id: "t7", name: "H. Banda", phone: "0955 901 234", guardianName: "X. Banda", guardianPhone: "0977 012 345",
+    id: "t7", name: "H. Banda", phones: ["0955 901 234"], emergencyContacts: [{ id: "t7-ec1", name: "X. Banda", relation: "Guardian", phones: ["0977 012 345"] }],
     property: "Kabulonga House", room: "Room 14", roomType: "Single", moveInDate: "2 Jul 2025", rentAmount: 1200, status: "overdue", daysOverdue: 4, owedAmount: 1200,
     depositAmount: 1200, depositDate: "2 Jul 2025", depositMethod: "mobile", depositStatus: "Held",
     notes: "", onTimeCount: 2, totalMonthsCount: 3, active: true,
     ledger: [{ label: "August 2026 rent", amount: 1200, status: "overdue" }],
   },
   {
-    id: "t8", name: "M. Ngoma", phone: "0966 789 012", guardianName: "V. Ngoma", guardianPhone: "0955 890 123",
+    id: "t8", name: "M. Ngoma", phones: ["0966 789 012"], emergencyContacts: [{ id: "t8-ec1", name: "V. Ngoma", relation: "Guardian", phones: ["0955 890 123"] }],
     property: "Kabulonga House", room: "Room 30", roomType: "Two sharing", moveInDate: "10 Nov 2024", rentAmount: 900, status: "paid",
     owedAmount: 0, depositAmount: 900, depositDate: "10 Nov 2024", depositMethod: "cash", depositStatus: "Refunded",
     notes: "", onTimeCount: 10, totalMonthsCount: 10, active: false,

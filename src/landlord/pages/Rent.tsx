@@ -6,12 +6,15 @@ import LogPaymentModal from "../components/LogPaymentModal";
 import TenantSearchDrawer from "../components/TenantSearchDrawer";
 import TenantPaymentDrawer from "../components/TenantPaymentDrawer";
 import GenerateInvoicesOverlay from "../components/GenerateInvoicesOverlay";
+import TenantFormDrawer from "../components/TenantFormDrawer";
+import MoveOutModal from "../components/MoveOutModal";
 import { useTenants, formatCurrency, type PaymentStatus, type Tenant } from "../TenantsContext";
 import { useRoomTypeRent } from "../RoomsContext";
 import { useSettings } from "../SettingsContext";
-import { useInvoices } from "../InvoicesContext";
+import { calcTotalOwed } from "../invoiceUtils";
 import { LinkSimple, MagnifyingGlass, Plus, CaretLeft, CaretRight, Receipt } from "@phosphor-icons/react";
 import Pagination, { DEFAULT_PAGE_SIZE } from "../components/Pagination";
+import MetricCard from "../components/MetricCard";
 
 function LinkIcon() {
   return <LinkSimple size={14} weight="bold" />;
@@ -26,6 +29,16 @@ function PlusIcon() {
 }
 
 const filters = ["All", "Paid", "Overdue", "Unpaid", "Partial"] as const;
+
+/** The count carries the status color on its own — no badge chip behind it, so the tab reads the
+ * same whether it's selected or not (a chip on a dark selected tab just goes muddy). */
+const filterCountColor: Record<(typeof filters)[number], string> = {
+  All: "text-muted",
+  Paid: "text-emerald-600",
+  Overdue: "text-red-600",
+  Unpaid: "text-slate-500",
+  Partial: "text-amber-600",
+};
 
 const statusStyle: Record<PaymentStatus, string> = {
   paid: "bg-emerald-50 text-emerald-600",
@@ -45,19 +58,42 @@ function monthLabel(date: Date) {
   return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
 }
 
-/** Difference between a tenant's agreed rent and the standard rate for their room type, e.g. "K200 above standard". */
-function rateDiffLabel(t: Tenant, roomTypeRent: Record<string, number>) {
-  const diff = t.rentAmount - roomTypeRent[t.roomType];
-  if (diff === 0) return null;
-  return diff > 0 ? `${formatCurrency(diff)} above standard` : `${formatCurrency(Math.abs(diff))} below standard`;
+/** This tenant's rent is a set, contracted figure — only worth calling out against the room type's
+ * rate when it's a discount. A rent above the room type rate isn't a "rate" concept (multi-month
+ * payments are a different thing, handled by the Amount paid column), so it gets no comparison. */
+function rentDiscountNote(t: Tenant, roomTypeRent: Record<string, number>) {
+  const typeRate = roomTypeRent[t.roomType];
+  const discount = typeRate - t.rentAmount;
+  if (discount <= 0) return null;
+  return `${formatCurrency(t.rentAmount)}/mo · ${formatCurrency(discount)} discount off ${formatCurrency(typeRate)}`;
+}
+
+/** Money actually received for this billing period — never the amount due, so Overdue/Unpaid rows
+ * truthfully show K0 rather than implying a payment that didn't happen. */
+function amountPaidThisMonth(t: Tenant) {
+  if (t.status === "paid") return t.rentAmount;
+  if (t.status === "partial") return t.ledger[0]?.paidAmount ?? 0;
+  return 0;
+}
+
+/** Overdue and unpaid are equally urgent — same rank, same red bucket in the summary line. */
+const urgencyRank: Record<PaymentStatus, number> = { overdue: 0, unpaid: 0, partial: 1, paid: 2 };
+
+/** The pill's amount is the tenant's true total owed — carried-over arrears plus accrued late fees,
+ * from the same calcTotalOwed used for invoicing — never just this month's shortfall. */
+function statusPillText(t: Tenant, dailyPenaltyRate: number) {
+  if (t.status === "paid") return "Paid";
+  const totalOwed = calcTotalOwed(t, dailyPenaltyRate);
+  if (t.status === "overdue") return `Overdue${t.daysOverdue ? ` · ${t.daysOverdue}d` : ""} — ${formatCurrency(totalOwed)} owed`;
+  if (t.status === "unpaid") return `Unpaid — ${formatCurrency(totalOwed)} owed`;
+  return `Partial · ${formatCurrency(totalOwed)} left`;
 }
 
 type PaymentStep = "search" | "ledger" | "confirm";
 
 export default function Rent() {
-  const { tenants, logPayment } = useTenants();
-  const { invoicesOn, collectionTargetPct } = useSettings();
-  const { hasSentInvoiceForPeriod } = useInvoices();
+  const { tenants, logPayment, moveOutTenant } = useTenants();
+  const { invoicesOn, collectionTargetPct, dailyPenaltyRate } = useSettings();
   const roomTypeRent = useRoomTypeRent();
   const location = useLocation();
   const navigate = useNavigate();
@@ -81,6 +117,8 @@ export default function Rent() {
 
   const [paymentStep, setPaymentStep] = useState<PaymentStep | null>(null);
   const [payingTenant, setPayingTenant] = useState<Tenant | null>(null);
+  const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
+  const [movingOutTenant, setMovingOutTenant] = useState<Tenant | null>(null);
 
   const activeTenants = useMemo(() => tenants.filter((t) => t.active), [tenants]);
 
@@ -102,12 +140,24 @@ export default function Rent() {
   const filtered = useMemo(() => {
     return activeTenants
       .filter((t) => filter === "All" || statusLabel[t.status] === filter)
-      .filter((t) => t.name.toLowerCase().includes(query.toLowerCase()) || t.room.toLowerCase().includes(query.toLowerCase()));
+      .filter((t) => t.name.toLowerCase().includes(query.toLowerCase()) || t.room.toLowerCase().includes(query.toLowerCase()))
+      .sort((a, b) => urgencyRank[a.status] - urgencyRank[b.status]);
   }, [activeTenants, filter, query]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
   const currentPage = Math.min(page, pageCount);
   const pageRows = filtered.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
+
+  // Per-filter counts, independent of the search box — shown as a badge on each filter tab.
+  const filterCounts = useMemo(() => {
+    return {
+      All: activeTenants.length,
+      Paid: activeTenants.filter((t) => t.status === "paid").length,
+      Overdue: activeTenants.filter((t) => t.status === "overdue").length,
+      Unpaid: activeTenants.filter((t) => t.status === "unpaid").length,
+      Partial: activeTenants.filter((t) => t.status === "partial").length,
+    } as Record<(typeof filters)[number], number>;
+  }, [activeTenants]);
 
   // TODO(Jackson): mock prior-period benchmark — wire up to real historical collection data once the backend is connected.
   const LAST_MONTH_RATE = 82;
@@ -134,19 +184,6 @@ export default function Rent() {
       outstanding === 0 ? "none" : delinquentCount >= 3 ? "high" : "moderate";
 
     return { totalExpected, collectedTotal, outstanding, delinquentCount, collectedPct, trend, outstandingSeverity };
-  }, [activeTenants]);
-
-  // Arrears aging: how much of the outstanding balance has been owed for how long.
-  const aging = useMemo(() => {
-    const buckets = { d0to30: 0, d31to60: 0, d61plus: 0 };
-    for (const t of activeTenants) {
-      if (t.owedAmount <= 0) continue;
-      const days = t.daysOverdue ?? 0;
-      if (days > 60) buckets.d61plus += t.owedAmount;
-      else if (days > 30) buckets.d31to60 += t.owedAmount;
-      else buckets.d0to30 += t.owedAmount;
-    }
-    return buckets;
   }, [activeTenants]);
 
   const copyLink = () => {
@@ -244,58 +281,54 @@ export default function Rent() {
 
         {/* Stat cards */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-lg border border-line bg-paper p-4">
-            <p className="text-xs text-muted">Total expected rent</p>
-            <p className="mt-1.5 font-display text-2xl font-semibold tracking-tight text-ink">{formatCurrency(stats.totalExpected)}</p>
-            <p className="mt-1 text-[11px] text-muted">Target for {month}</p>
-          </div>
+          <MetricCard
+            label="Total expected rent"
+            value={formatCurrency(stats.totalExpected)}
+            caption={`Target for ${month}`}
+          />
 
-          <div className="rounded-lg border border-line bg-paper p-4">
-            <p className="text-xs text-muted">Rent collected</p>
-            <p className="mt-1.5 font-display text-2xl font-semibold tracking-tight text-ink">{formatCurrency(stats.collectedTotal)}</p>
-            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-mist">
-              <div
-                className="h-full rounded-full bg-emerald-500 transition-[width]"
-                style={{ width: `${Math.min(100, stats.collectedPct)}%` }}
-              />
-            </div>
-            <p className="mt-1 text-[11px] text-muted">{stats.collectedPct}% of target collected</p>
-          </div>
+          <MetricCard
+            label="Rent collected"
+            value={formatCurrency(stats.collectedTotal)}
+            tone="success"
+            insight={
+              <span className="flex w-full items-center gap-2">
+                <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-emerald-100">
+                  <span
+                    className="block h-full rounded-full bg-emerald-500 transition-[width]"
+                    style={{ width: `${Math.min(100, stats.collectedPct)}%` }}
+                  />
+                </span>
+              </span>
+            }
+            caption={`${stats.collectedPct}% of target collected`}
+          />
 
-          <div className="rounded-lg border border-line bg-paper p-4">
-            <p className="text-xs text-muted">Still owed</p>
-            <p className="mt-1.5 font-display text-2xl font-semibold tracking-tight text-ink">{formatCurrency(stats.outstanding)}</p>
-            <span
-              className={`mt-1.5 inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                stats.outstandingSeverity === "none"
-                  ? "bg-emerald-50 text-emerald-600"
-                  : stats.outstandingSeverity === "moderate"
-                    ? "bg-amber-50 text-amber-600"
-                    : "bg-red-50 text-red-600"
-              }`}
-            >
-              {stats.outstandingSeverity === "none" ? "All paid up" : `${stats.delinquentCount} tenant${stats.delinquentCount === 1 ? "" : "s"} behind on rent`}
-            </span>
-          </div>
+          <MetricCard
+            label="Still owed"
+            value={formatCurrency(stats.outstanding)}
+            tone={stats.outstandingSeverity === "none" ? "success" : stats.outstandingSeverity === "moderate" ? "warning" : "danger"}
+            insight={stats.outstandingSeverity === "none" ? "All paid up" : "Needs follow-up"}
+            caption={
+              stats.outstandingSeverity === "none"
+                ? "Every active tenant is paid up"
+                : `${stats.delinquentCount} tenant${stats.delinquentCount === 1 ? "" : "s"} behind on rent`
+            }
+          />
 
-          <div className="rounded-lg border border-line bg-paper p-4">
-            <p className="text-xs text-muted">Collection rate</p>
-            <p className="mt-1.5 font-display text-2xl font-semibold tracking-tight text-ink">{stats.collectedPct}%</p>
-            <p className="mt-1 text-[11px] text-muted">Goal is {collectionTargetPct}%</p>
-            <span
-              className={`mt-1 inline-flex items-center gap-1 text-[11px] font-medium ${
-                stats.trend >= 0 ? "text-emerald-600" : "text-red-600"
-              }`}
-            >
-              {stats.trend >= 0 ? "▲" : "▼"} {stats.trend >= 0 ? "+" : ""}
-              {stats.trend}% compared to last month
-            </span>
-          </div>
+          <MetricCard
+            label="Collection rate"
+            value={`${stats.collectedPct}%`}
+            trend={{ direction: stats.trend >= 0 ? "up" : "down", value: `${stats.trend >= 0 ? "+" : ""}${stats.trend}%` }}
+            insight={stats.trend >= 0 ? "Ahead of last month" : "Behind last month"}
+            caption={`Goal is ${collectionTargetPct}%`}
+          />
         </div>
 
         {/* Search + filter tabs */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-2 rounded-lg border border-line bg-paper px-3 py-2">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          {/* Borderless until focused — the field only asserts itself once you're typing in it */}
+          <div className="flex items-center gap-2.5 rounded-md bg-mist px-3.5 py-2.5 transition-colors focus-within:bg-paper focus-within:ring-2 focus-within:ring-brand/25 sm:w-64">
             <SearchIcon />
             <input
               value={query}
@@ -303,26 +336,42 @@ export default function Rent() {
                 setQuery(e.target.value);
                 setPage(1);
               }}
-              placeholder="Search by tenant or room"
-              className="w-52 bg-transparent text-sm outline-none placeholder:text-muted"
+              placeholder="Search tenant or room"
+              className="w-full bg-transparent text-sm outline-none placeholder:text-muted"
             />
           </div>
-          <div className="flex gap-2 overflow-x-auto">
-            {filters.map((f) => (
-              <button
-                key={f}
-                type="button"
-                onClick={() => {
-                  setFilter(f);
-                  setPage(1);
-                }}
-                className={`shrink-0 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-                  filter === f ? "bg-ink text-paper" : "border border-line text-muted hover:bg-mist"
-                }`}
-              >
-                {f}
-              </button>
-            ))}
+
+          {/* Segmented control — the selected pill slides between tabs rather than blinking on/off */}
+          <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+            <div className="inline-flex gap-0.5 rounded-md bg-mist p-1">
+              {filters.map((f) => {
+                const active = filter === f;
+                return (
+                  <button
+                    key={f}
+                    type="button"
+                    onClick={() => {
+                      setFilter(f);
+                      setPage(1);
+                    }}
+                    className={`relative flex shrink-0 items-center gap-1.5 rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                      active ? "text-ink" : "text-muted hover:text-ink"
+                    }`}
+                  >
+                    {active && (
+                      <motion.span
+                        layoutId="rent-filter-pill"
+                        transition={{ type: "spring", stiffness: 480, damping: 38 }}
+                        className="absolute inset-0 rounded-md bg-paper shadow-sm"
+                      />
+                    )}
+                    <span className="relative">{f}</span>
+                    {/* Always colored — the mix reads at a glance without selecting anything */}
+                    <span className={`relative text-xs font-semibold tabular-nums ${filterCountColor[f]}`}>{filterCounts[f]}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 
@@ -331,7 +380,9 @@ export default function Rent() {
           {/* Mobile: cards — an HTML table doesn't have room to breathe on a phone screen */}
           <div className="divide-y divide-line md:hidden">
             {pageRows.map((t) => {
-              const diffLabel = rateDiffLabel(t, roomTypeRent);
+              const needsAction = t.status !== "paid";
+              const discountNote = rentDiscountNote(t, roomTypeRent);
+              const paidThisMonth = amountPaidThisMonth(t);
               return (
                 <div
                   key={t.id}
@@ -339,34 +390,31 @@ export default function Rent() {
                     setPayingTenant(t);
                     setPaymentStep("ledger");
                   }}
-                  className="p-4 transition-colors active:bg-mist"
+                  className={`p-4 transition-colors active:bg-mist ${needsAction ? "bg-slate-50" : ""}`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <p className="truncate text-sm font-medium text-ink">{t.name}</p>
-                        {hasSentInvoiceForPeriod(t.id, month) && (
-                          <span className="shrink-0 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600">
-                            Invoice sent
-                          </span>
-                        )}
-                      </div>
-                      <p className="mt-0.5 text-xs text-muted">
-                        {t.room} · {t.roomType}
-                      </p>
+                      <p className="truncate text-sm font-medium text-ink">{t.name}</p>
+                      <p className="mt-0.5 text-xs text-muted">{t.room}</p>
                     </div>
                     <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[t.status]}`}>
-                      {statusLabel[t.status]}
-                      {t.status === "overdue" && t.daysOverdue ? ` · ${t.daysOverdue}d` : ""}
+                      {statusPillText(t, dailyPenaltyRate)}
                     </span>
                   </div>
 
                   <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
                     <div>
-                      <span className="text-sm font-semibold text-ink">{formatCurrency(t.rentAmount)}</span>
-                      {diffLabel && <span className="ml-1.5 text-[10px] text-amber-600">{diffLabel}</span>}
+                      <p className="text-xs text-ink">{t.roomType}</p>
+                      {discountNote ? (
+                        <p className="text-xs text-amber-600">{discountNote}</p>
+                      ) : (
+                        <p className="text-xs text-muted">{formatCurrency(t.rentAmount)}/mo</p>
+                      )}
+                      <p className={`mt-0.5 text-sm ${paidThisMonth === 0 ? "font-normal text-muted" : "font-medium text-ink"}`}>
+                        {formatCurrency(paidThisMonth)} paid
+                      </p>
                     </div>
-                    {(t.status === "overdue" || t.status === "unpaid") && (
+                    {needsAction ? (
                       <button
                         type="button"
                         onClick={(e) => {
@@ -377,6 +425,18 @@ export default function Rent() {
                         className="rounded-lg bg-brand px-3 py-1.5 text-xs font-medium text-paper"
                       >
                         Log payment
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPayingTenant(t);
+                          setPaymentStep("ledger");
+                        }}
+                        className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink"
+                      >
+                        View
                       </button>
                     )}
                   </div>
@@ -408,49 +468,48 @@ export default function Rent() {
             <thead className="bg-mist text-xs text-muted">
               <tr>
                 <th className="px-4 py-3 font-medium">Tenant</th>
-                <th className="px-4 py-3 font-medium">Room</th>
                 <th className="px-4 py-3 font-medium">Room type</th>
-                <th className="px-4 py-3 font-medium">Rent</th>
+                <th className="px-4 py-3 font-medium">Amount paid</th>
                 <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3" />
+                <th className="px-4 py-3 font-medium">Action</th>
               </tr>
             </thead>
             <tbody>
               {pageRows.map((t) => {
-                const diffLabel = rateDiffLabel(t, roomTypeRent);
+                const needsAction = t.status !== "paid";
+                const discountNote = rentDiscountNote(t, roomTypeRent);
+                const paidThisMonth = amountPaidThisMonth(t);
                 return (
                   <tr
                     key={t.id}
-                    className="cursor-pointer border-t border-line transition-colors hover:bg-mist"
+                    className={`cursor-pointer border-t border-line transition-colors hover:bg-mist ${needsAction ? "bg-slate-50" : ""}`}
                     onClick={() => {
                       setPayingTenant(t);
                       setPaymentStep("ledger");
                     }}
                   >
-                    <td className="px-4 py-3 font-medium text-ink">
-                      <div className="flex items-center gap-1.5">
-                        {t.name}
-                        {hasSentInvoiceForPeriod(t.id, month) && (
-                          <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600">
-                            Invoice sent
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-muted">{t.room}</td>
-                    <td className="px-4 py-3 text-muted">{t.roomType}</td>
                     <td className="px-4 py-3">
-                      <span className="text-ink">{formatCurrency(t.rentAmount)}</span>
-                      {diffLabel && <span className="ml-1.5 text-[10px] text-amber-600">{diffLabel}</span>}
+                      <p className="font-medium text-ink">{t.name}</p>
+                      <p className="text-xs text-muted">{t.room}</p>
+                    </td>
+                    <td className="px-4 py-3">
+                      <p className="text-ink">{t.roomType}</p>
+                      {discountNote ? (
+                        <p className="text-xs text-amber-600">{discountNote}</p>
+                      ) : (
+                        <p className="text-xs text-muted">{formatCurrency(t.rentAmount)}/mo</p>
+                      )}
+                    </td>
+                    <td className={`px-4 py-3 ${paidThisMonth === 0 ? "font-normal text-muted" : "font-medium text-ink"}`}>
+                      {formatCurrency(paidThisMonth)}
                     </td>
                     <td className="px-4 py-3">
                       <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[t.status]}`}>
-                        {statusLabel[t.status]}
-                        {t.status === "overdue" && t.daysOverdue ? ` · ${t.daysOverdue}d` : ""}
+                        {statusPillText(t, dailyPenaltyRate)}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      {(t.status === "overdue" || t.status === "unpaid") && (
+                    <td className="px-4 py-3">
+                      {needsAction ? (
                         <button
                           type="button"
                           onClick={(e) => {
@@ -462,6 +521,18 @@ export default function Rent() {
                         >
                           Log payment
                         </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPayingTenant(t);
+                            setPaymentStep("ledger");
+                          }}
+                          className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink"
+                        >
+                          View
+                        </button>
                       )}
                     </td>
                   </tr>
@@ -469,7 +540,7 @@ export default function Rent() {
               })}
               {pageRows.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10">
+                  <td colSpan={5} className="px-4 py-10">
                     <div className="flex flex-col items-center justify-center gap-3 text-center">
                       <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
                         <Receipt size={22} weight="duotone" />
@@ -506,21 +577,6 @@ export default function Rent() {
           )}
         </div>
 
-        {/* Arrears aging strip */}
-        <div className="grid grid-cols-1 gap-4 rounded-lg border border-line bg-paper p-4 sm:grid-cols-3">
-          <div>
-            <p className="text-xs text-muted">0–30 days overdue</p>
-            <p className="mt-1.5 font-display text-xl font-semibold tracking-tight text-ink">{formatCurrency(aging.d0to30)}</p>
-          </div>
-          <div className="sm:border-l sm:border-line sm:pl-4">
-            <p className="text-xs text-muted">31–60 days overdue</p>
-            <p className="mt-1.5 font-display text-xl font-semibold tracking-tight text-amber-600">{formatCurrency(aging.d31to60)}</p>
-          </div>
-          <div className="sm:border-l sm:border-line sm:pl-4">
-            <p className="text-xs text-muted">60+ days overdue</p>
-            <p className="mt-1.5 font-display text-xl font-semibold tracking-tight text-red-600">{formatCurrency(aging.d61plus)}</p>
-          </div>
-        </div>
           </motion.div>
         )}
       </div>
@@ -543,6 +599,8 @@ export default function Rent() {
               setPayingTenant(null);
             }}
             onLogPayment={() => setPaymentStep("confirm")}
+            onEdit={() => setEditingTenant(payingTenant)}
+            onMoveOut={() => setMovingOutTenant(payingTenant)}
           />
         )}
         {paymentStep === "confirm" && payingTenant && (
@@ -553,6 +611,19 @@ export default function Rent() {
             onClose={() => setPaymentStep("ledger")}
             onConfirm={() => {
               logPayment(payingTenant.id, payingTenant.owedAmount || payingTenant.rentAmount);
+              setPaymentStep(null);
+              setPayingTenant(null);
+            }}
+          />
+        )}
+        {editingTenant && <TenantFormDrawer editing={editingTenant} onClose={() => setEditingTenant(null)} />}
+        {movingOutTenant && (
+          <MoveOutModal
+            tenant={movingOutTenant}
+            onClose={() => setMovingOutTenant(null)}
+            onConfirm={(details) => {
+              moveOutTenant(movingOutTenant.id, details);
+              setMovingOutTenant(null);
               setPaymentStep(null);
               setPayingTenant(null);
             }}

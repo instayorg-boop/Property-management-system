@@ -5,6 +5,7 @@ import LogPaymentModal from "../components/LogPaymentModal";
 import TenantSearchDrawer from "../components/TenantSearchDrawer";
 import TenantPaymentDrawer from "../components/TenantPaymentDrawer";
 import TenantFormDrawer from "../components/TenantFormDrawer";
+import MoveOutModal from "../components/MoveOutModal";
 import ExpenseFormDrawer from "../components/ExpenseFormDrawer";
 import PayoutDetailDrawer, { type UpcomingPayout } from "../components/PayoutDetailDrawer";
 import Select, { type SelectOption } from "../components/Select";
@@ -23,6 +24,8 @@ import {
   Wallet as WalletIcon,
   DoorOpen as DoorIcon,
 } from "@phosphor-icons/react";
+import MetricCard from "../components/MetricCard";
+import SectionLabel from "../components/SectionLabel";
 
 type QuickAction = "log-payment" | "add-expense" | "add-tenant";
 
@@ -43,7 +46,7 @@ function Greeting({ onAction }: { onAction: (action: QuickAction) => void }) {
   const [sheetOpen, setSheetOpen] = useState(false);
 
   return (
-    <div className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-4 bg-paper px-4 pt-5 pb-6 sm:px-8">
+    <div className="flex flex-wrap items-center justify-between gap-4 bg-paper px-4 pt-5 pb-6 sm:px-8">
       <div>
         <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
           Good {part}, {name}
@@ -204,7 +207,7 @@ type PaymentStep = "search" | "ledger" | "confirm";
 const DEMO_EMPTY_STATE = false;
 
 export default function Dashboard() {
-  const { tenants: tenantsFromContext, logPayment } = useTenants();
+  const { tenants: tenantsFromContext, logPayment, moveOutTenant } = useTenants();
   const { reports: reportsFromContext } = useMaintenance();
   const tenants = DEMO_EMPTY_STATE ? [] : tenantsFromContext;
   const reports = DEMO_EMPTY_STATE ? [] : reportsFromContext;
@@ -218,6 +221,8 @@ export default function Dashboard() {
 
   const [paymentStep, setPaymentStep] = useState<PaymentStep | null>(null);
   const [payingTenant, setPayingTenant] = useState<Tenant | null>(null);
+  const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
+  const [movingOutTenant, setMovingOutTenant] = useState<Tenant | null>(null);
   const [addingTenant, setAddingTenant] = useState(false);
   const [addingExpense, setAddingExpense] = useState(false);
   const [payoutOpen, setPayoutOpen] = useState(false);
@@ -248,32 +253,34 @@ export default function Dashboard() {
         <div className="space-y-4 lg:col-span-2">
           {/* Stat cards */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div className="rounded-lg border border-line bg-paper p-5">
-              <p className="text-xs text-muted">Total collected</p>
-              <p className="mt-3 font-display text-2xl font-semibold text-ink">K{totalCollected.toLocaleString()}</p>
-              <p className="mt-1 text-[11px] text-muted">
-                {totalCollected > 0 ? "+6% compared to last month" : "No payments collected yet"}
-              </p>
-            </div>
-            <div className={`rounded-lg p-5 ${outstanding.total > 0 ? "bg-red-50" : "border border-line bg-paper"}`}>
-              <p className={`text-xs ${outstanding.total > 0 ? "text-red-600/70" : "text-muted"}`}>Outstanding balance</p>
-              <p className={`mt-3 font-display text-2xl font-semibold ${outstanding.total > 0 ? "text-red-600" : "text-ink"}`}>
-                K{outstanding.total.toLocaleString()}
-              </p>
-              <p className={`mt-1 text-[11px] ${outstanding.total > 0 ? "text-red-600/70" : "text-muted"}`}>
-                {outstanding.count} tenant{outstanding.count === 1 ? "" : "s"} behind on rent
-              </p>
-            </div>
-            <div className="rounded-lg border border-line bg-paper p-5">
-              <p className="text-xs text-muted">Rooms occupied</p>
-              {roomsOccupied.total > 0 ? (
-                <>
-                  <p className="mt-3 font-display text-2xl font-semibold text-ink">
-                    {roomsOccupied.occupied} / {roomsOccupied.total}
-                  </p>
-                  <p className="mt-1 text-[11px] text-muted">{roomsOccupied.total - roomsOccupied.occupied} rooms empty</p>
-                </>
-              ) : (
+            <MetricCard
+              label="Total collected"
+              value={`K${totalCollected.toLocaleString()}`}
+              insight={totalCollected > 0 ? "Trending up this month" : "No payments yet"}
+              caption={totalCollected > 0 ? "Compared to last month" : "Logged payments will show up here"}
+            />
+            <MetricCard
+              label="Outstanding balance"
+              value={`K${outstanding.total.toLocaleString()}`}
+              tone={outstanding.total > 0 ? "danger" : "success"}
+              insight={outstanding.total > 0 ? "Needs your attention" : "Nothing outstanding"}
+              caption={
+                outstanding.total > 0
+                  ? `${outstanding.count} tenant${outstanding.count === 1 ? "" : "s"} behind on rent`
+                  : "Every active tenant is paid up"
+              }
+            />
+            {roomsOccupied.total > 0 ? (
+              <MetricCard
+                label="Rooms occupied"
+                value={`${roomsOccupied.occupied} / ${roomsOccupied.total}`}
+                tone={roomsOccupied.occupied === roomsOccupied.total ? "success" : "default"}
+                insight={roomsOccupied.occupied === roomsOccupied.total ? "Fully occupied" : "Room to grow"}
+                caption={`${roomsOccupied.total - roomsOccupied.occupied} room${roomsOccupied.total - roomsOccupied.occupied === 1 ? "" : "s"} empty`}
+              />
+            ) : (
+              <div className="rounded-lg border border-line bg-paper p-5">
+                <p className="text-[13px] font-semibold text-ink/70">Rooms occupied</p>
                 <div className="mt-3 flex items-center gap-2.5">
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-mist text-muted">
                     <DoorIcon size={16} weight="duotone" />
@@ -283,8 +290,8 @@ export default function Dashboard() {
                     <p className="text-[11px] text-muted">Add a room to get started</p>
                   </div>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
 
           {/* Collections chart */}
@@ -486,7 +493,7 @@ export default function Dashboard() {
 
           {/* Upcoming payout */}
           <div className="rounded-lg border border-line bg-paper p-5">
-            <p className="text-[11px] font-medium text-muted uppercase">Your next payout</p>
+            <SectionLabel>Your next payout</SectionLabel>
             {payout ? (
               <>
                 <p className="mt-2 font-display text-base font-semibold text-ink">{payout.status}</p>
@@ -589,6 +596,8 @@ export default function Dashboard() {
               setPayingTenant(null);
             }}
             onLogPayment={() => setPaymentStep("confirm")}
+            onEdit={() => setEditingTenant(payingTenant)}
+            onMoveOut={() => setMovingOutTenant(payingTenant)}
           />
         )}
         {paymentStep === "confirm" && payingTenant && (
@@ -599,6 +608,19 @@ export default function Dashboard() {
             onClose={() => setPaymentStep("ledger")}
             onConfirm={() => {
               logPayment(payingTenant.id, payingTenant.owedAmount || payingTenant.rentAmount);
+              setPaymentStep(null);
+              setPayingTenant(null);
+            }}
+          />
+        )}
+        {editingTenant && <TenantFormDrawer editing={editingTenant} onClose={() => setEditingTenant(null)} />}
+        {movingOutTenant && (
+          <MoveOutModal
+            tenant={movingOutTenant}
+            onClose={() => setMovingOutTenant(null)}
+            onConfirm={(details) => {
+              moveOutTenant(movingOutTenant.id, details);
+              setMovingOutTenant(null);
               setPaymentStep(null);
               setPayingTenant(null);
             }}

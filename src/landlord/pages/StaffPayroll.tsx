@@ -18,6 +18,8 @@ import {
 import PageHeader from "../components/PageHeader";
 import SlideOver from "../components/SlideOver";
 import Modal from "../components/Modal";
+import MetricCard from "../components/MetricCard";
+import SectionLabel from "../components/SectionLabel";
 import { useExpenses } from "../ExpensesContext";
 import { useSettings } from "../SettingsContext";
 import {
@@ -86,7 +88,7 @@ function TaxBreakdownCard({ employee, gross, basic }: { employee: Employee; gros
 
   return (
     <div className="rounded-lg border border-line bg-mist p-4">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted">Live tax breakdown</p>
+      <SectionLabel>Live tax breakdown</SectionLabel>
       <div className="mt-1 divide-y divide-line">
         <Row label="Gross salary (basic + allowances)" value={currency(gross)} />
         <Row label="Less NAPSA (5%, capped K1,861.80)" value={`-${currency(napsa)}`} muted />
@@ -474,44 +476,43 @@ export default function StaffPayroll() {
             </div>
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-lg border border-line bg-paper p-5">
-                <div className="flex items-center gap-2 text-muted">
-                  <Wallet className="h-4 w-4" />
-                  <p className="text-xs font-medium">Total pay before deductions</p>
-                </div>
-                <p className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink">{currency(totals.gross)}</p>
-              </div>
-              <div className="rounded-lg border border-line bg-paper p-5">
-                <div className="flex items-center gap-2 text-muted">
-                  <Banknote className="h-4 w-4" />
-                  <p className="text-xs font-medium">Total paid to staff</p>
-                </div>
-                <p className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink">{currency(totals.net)}</p>
-              </div>
-              <div className="rounded-lg border border-line bg-paper p-5">
-                <div className="flex items-center gap-2 text-muted">
-                  <Landmark className="h-4 w-4" />
-                  <p className="text-xs font-medium">Total tax & pension owed</p>
-                </div>
-                <p className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink">{currency(totals.statutory)}</p>
-                <p className="mt-1 text-[11px] text-muted">Income tax, pension, health levy and skills levy</p>
-              </div>
-              <div className="rounded-lg border border-line bg-paper p-5">
-                <div className="flex items-center gap-2 text-muted">
-                  <Users className="h-4 w-4" />
-                  <p className="text-xs font-medium">Employees</p>
-                </div>
-                <p className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink">{employees.length} active staff</p>
-                {totals.missing > 0 ? (
-                  <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-red-600">
-                    <AlertTriangle className="h-3 w-3" /> {totals.missing} missing tax ID
-                  </p>
-                ) : (
-                  <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600">
-                    <CheckCircle2 className="h-3 w-3" /> All records complete
-                  </p>
-                )}
-              </div>
+              <MetricCard
+                compact
+                icon={<Wallet className="h-3.5 w-3.5" />}
+                label="Total pay before deductions"
+                value={currency(totals.gross)}
+              />
+              <MetricCard
+                compact
+                icon={<Banknote className="h-3.5 w-3.5" />}
+                label="Total paid to staff"
+                value={currency(totals.net)}
+                tone="success"
+              />
+              <MetricCard
+                compact
+                icon={<Landmark className="h-3.5 w-3.5" />}
+                label="Total tax & pension owed"
+                value={currency(totals.statutory)}
+                caption="Income tax, pension, health levy and skills levy"
+              />
+              <MetricCard
+                icon={<Users className="h-3.5 w-3.5" />}
+                label="Employees"
+                value={`${employees.length} active`}
+                tone={totals.missing > 0 ? "danger" : "success"}
+                insight={
+                  totals.missing > 0 ? (
+                    <>
+                      <AlertTriangle className="h-3 w-3" /> {totals.missing} missing tax ID
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="h-3 w-3" /> All records complete
+                    </>
+                  )
+                }
+              />
             </div>
 
             <div className="flex items-center gap-2 rounded-lg border border-line bg-paper px-3 py-2 w-fit">

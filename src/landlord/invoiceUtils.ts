@@ -36,6 +36,20 @@ export function getProrataInfo(tenant: Tenant, periodDate: Date): { isProrata: b
   return { isProrata: true, days, totalDays };
 }
 
+/** Late penalty accrued so far, from the configured daily rate — the one place this formula lives,
+ * so invoicing and any other "what do they owe right now" view stay in sync. */
+export function calcPenalty(tenant: Tenant, dailyPenaltyRate: number): number {
+  return tenant.daysOverdue && tenant.daysOverdue > 0 ? Math.round(tenant.daysOverdue * dailyPenaltyRate) : 0;
+}
+
+/** A tenant's true total outstanding balance right now: carried-over arrears (`owedAmount` already
+ * rolls forward month to month, see the note on `calcTenantInvoice` below) plus any penalty accrued
+ * since their grace period lapsed. Zero once they're paid up. */
+export function calcTotalOwed(tenant: Tenant, dailyPenaltyRate: number): number {
+  if (tenant.status === "paid") return 0;
+  return tenant.owedAmount + calcPenalty(tenant, dailyPenaltyRate);
+}
+
 export type InvoiceLineItem = { label: string; amount: number; tint?: boolean };
 
 export type TenantInvoiceCalc = {
@@ -63,7 +77,7 @@ export function calcTenantInvoice(tenant: Tenant, periodDate: Date, dailyPenalty
   // isn't paid up, `owedAmount` is treated as the carried-over outstanding balance from before this
   // invoice, and any penalty is derived from `daysOverdue` × the configured daily rate.
   const outstanding = tenant.status === "paid" ? 0 : tenant.owedAmount;
-  const penalty = tenant.daysOverdue && tenant.daysOverdue > 0 ? Math.round(tenant.daysOverdue * dailyPenaltyRate) : 0;
+  const penalty = calcPenalty(tenant, dailyPenaltyRate);
   const total = rentAmount + outstanding + penalty;
 
   const rentLabel = isProrata

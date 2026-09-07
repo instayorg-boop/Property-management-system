@@ -922,7 +922,7 @@ export default function Settings() {
       ) : (
         <>
           {/* Selected section replaces the list entirely — back returns to the list, not a split view */}
-          <div className="sticky top-0 z-20 bg-paper px-4 pt-5 pb-6 sm:px-8">
+          <div className="bg-paper px-4 pt-5 pb-6 sm:px-8">
             <button
               type="button"
               onClick={goToList}

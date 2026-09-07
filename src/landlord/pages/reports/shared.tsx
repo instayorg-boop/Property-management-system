@@ -105,8 +105,9 @@ export type ArrearsRow = {
   room: string;
   daysOverdue: number;
   owed: number;
-  guardianName: string;
-  guardianPhone: string;
+  /** First emergency contact on file, if any — the one a landlord would call about arrears. */
+  contactName: string;
+  contactPhone: string;
 };
 
 /** Active tenants who are overdue or unpaid, live from TenantsContext. */
@@ -116,16 +117,19 @@ export function useArrears(): ArrearsRow[] {
     () =>
       tenants
         .filter((t): t is Tenant => t.active && (t.status === "overdue" || t.status === "unpaid"))
-        .map((t) => ({
-          id: t.id,
-          tenantId: t.id,
-          tenant: t.name,
-          room: t.room,
-          daysOverdue: t.daysOverdue ?? 0,
-          owed: t.owedAmount,
-          guardianName: t.guardianName,
-          guardianPhone: t.guardianPhone,
-        })),
+        .map((t) => {
+          const contact = t.emergencyContacts[0];
+          return {
+            id: t.id,
+            tenantId: t.id,
+            tenant: t.name,
+            room: t.room,
+            daysOverdue: t.daysOverdue ?? 0,
+            owed: t.owedAmount,
+            contactName: contact?.name ?? "—",
+            contactPhone: contact?.phones[0] ?? "",
+          };
+        }),
     [tenants]
   );
 }
