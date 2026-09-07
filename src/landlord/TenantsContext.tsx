@@ -6,16 +6,21 @@ import {
   updateTenantRow,
   deleteTenantRow,
   addLedgerEntry,
+  relationLabel,
+  RELATION_OPTIONS,
   type Tenant,
   type PaymentStatus,
   type DepositStatus,
   type DepositMethod,
   type LedgerRow,
+  type EmergencyContact,
+  type RelationType,
 } from "../lib/tenants";
 
 // --- Types -------------------------------------------------------------------
 
-export type { Tenant, PaymentStatus, DepositStatus, DepositMethod, LedgerRow };
+export type { Tenant, PaymentStatus, DepositStatus, DepositMethod, LedgerRow, EmergencyContact, RelationType };
+export { relationLabel, RELATION_OPTIONS };
 /** The room type's name, e.g. "Single" — an open string since landlords can add their own room types on the Rooms page. */
 export type RoomType = string;
 export type DepositRefundability = "Refundable" | "Non-refundable" | "Partially refundable";

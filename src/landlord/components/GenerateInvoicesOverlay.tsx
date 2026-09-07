@@ -137,7 +137,7 @@ export default function GenerateInvoicesOverlay({
         ...shared,
         billToName: row.calc.tenant.name,
         billToSubline: `${row.calc.tenant.room} · ${propertyName}`,
-        billToPhone: row.calc.tenant.phone,
+        billToPhone: row.calc.tenant.phones[0] ?? "",
         lineItems: row.calc.lineItems,
         total: row.calc.total,
       };

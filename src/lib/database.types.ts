@@ -734,6 +734,7 @@ export type Database = {
           deposit_method: string | null
           deposit_resolution_note: string | null
           deposit_status: string
+          emergency_contacts: Json
           guardian_name: string | null
           guardian_phone: string | null
           id: string
@@ -745,6 +746,7 @@ export type Database = {
           on_time_count: number
           owed_amount: number
           phone: string | null
+          phones: string[]
           property_id: string
           rent_amount: number
           room_id: string | null
@@ -761,6 +763,7 @@ export type Database = {
           deposit_method?: string | null
           deposit_resolution_note?: string | null
           deposit_status?: string
+          emergency_contacts?: Json
           guardian_name?: string | null
           guardian_phone?: string | null
           id?: string
@@ -772,6 +775,7 @@ export type Database = {
           on_time_count?: number
           owed_amount?: number
           phone?: string | null
+          phones?: string[]
           property_id: string
           rent_amount?: number
           room_id?: string | null
@@ -788,6 +792,7 @@ export type Database = {
           deposit_method?: string | null
           deposit_resolution_note?: string | null
           deposit_status?: string
+          emergency_contacts?: Json
           guardian_name?: string | null
           guardian_phone?: string | null
           id?: string
@@ -799,6 +804,7 @@ export type Database = {
           on_time_count?: number
           owed_amount?: number
           phone?: string | null
+          phones?: string[]
           property_id?: string
           rent_amount?: number
           room_id?: string | null

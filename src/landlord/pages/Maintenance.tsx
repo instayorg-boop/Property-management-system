@@ -10,6 +10,7 @@ import Pagination, { DEFAULT_PAGE_SIZE } from "../components/Pagination";
 import Modal from "../components/Modal";
 import { uploadPhoto } from "../../lib/storage";
 import { Skeleton, SkeletonRow } from "../components/Skeleton";
+import MetricCard from "../components/MetricCard";
 
 function EyeIcon() {
   return <Eye size={14} weight="duotone" />;
@@ -447,30 +448,45 @@ export default function Maintenance() {
 
         {/* Stat cards */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="rounded-lg border border-line bg-paper p-5">
-            <p className="text-xs text-muted">Open</p>
-            {isReady ? (
-              <p className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink">{counts.open}</p>
-            ) : (
-              <Skeleton className="mt-2 h-7 w-10" />
-            )}
-          </div>
-          <div className="rounded-lg border border-line bg-paper p-5">
-            <p className="text-xs text-muted">In progress</p>
-            {isReady ? (
-              <p className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink">{counts.inProgress}</p>
-            ) : (
-              <Skeleton className="mt-2 h-7 w-10" />
-            )}
-          </div>
-          <div className="rounded-lg border border-line bg-paper p-5">
-            <p className="text-xs text-muted">Unread</p>
-            {isReady ? (
-              <p className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink">{counts.unread}</p>
-            ) : (
-              <Skeleton className="mt-2 h-7 w-10" />
-            )}
-          </div>
+          {!isReady ? (
+            <>
+              <div className="rounded-lg border border-line bg-paper p-5">
+                <Skeleton className="h-3 w-12" />
+                <Skeleton className="mt-2 h-7 w-10" />
+              </div>
+              <div className="rounded-lg border border-line bg-paper p-5">
+                <Skeleton className="h-3 w-16" />
+                <Skeleton className="mt-2 h-7 w-10" />
+              </div>
+              <div className="rounded-lg border border-line bg-paper p-5">
+                <Skeleton className="h-3 w-12" />
+                <Skeleton className="mt-2 h-7 w-10" />
+              </div>
+            </>
+          ) : (
+            <>
+              <MetricCard
+                compact
+                label="Open"
+                value={counts.open}
+                tone={counts.open > 0 ? "warning" : "success"}
+                caption={counts.open > 0 ? "Waiting to be picked up" : "Nothing waiting"}
+              />
+              <MetricCard
+                compact
+                label="In progress"
+                value={counts.inProgress}
+                caption="Currently being worked on"
+              />
+              <MetricCard
+                compact
+                label="Unread"
+                value={counts.unread}
+                tone={counts.unread > 0 ? "danger" : "success"}
+                caption={counts.unread > 0 ? "New reports to review" : "You're all caught up"}
+              />
+            </>
+          )}
         </div>
 
         {/* Search + status filter */}

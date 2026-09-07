@@ -3,12 +3,12 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
 import PageHeader from "../components/PageHeader";
 import Modal from "../components/Modal";
-import Select from "../components/Select";
 import ExpenseFormDrawer from "../components/ExpenseFormDrawer";
 import { useExpenses, type Expense } from "../ExpensesContext";
 import { useTenants, formatCurrency } from "../TenantsContext";
-import { Paperclip, MagnifyingGlass, GearSix, CaretLeft, CaretRight, DownloadSimple } from "@phosphor-icons/react";
+import { Paperclip, MagnifyingGlass, GearSix, CaretLeft, CaretRight, DownloadSimple, Receipt, Wallet, ChartPieSlice } from "@phosphor-icons/react";
 import { Skeleton, SkeletonRow } from "../components/Skeleton";
+import MetricCard from "../components/MetricCard";
 
 function PaperclipIcon() {
   return <Paperclip size={14} weight="duotone" />;
@@ -232,37 +232,36 @@ export default function Expenses() {
       <PageHeader title="Expenses" />
 
       <div className="space-y-5 px-4 sm:px-8 pb-10">
-        {/* Header */}
+        {/* Month switcher + primary actions */}
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1 rounded-lg border border-line bg-paper px-1.5 py-1">
+          <div className="flex items-center gap-1 rounded-lg border border-line bg-paper px-1.5 py-1">
+            <button
+              type="button"
+              onClick={() => setMonthOffset((o) => o - 1)}
+              aria-label="Previous month"
+              className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-mist hover:text-ink"
+            >
+              <CaretLeft size={14} weight="bold" />
+            </button>
+            <span className="w-36 text-center text-sm font-medium text-ink">{month}</span>
+            <button
+              type="button"
+              onClick={() => setMonthOffset((o) => Math.min(0, o + 1))}
+              disabled={monthOffset === 0}
+              aria-label="Next month"
+              className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-mist hover:text-ink disabled:opacity-30 disabled:hover:bg-transparent"
+            >
+              <CaretRight size={14} weight="bold" />
+            </button>
+            {monthOffset !== 0 && (
               <button
                 type="button"
-                onClick={() => setMonthOffset((o) => o - 1)}
-                aria-label="Previous month"
-                className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-mist hover:text-ink"
+                onClick={() => setMonthOffset(0)}
+                className="ml-1 rounded-md px-2 py-1 text-xs font-medium text-brand hover:bg-brand-soft"
               >
-                <CaretLeft size={14} weight="bold" />
+                Back to this month
               </button>
-              <span className="w-36 text-center text-sm font-medium text-ink">{month}</span>
-              <button
-                type="button"
-                onClick={() => setMonthOffset((o) => Math.min(0, o + 1))}
-                disabled={monthOffset === 0}
-                aria-label="Next month"
-                className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-mist hover:text-ink disabled:opacity-30 disabled:hover:bg-transparent"
-              >
-                <CaretRight size={14} weight="bold" />
-              </button>
-            </div>
-            <div>
-              <p className="text-xs text-muted">Total spent</p>
-              {isReady ? (
-                <p className="font-display text-lg font-semibold text-ink">{formatK(total)}</p>
-              ) : (
-                <Skeleton className="mt-1 h-5 w-20" />
-              )}
-            </div>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -291,53 +290,61 @@ export default function Expenses() {
               }}
               className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-paper transition-transform hover:scale-[1.02]"
             >
-              Add expense
+              + Add expense
             </button>
           </div>
         </div>
 
-        {/* Category breakdown — grows with however many categories exist */}
-        <div className="flex flex-wrap gap-4">
-          {!isReady &&
-            Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="min-w-40 flex-1 rounded-lg border border-line bg-paper p-5">
+        {/* At-a-glance summary — the numbers an owner checks first */}
+        <div className={`grid grid-cols-1 gap-4 ${rentCollected !== null ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
+          {!isReady ? (
+            <>
+              <div className="rounded-lg border border-line bg-paper p-3.5">
                 <Skeleton className="h-3 w-16" />
-                <Skeleton className="mt-2 h-7 w-20" />
+                <Skeleton className="mt-2 h-6 w-20" />
               </div>
-            ))}
-          {isReady && byCategory.map((c) => (
-            <button
-              key={c.category.id}
-              type="button"
-              onClick={() => {
-                setCategoryFilter(c.category.id);
-                setPage(1);
-              }}
-              className={`min-w-40 flex-1 rounded-lg border p-5 text-left transition-colors ${
-                categoryFilter === c.category.id ? "border-brand bg-brand-soft" : "border-line bg-paper hover:bg-mist"
-              }`}
-            >
-              <p className="text-xs text-muted">{c.category.name}</p>
-              <p className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink">{formatK(c.total)}</p>
-            </button>
-          ))}
+              <div className="rounded-lg border border-line bg-paper p-3.5">
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="mt-2 h-6 w-20" />
+              </div>
+              <div className="rounded-lg border border-line bg-paper p-3.5">
+                <Skeleton className="h-3 w-16" />
+                <Skeleton className="mt-2 h-6 w-20" />
+              </div>
+            </>
+          ) : (
+            <>
+              <MetricCard
+                compact
+                icon={<Receipt size={14} weight="fill" />}
+                label="Total spent"
+                value={formatK(total)}
+                caption={`${monthExpenses.length} expense${monthExpenses.length === 1 ? "" : "s"} in ${month}`}
+              />
+              {rentCollected !== null && (
+                <>
+                  <MetricCard
+                    compact
+                    icon={<Wallet size={14} weight="fill" />}
+                    label="Rent collected"
+                    value={formatCurrency(rentCollected)}
+                    caption="Collected so far this month"
+                  />
+                  <MetricCard
+                    compact
+                    icon={<ChartPieSlice size={14} weight="fill" />}
+                    label="Net to owner"
+                    value={formatCurrency(rentCollected - total)}
+                    tone={rentCollected - total >= 0 ? "success" : "danger"}
+                    caption="Rent collected minus expenses"
+                  />
+                </>
+              )}
+            </>
+          )}
         </div>
 
-        {rentCollected !== null && (
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg border border-line bg-paper px-5 py-3 text-sm">
-            <span className="text-muted">
-              Rent collected: <span className="font-medium text-ink">{formatCurrency(rentCollected)}</span>
-            </span>
-            <span className="text-muted">
-              Expenses: <span className="font-medium text-ink">{formatK(total)}</span>
-            </span>
-            <span className={`font-medium ${rentCollected - total >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-              Net to owner: {formatCurrency(rentCollected - total)}
-            </span>
-          </div>
-        )}
-
-        {/* Search + filter */}
+        {/* Search + category filter */}
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-2 rounded-lg border border-line bg-paper px-3 py-2">
             <SearchIcon />
@@ -351,14 +358,39 @@ export default function Expenses() {
               className="w-56 bg-transparent text-sm outline-none placeholder:text-muted"
             />
           </div>
-          <Select
-            value={categoryFilter}
-            onChange={(v) => {
-              setCategoryFilter(v);
+        </div>
+
+        {/* Category breakdown — doubles as the category filter, scrolls horizontally if it grows */}
+        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0">
+          <button
+            type="button"
+            onClick={() => {
+              setCategoryFilter("all");
               setPage(1);
             }}
-            options={[{ value: "all", label: "All categories" }, ...categories.map((c) => ({ value: c.id, label: c.name }))]}
-          />
+            className={`flex shrink-0 items-center gap-2 rounded-lg border px-3.5 py-2 text-left transition-colors ${
+              categoryFilter === "all" ? "border-brand bg-brand-soft" : "border-line bg-paper hover:bg-mist"
+            }`}
+          >
+            <span className="text-xs font-medium text-ink">All</span>
+            <span className="text-xs text-muted">{formatK(total)}</span>
+          </button>
+          {byCategory.map((c) => (
+            <button
+              key={c.category.id}
+              type="button"
+              onClick={() => {
+                setCategoryFilter(c.category.id);
+                setPage(1);
+              }}
+              className={`flex shrink-0 items-center gap-2 rounded-lg border px-3.5 py-2 text-left transition-colors ${
+                categoryFilter === c.category.id ? "border-brand bg-brand-soft" : "border-line bg-paper hover:bg-mist"
+              }`}
+            >
+              <span className="text-xs font-medium text-ink">{c.category.name}</span>
+              <span className="text-xs text-muted">{formatK(c.total)}</span>
+            </button>
+          ))}
         </div>
 
         {/* Expense table */}
