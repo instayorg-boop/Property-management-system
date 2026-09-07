@@ -1,8 +1,8 @@
 import { supabase } from "./supabaseClient";
-import type { Tables, TablesUpdate } from "./database.types";
+import type { Json, Tables, TablesUpdate } from "./database.types";
 
 export type PaymentStatus = "paid" | "overdue" | "unpaid" | "partial";
-export type DepositStatus = "Held" | "Refunded" | "Forfeited" | "Partially refunded";
+export type DepositStatus = "Not collected" | "Held" | "Refunded" | "Forfeited" | "Partially refunded";
 export type DepositMethod = "mobile" | "cash" | "bank";
 export type LedgerRow = {
   label: string;
@@ -14,12 +14,32 @@ export type LedgerRow = {
   createdAt?: string;
 };
 
+export const RELATION_OPTIONS = ["Parent", "Guardian", "Spouse", "Sibling", "Friend", "Other"] as const;
+export type RelationType = (typeof RELATION_OPTIONS)[number];
+
+export type EmergencyContact = {
+  id: string;
+  name: string;
+  relation: RelationType;
+  /** Free text used only when `relation` is "Other". */
+  relationOther?: string;
+  phones: string[];
+};
+
+/** What to actually show for a contact's relationship — "Other" alone isn't useful to a landlord
+ * scanning the list, so this falls back to the free-text description when one was given. */
+export function relationLabel(contact: EmergencyContact): string {
+  return contact.relation === "Other" ? contact.relationOther?.trim() || "Other" : contact.relation;
+}
+
 export type Tenant = {
   id: string;
   name: string;
-  phone: string;
-  guardianName: string;
-  guardianPhone: string;
+  /** A tenant can be reachable on more than one number — the first is treated as primary (call/text). */
+  phones: string[];
+  /** Any number of emergency contacts, each with any number of their own phone numbers. Stored as
+   * jsonb on `tenants.emergency_contacts` — see the migration adding phones/emergency_contacts. */
+  emergencyContacts: EmergencyContact[];
   property: string;
   room: string;
   roomType: string;
@@ -94,14 +114,14 @@ async function resolveInstitutionId(propertyId: string, name: string | undefined
 }
 
 const TENANT_COLUMNS =
-  "id, name, phone, guardian_name, guardian_phone, move_in_date, move_out_date, rent_amount, status, " +
+  "id, name, phones, emergency_contacts, move_in_date, move_out_date, rent_amount, status, " +
   "days_overdue, owed_amount, deposit_amount, deposit_date, deposit_method, deposit_status, " +
   "deposit_resolution_note, notes, on_time_count, total_months_count, active, " +
   "rooms(number), room_types(name), institutions(name)";
 
 type TenantRow = Pick<
   Tables<"tenants">,
-  | "id" | "name" | "phone" | "guardian_name" | "guardian_phone" | "move_in_date" | "move_out_date"
+  | "id" | "name" | "phones" | "emergency_contacts" | "move_in_date" | "move_out_date"
   | "rent_amount" | "status" | "days_overdue" | "owed_amount" | "deposit_amount" | "deposit_date"
   | "deposit_method" | "deposit_status" | "deposit_resolution_note" | "notes" | "on_time_count"
   | "total_months_count" | "active"
@@ -111,13 +131,34 @@ type TenantRow = Pick<
   institutions: { name: string } | null;
 };
 
+/** `emergency_contacts` is stored as jsonb — parsed defensively since it's shaped by the app, not
+ * a real schema, so a stray null/malformed entry shouldn't take down the whole tenant list. */
+function toEmergencyContacts(json: Json | null): EmergencyContact[] {
+  if (!Array.isArray(json)) return [];
+  return json.flatMap((entry): EmergencyContact[] => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+    const c = entry as Record<string, unknown>;
+    const relation = typeof c.relation === "string" && (RELATION_OPTIONS as readonly string[]).includes(c.relation)
+      ? (c.relation as RelationType)
+      : "Guardian";
+    return [
+      {
+        id: typeof c.id === "string" ? c.id : crypto.randomUUID(),
+        name: typeof c.name === "string" ? c.name : "",
+        relation,
+        relationOther: typeof c.relationOther === "string" ? c.relationOther : undefined,
+        phones: Array.isArray(c.phones) ? c.phones.filter((p): p is string => typeof p === "string") : [],
+      },
+    ];
+  });
+}
+
 function toTenant(row: TenantRow, propertyName: string, ledger: LedgerRow[]): Tenant {
   return {
     id: row.id,
     name: row.name,
-    phone: row.phone ?? "",
-    guardianName: row.guardian_name ?? "",
-    guardianPhone: row.guardian_phone ?? "",
+    phones: row.phones ?? [],
+    emergencyContacts: toEmergencyContacts(row.emergency_contacts),
     property: propertyName,
     room: row.rooms ? roomLabel(row.rooms.number) : "",
     roomType: row.room_types?.name ?? "",
@@ -187,9 +228,8 @@ export async function listTenants(propertyId: string, propertyName: string): Pro
 async function tenantPatchToRow(propertyId: string, patch: Partial<Omit<Tenant, "id" | "ledger">>): Promise<TablesUpdate<"tenants">> {
   const row: TablesUpdate<"tenants"> = {};
   if (patch.name !== undefined) row.name = patch.name;
-  if (patch.phone !== undefined) row.phone = patch.phone;
-  if (patch.guardianName !== undefined) row.guardian_name = patch.guardianName;
-  if (patch.guardianPhone !== undefined) row.guardian_phone = patch.guardianPhone;
+  if (patch.phones !== undefined) row.phones = patch.phones;
+  if (patch.emergencyContacts !== undefined) row.emergency_contacts = patch.emergencyContacts as unknown as Json;
   if (patch.moveInDate !== undefined) row.move_in_date = patch.moveInDate;
   if (patch.moveOutDate !== undefined) row.move_out_date = patch.moveOutDate ?? null;
   if (patch.rentAmount !== undefined) row.rent_amount = patch.rentAmount;
@@ -224,9 +264,8 @@ export async function insertTenant(propertyId: string, id: string, t: Omit<Tenan
     room_type_id: roomTypeId,
     institution_id: institutionId,
     name: t.name,
-    phone: t.phone,
-    guardian_name: t.guardianName,
-    guardian_phone: t.guardianPhone,
+    phones: t.phones,
+    emergency_contacts: t.emergencyContacts as unknown as Json,
     move_in_date: t.moveInDate,
     move_out_date: t.moveOutDate ?? null,
     rent_amount: t.rentAmount,

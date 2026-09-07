@@ -1,12 +1,94 @@
 import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { AnimatePresence } from "framer-motion";
-import { DeviceMobile, Money, Bank, CaretDown, DoorOpen, CalendarBlank } from "@phosphor-icons/react";
+import { AnimatePresence, motion } from "framer-motion";
+import { DeviceMobile, Money, Bank, CaretDown, DoorOpen, CalendarBlank, X, Plus } from "@phosphor-icons/react";
 import SlideOver from "./SlideOver";
 import AddRoomTypeDrawer from "./AddRoomTypeDrawer";
-import { useTenants, formatCurrency, type DepositMethod, type Tenant } from "../TenantsContext";
+import Select from "./Select";
+import SectionLabel from "./SectionLabel";
+import {
+  useTenants,
+  formatCurrency,
+  RELATION_OPTIONS,
+  type DepositMethod,
+  type Tenant,
+  type EmergencyContact,
+  type RelationType,
+} from "../TenantsContext";
 import { useRooms, useVacantRoomsForAssignment, type VacantRoom } from "../RoomsContext";
 import { useSettings } from "../SettingsContext";
+
+/** A working copy of an emergency contact while the form is open — `relationOther` is always a
+ * string here (never undefined) so the "Other" text input can stay a controlled input. */
+type ContactDraft = { id: string; name: string; relation: RelationType; relationOther: string; phones: string[] };
+
+function newContactId() {
+  return `ec${Date.now()}${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function newContactDraft(): ContactDraft {
+  return { id: newContactId(), name: "", relation: "Guardian", relationOther: "", phones: [""] };
+}
+
+/** No default blank contact — the section starts collapsed to a "+ Add emergency contact" link
+ * unless the tenant already has one on file. */
+function toContactDrafts(contacts: EmergencyContact[]): ContactDraft[] {
+  return contacts.map((c) => ({ ...c, relationOther: c.relationOther ?? "", phones: c.phones.length ? c.phones : [""] }));
+}
+
+/** Drops blank rows a landlord left empty instead of saving them as real numbers/contacts. */
+function cleanContacts(drafts: ContactDraft[]): EmergencyContact[] {
+  return drafts
+    .map((c) => ({
+      id: c.id,
+      name: c.name.trim(),
+      relation: c.relation,
+      relationOther: c.relation === "Other" ? c.relationOther.trim() : undefined,
+      phones: c.phones.map((p) => p.trim()).filter(Boolean),
+    }))
+    .filter((c) => c.name || c.phones.length > 0);
+}
+
+/** A small list of phone-number inputs with add/remove — used for both the tenant's own numbers
+ * and each emergency contact's numbers, so a person can have more than one of either. */
+function PhoneListEditor({ phones, onChange }: { phones: string[]; onChange: (phones: string[]) => void }) {
+  return (
+    <div className="space-y-2">
+      {phones.map((p, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <input
+            value={p}
+            onChange={(e) => {
+              const next = [...phones];
+              next[i] = e.target.value;
+              onChange(next);
+            }}
+            placeholder="e.g. 0977 123 456"
+            className="w-full flex-1 rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+          />
+          {phones.length > 1 && (
+            <button
+              type="button"
+              onClick={() => onChange(phones.filter((_, idx) => idx !== i))}
+              aria-label="Remove number"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-red-600"
+            >
+              <X size={14} weight="bold" />
+            </button>
+          )}
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={() => onChange([...phones, ""])}
+        className="flex items-center gap-1 text-xs font-medium text-brand hover:underline"
+      >
+        <Plus size={14} weight="bold" />
+        Add another number
+      </button>
+    </div>
+  );
+}
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -131,9 +213,8 @@ export default function TenantFormDrawer({
   const [addingRoomType, setAddingRoomType] = useState(false);
 
   const [name, setName] = useState(editing?.name ?? "");
-  const [phone, setPhone] = useState(editing?.phone ?? "");
-  const [guardianName, setGuardianName] = useState(editing?.guardianName ?? "");
-  const [guardianPhone, setGuardianPhone] = useState(editing?.guardianPhone ?? "");
+  const [phones, setPhones] = useState<string[]>(editing?.phones.length ? editing.phones : [""]);
+  const [contacts, setContacts] = useState<ContactDraft[]>(toContactDrafts(editing?.emergencyContacts ?? []));
   const [selectedRoom, setSelectedRoom] = useState<VacantRoom | null>(null);
   const [moveInDate, setMoveInDate] = useState(todayISO());
 
@@ -170,14 +251,20 @@ export default function TenantFormDrawer({
     setDepositAmount(r.depositAmount);
   };
 
+  const updateContact = (index: number, patch: Partial<ContactDraft>) => {
+    setContacts((prev) => prev.map((c, i) => (i === index ? { ...c, ...patch } : c)));
+  };
+  const removeContact = (index: number) => {
+    setContacts((prev) => prev.filter((_, i) => i !== index));
+  };
+
   // Editing an existing tenant is unchanged — save immediately, no payments step.
   const submit = () => {
     if (!name.trim() || !editing) return;
     const patch = {
       name,
-      phone,
-      guardianName,
-      guardianPhone,
+      phones: phones.map((p) => p.trim()).filter(Boolean),
+      emergencyContacts: cleanContacts(contacts),
       depositAmount,
       depositDate,
       depositMethod,
@@ -212,13 +299,16 @@ export default function TenantFormDrawer({
       ? `${moveInDateObj.toLocaleDateString("en-US", { month: "long" })} pro-rata`
       : `${new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })} rent`;
 
+    // A deposit is only "Held" if it was actually confirmed collected today — otherwise the tenant
+    // record would claim the landlord is holding money that was never handed over.
+    const depositWasCollected = depositCollectedToday === "yes" && selectedRoom.depositAmount > 0;
+
     // Status/owedAmount always start as unpaid/owed-in-full — logPayment (called right below when
     // something was actually confirmed collected) is the only thing allowed to flip status to paid.
     const created = addTenant({
       name,
-      phone,
-      guardianName,
-      guardianPhone,
+      phones: phones.map((p) => p.trim()).filter(Boolean),
+      emergencyContacts: cleanContacts(contacts),
       property: propertyName,
       room: selectedRoom.room,
       roomType: selectedRoom.roomType,
@@ -229,7 +319,7 @@ export default function TenantFormDrawer({
       depositAmount,
       depositDate: new Date(depositDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
       depositMethod: depositCollectMethod,
-      depositStatus: "Held",
+      depositStatus: depositWasCollected ? "Held" : "Not collected",
       notes,
       onTimeCount: 0,
       totalMonthsCount: 0,
@@ -242,7 +332,7 @@ export default function TenantFormDrawer({
     // incorrectly flip rent status to paid even when no rent was collected. Appending a ledger
     // row directly (via the existing updateTenant) logs it as its own deposit entry without
     // touching rent status/owedAmount at all.
-    if (depositCollectedToday === "yes" && selectedRoom.depositAmount > 0) {
+    if (depositWasCollected) {
       updateTenant(created.id, {
         ledger: [
           { label: "Security deposit", amount: selectedRoom.depositAmount, status: "paid", createdAt: new Date().toISOString() },
@@ -264,6 +354,7 @@ export default function TenantFormDrawer({
   return (
     <SlideOver
       onClose={onClose}
+      maxWidth="max-w-xl"
       title={editing ? "Edit tenant" : "Add tenant"}
       description={
         editing
@@ -311,132 +402,216 @@ export default function TenantFormDrawer({
       }
     >
       {step === "details" || editing ? (
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="sm:col-span-2">
-          <label className="mb-1.5 block text-xs font-medium text-muted">Full name</label>
-          <input value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand" />
-        </div>
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-muted">Phone</label>
-          <input value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand" />
-        </div>
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-muted">Parent/guardian name</label>
-          <input value={guardianName} onChange={(e) => setGuardianName(e.target.value)} className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand" />
-        </div>
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-muted">Parent/guardian phone</label>
-          <input value={guardianPhone} onChange={(e) => setGuardianPhone(e.target.value)} className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand" />
-        </div>
-
-        {editing ? (
-          <div className="sm:col-span-2 flex items-center justify-between gap-3 rounded-lg bg-mist px-3.5 py-2.5 text-sm">
-            <span className="text-muted">
-              Room: <span className="font-medium text-ink">{editing.room}</span> ({editing.roomType})
-            </span>
-            <Link to="/rooms" className="shrink-0 text-xs font-medium text-brand hover:underline">
-              Change room →
-            </Link>
-          </div>
-        ) : (
-          <>
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-muted">Move-in date</label>
-              <input type="date" value={moveInDate} onChange={(e) => setMoveInDate(e.target.value)} className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand" />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="mb-1.5 block text-xs font-medium text-muted">Room (vacant only)</label>
-              {roomTypeConfigs.length === 0 ? (
-                <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-line px-3.5 py-2.5">
-                  <div className="flex items-center gap-2.5">
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-mist text-muted">
-                      <DoorOpen size={16} weight="duotone" />
-                    </span>
-                    <p className="text-xs text-muted">No room types set up yet — nothing to assign this tenant to.</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setAddingRoomType(true)}
-                    className="shrink-0 rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-mist"
-                  >
-                    Add room type
-                  </button>
+      <div className="space-y-6">
+        {/* Room & rent — the biggest decision, and what it determines, grouped as one section */}
+        <section>
+          <SectionLabel className="mb-3">Room &amp; rent</SectionLabel>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {editing ? (
+              <div className="sm:col-span-2 flex items-center justify-between gap-3 rounded-lg bg-mist px-3.5 py-2.5 text-sm">
+                <span className="text-muted">
+                  Room: <span className="font-medium text-ink">{editing.room}</span> ({editing.roomType})
+                </span>
+                <Link to="/rooms" className="shrink-0 text-xs font-medium text-brand hover:underline">
+                  Change room →
+                </Link>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-muted">Move-in date</label>
+                  <input type="date" value={moveInDate} onChange={(e) => setMoveInDate(e.target.value)} className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand" />
                 </div>
-              ) : (
-                <RoomPicker rooms={vacantRooms} selected={selectedRoom} onSelect={selectRoom} />
-              )}
-            </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-muted">Room (vacant only)</label>
+                  {roomTypeConfigs.length === 0 ? (
+                    <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-line px-3.5 py-2.5">
+                      <div className="flex items-center gap-2.5">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-mist text-muted">
+                          <DoorOpen size={16} weight="duotone" />
+                        </span>
+                        <p className="text-xs text-muted">No room types set up.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setAddingRoomType(true)}
+                        className="shrink-0 rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-mist"
+                      >
+                        Add room type
+                      </button>
+                    </div>
+                  ) : (
+                    <RoomPicker rooms={vacantRooms} selected={selectedRoom} onSelect={selectRoom} />
+                  )}
+                </div>
+              </>
+            )}
+
             <div>
               <label className="mb-1.5 block text-xs font-medium text-muted">Agreed rent</label>
               <div className="flex h-10.5 items-center rounded-lg bg-mist px-3 text-sm text-muted">
-                {selectedRoom ? `K${selectedRoom.rent.toLocaleString()} / month` : "Set by the room you select"}
+                {editing ? formatCurrency(editing.rentAmount) : selectedRoom ? `K${selectedRoom.rent.toLocaleString()} / month` : "Set by the room you select"}
               </div>
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-muted">Security deposit terms</label>
-              <div className="flex h-10.5 items-center rounded-lg bg-mist px-3 text-sm text-muted">
-                {selectedRoom ? selectedRoom.depositRefundability : "Set by the room you select"}
+              <label className="mb-1.5 block text-xs font-medium text-muted">Security deposit (K)</label>
+              <input
+                type="number"
+                min={0}
+                value={depositAmount}
+                onChange={(e) => setDepositAmount(Number(e.target.value) || 0)}
+                className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+              />
+            </div>
+
+            {/* Collection date and method for a new tenant's deposit are asked on the payments step
+                instead — shown here only when editing, since that step doesn't run for edits. */}
+            {editing && (
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-muted">Security deposit date</label>
+                <input
+                  type="date"
+                  value={depositDate}
+                  onChange={(e) => setDepositDate(e.target.value)}
+                  className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+                />
               </div>
-            </div>
-          </>
-        )}
+            )}
 
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-muted">Security deposit amount (K)</label>
-          <input
-            type="number"
-            min={0}
-            value={depositAmount}
-            onChange={(e) => setDepositAmount(Number(e.target.value) || 0)}
-            className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
-          />
-        </div>
-
-        {/* Collection date and method for a new tenant's deposit are asked on the payments step
-            instead — shown here only when editing, since that step doesn't run for edits. */}
-        {editing && (
-          <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted">Security deposit date</label>
-            <input
-              type="date"
-              value={depositDate}
-              onChange={(e) => setDepositDate(e.target.value)}
-              className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
-            />
+            {editing && (
+              <div className="sm:col-span-2">
+                <label className="mb-1.5 block text-xs font-medium text-muted">Security deposit method</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {depositMethods.map(({ id, label, Icon }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setDepositMethod(id)}
+                      className={`flex flex-col items-center gap-1.5 rounded-lg border py-2.5 text-xs font-medium transition-colors ${
+                        depositMethod === id ? "border-brand bg-brand-soft text-brand" : "border-line text-muted hover:bg-mist"
+                      }`}
+                    >
+                      <Icon size={18} weight="duotone" />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-        )}
+        </section>
 
-        {editing && (
-          <div className="sm:col-span-2">
-            <label className="mb-1.5 block text-xs font-medium text-muted">Security deposit method</label>
-            <div className="grid grid-cols-3 gap-2">
-              {depositMethods.map(({ id, label, Icon }) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setDepositMethod(id)}
-                  className={`flex flex-col items-center gap-1.5 rounded-lg border py-2.5 text-xs font-medium transition-colors ${
-                    depositMethod === id ? "border-brand bg-brand-soft text-brand" : "border-line text-muted hover:bg-mist"
-                  }`}
-                >
-                  <Icon size={18} weight="duotone" />
-                  {label}
-                </button>
-              ))}
+        {/* Personal information — who they are, now that what/where/how-much is settled */}
+        <section className="border-t border-line pt-6">
+          <SectionLabel className="mb-3">Personal information</SectionLabel>
+          <div className="space-y-4">
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-muted">Full name</label>
+              <input value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand" />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-muted">Phone number(s)</label>
+              <PhoneListEditor phones={phones} onChange={setPhones} />
             </div>
           </div>
-        )}
+        </section>
 
-        <div className="sm:col-span-2">
-          <label className="mb-1.5 block text-xs font-medium text-muted">Notes (landlord-only)</label>
+        {/* Emergency contacts — collapsed to a plain link until asked for, flat rows once open */}
+        <section className="border-t border-line pt-6">
+          {contacts.length === 0 ? (
+            <button
+              type="button"
+              onClick={() => setContacts([newContactDraft()])}
+              className="flex items-center gap-1 text-xs font-medium text-brand hover:underline"
+            >
+              <Plus size={14} weight="bold" />
+              Add emergency contact
+            </button>
+          ) : (
+            <>
+              <SectionLabel className="mb-3">Emergency contacts</SectionLabel>
+              <div className="divide-y divide-line">
+                {contacts.map((contact, i) => (
+                  <div key={contact.id} className={`space-y-3 py-4 ${i === 0 ? "pt-0" : ""}`}>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-medium text-muted">{i === 0 ? "Primary contact" : `Contact ${i + 1}`}</p>
+                      <button
+                        type="button"
+                        onClick={() => removeContact(i)}
+                        aria-label="Remove contact"
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-red-600"
+                      >
+                        <X size={14} weight="bold" />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium text-muted">Name</label>
+                        <input
+                          value={contact.name}
+                          onChange={(e) => updateContact(i, { name: e.target.value })}
+                          className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium text-muted">Relation to tenant</label>
+                        <Select
+                          value={contact.relation}
+                          onChange={(v) => updateContact(i, { relation: v as RelationType })}
+                          options={RELATION_OPTIONS.map((r) => ({ value: r, label: r }))}
+                          className="w-full"
+                        />
+                        <AnimatePresence initial={false}>
+                          {contact.relation === "Other" && (
+                            <motion.div
+                              key="other-relation"
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: "auto", opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                              className="overflow-hidden"
+                            >
+                              <input
+                                value={contact.relationOther}
+                                onChange={(e) => updateContact(i, { relationOther: e.target.value })}
+                                placeholder="Specify relation"
+                                className="mt-2 w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+                              />
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium text-muted">Phone number(s)</label>
+                      <PhoneListEditor phones={contact.phones} onChange={(next) => updateContact(i, { phones: next })} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => setContacts((prev) => [...prev, newContactDraft()])}
+                className="mt-3 flex items-center gap-1 text-xs font-medium text-brand hover:underline"
+              >
+                <Plus size={14} weight="bold" />
+                Add another emergency contact
+              </button>
+            </>
+          )}
+        </section>
+
+        {/* Notes */}
+        <section className="border-t border-line pt-6">
+          <SectionLabel className="mb-3">Notes</SectionLabel>
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             rows={3}
-            placeholder="Payment arrangements, special circumstances, anything worth remembering about this tenant."
+            placeholder="Payment arrangements, special circumstances, anything worth remembering about this tenant. Landlord-only."
             className="w-full resize-none rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
           />
-        </div>
+        </section>
       </div>
       ) : (
         <div className="space-y-6">
@@ -492,8 +667,7 @@ export default function TenantFormDrawer({
                 <p className="text-sm font-medium text-ink">Mid-cycle move-in</p>
               </div>
               <p className="mt-1.5 text-xs text-muted">
-                {moveInDateObj.toLocaleDateString("en-GB", { day: "numeric", month: "long" })} isn't the 1st, so this month is a
-                partial month: {prorata.remainingDays} of {prorata.totalDays} days at {formatCurrency(prorata.dailyRate)}/day.
+                Partial month: {prorata.remainingDays} of {prorata.totalDays} days at {formatCurrency(prorata.dailyRate)}/day.
               </p>
 
               <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
