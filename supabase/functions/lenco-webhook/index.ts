@@ -1,27 +1,53 @@
-// Receives payment/payout status webhooks FROM Lenco (collections confirmed, transfers settled,
-// failures, etc.). This has to be an edge function, not client code — Lenco calls this directly
-// over the internet, there's no browser involved, and it needs to verify a webhook signature using
-// a secret that must never reach the client.
+// Receives payment/payout status webhooks FROM Lenco. This has to be an edge function, not
+// client code — Lenco calls this directly over the internet with no browser/session involved, and
+// it must verify a signature before trusting anything in the payload.
 //
-// PLACEHOLDER — no Lenco account is configured yet, so there's nothing calling this. It's created
-// now so the URL/shape exists ahead of time and is ready to register with Lenco once connected.
+// Verification, per Lenco's docs (Webhooks page):
+//   - header `X-Lenco-Signature` = HMAC-SHA512 of the *raw* request body, keyed with a
+//     "webhook_hash_key" = SHA256(your API secret key) as a hex string.
+//   - Respond 200 fast — Lenco retries every 30 minutes for 24h on anything outside 200/201/202,
+//     and may treat a slow response as a timeout, so this does the minimum work before replying.
 //
-// IMPORTANT: deploy this with --no-verify-jwt. Lenco won't send a Supabase auth header — it sends
-// its own signature header instead, which this function must verify before trusting the payload.
+// Currently handled: transfer.successful / transfer.failed — updates the matching `payouts` row
+// (matched by `reference`, which lenco-payout sets to the payouts.id it just inserted).
+// collection.* / transaction.* events are logged but not acted on yet — there's no real tenant
+// payment collection integration in this app yet (TenantBalance.tsx's "Pay now" is still
+// simulated), so there's nothing in the database for those events to update.
 //
-// To make this real:
-//   1. Set secrets:  supabase secrets set LENCO_WEBHOOK_SECRET=...
-//   2. Verify the signature Lenco sends (check their webhook docs for the exact header name/scheme)
-//      before processing anything below.
-//   3. On a confirmed rent payment, call a SECURITY DEFINER Postgres function (same pattern as
-//      pay_portal_log_payment, see docs/BACKEND.md) to update the tenant's ledger/status — don't
-//      write directly with the anon key from here, this function should use the service-role key.
-//   4. On a confirmed payout, update / insert into a `payouts` table (see lenco-payout's TODO).
-//   5. Register this function's URL with Lenco as the webhook endpoint for your account.
+// Register this function's URL with Lenco by emailing support@lenco.co (per their docs — there's
+// no self-serve webhook URL setting).
 //
 // Deploy:  supabase functions deploy lenco-webhook --no-verify-jwt
 
+import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, handleOptions } from "../_shared/cors.ts";
+
+type LencoTransferEvent = {
+  event: "transfer.successful" | "transfer.failed" | string;
+  data: {
+    id: string;
+    reference: string | null;
+    reasonForFailure: string | null;
+    status: "pending" | "successful" | "failed";
+  };
+};
+
+async function sha256Hex(input: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function hmacSha512Hex(key: string, message: string): Promise<string> {
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(key),
+    { name: "HMAC", hash: "SHA-512" },
+    false,
+    ["sign"]
+  );
+  const signature = await crypto.subtle.sign("HMAC", cryptoKey, new TextEncoder().encode(message));
+  return [...new Uint8Array(signature)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 
 Deno.serve(async (req) => {
   const preflight = handleOptions(req);
@@ -34,29 +60,64 @@ Deno.serve(async (req) => {
     });
   }
 
-  const webhookSecret = Deno.env.get("LENCO_WEBHOOK_SECRET");
-  if (!webhookSecret) {
-    console.log("[lenco-webhook] placeholder — no LENCO_WEBHOOK_SECRET set, ignoring webhook payload");
-    return new Response(JSON.stringify({ ok: true, placeholder: true }), {
-      status: 200,
+  const lencoSecretKey = Deno.env.get("LENCO_SECRET_KEY");
+  if (!lencoSecretKey) {
+    console.log("[lenco-webhook] LENCO_SECRET_KEY not set — can't verify signature, ignoring payload");
+    return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  }
+
+  const rawBody = await req.text();
+  const signature = req.headers.get("x-lenco-signature");
+  const webhookHashKey = await sha256Hex(lencoSecretKey);
+  const expectedSignature = await hmacSha512Hex(webhookHashKey, rawBody);
+
+  if (!signature || signature !== expectedSignature) {
+    console.log("[lenco-webhook] signature mismatch — rejecting");
+    return new Response(JSON.stringify({ error: "Invalid signature" }), {
+      status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 
-  // TODO: verify Lenco's signature header against webhookSecret before trusting `body`.
-  // const signature = req.headers.get("x-lenco-signature");
-  // if (!isValidSignature(signature, await req.text(), webhookSecret)) {
-  //   return new Response("Invalid signature", { status: 401, headers: corsHeaders });
-  // }
-  //
-  // const event = JSON.parse(body);
-  // switch (event.type) {
-  //   case "collection.successful": /* call a SECURITY DEFINER SQL fn to log the payment */ break;
-  //   case "transaction.successful": /* mark payout as settled */ break;
-  // }
+  let event: LencoTransferEvent;
+  try {
+    event = JSON.parse(rawBody);
+  } catch {
+    return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
-  return new Response(JSON.stringify({ ok: true, placeholder: true }), {
-    status: 200,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
+  // Service-role client — Lenco calls this with no landlord session, so there's no user JWT to
+  // scope an RLS-respecting client with. Every write below is matched against a specific existing
+  // payouts row (by reference/lenco_transaction_id), not an open-ended write.
+  const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+
+  if (event.event === "transfer.successful" || event.event === "transfer.failed") {
+    const { data } = event;
+    const status = event.event === "transfer.successful" ? "successful" : "failed";
+    const matchColumn = data.reference ? "id" : "lenco_transaction_id";
+    const matchValue = data.reference ?? data.id;
+
+    const { error } = await supabase
+      .from("payouts")
+      .update({
+        status,
+        lenco_transaction_id: data.id,
+        failure_reason: data.reasonForFailure ?? null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq(matchColumn, matchValue);
+
+    if (error) {
+      console.error("[lenco-webhook] failed to update payouts row", error.message);
+    }
+  } else {
+    console.log(`[lenco-webhook] received ${event.event} — not acted on yet (no collections integration exists)`);
+  }
+
+  // Always 200 once the signature checks out — per Lenco's docs, anything else queues a retry
+  // every 30 minutes for 24h, and there's nothing more useful this response body could carry.
+  return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 });
