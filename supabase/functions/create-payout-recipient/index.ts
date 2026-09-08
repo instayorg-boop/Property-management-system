@@ -4,9 +4,15 @@
 // but this app has no separate landlords/users table — every table (including the new
 // `payout_recipients`) is scoped by `property_id`, matching the rest of the schema (see
 // docs/BACKEND.md and supabase/migrations/20260907020000_auth_and_onboarding.sql). So this takes
-// `propertyId` instead of `landlordId`. `accountName` is also required — it's the resolved name
-// from `resolve-bank-account`, shown to the landlord for confirmation before this call is made,
-// and Lenco's own /recipients endpoint needs it too.
+// `propertyId` instead of `landlordId`. `accountName` isn't sent to Lenco here (it doesn't take
+// one on this endpoint — it returns its own resolved name), but is still required from the caller
+// so we can store what the landlord actually confirmed, matched against what Lenco returns.
+//
+// Endpoint confirmed against this account's live Lenco API reference (v2.0):
+//   POST https://api.lenco.co/access/v2/transfer-recipients/bank-account
+//   body: { accountNumber, bankId, country? }   -- note: bankId, not bankCode; no "type" field
+//   200: { status, message, data: { id, currency, type, country, details: { accountName, accountNumber, bank } } }
+//   400: { status: false, message: "Account Details could not be verified", data: null }
 //
 // Auth: the request is made with the signed-in landlord's own session (forwarded via the
 // Authorization header), so the DB insert runs under their RLS policy — `payout_recipients_insert`
@@ -83,10 +89,14 @@ Deno.serve(async (req) => {
 
   let lencoRecipientId: string;
   try {
-    const lencoResponse = await fetch("https://api.lenco.co/access/v2/recipients", {
+    const lencoResponse = await fetch("https://api.lenco.co/access/v2/transfer-recipients/bank-account", {
       method: "POST",
-      headers: { Authorization: `Bearer ${lencoSecretKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "bank", accountNumber, bankCode, accountName }),
+      headers: {
+        Authorization: `Bearer ${lencoSecretKey}`,
+        "Content-Type": "application/json",
+        accept: "application/json",
+      },
+      body: JSON.stringify({ accountNumber, bankId: bankCode, country: "zm" }),
     });
     const lencoJson = await lencoResponse.json();
     if (!lencoResponse.ok) {
@@ -95,7 +105,7 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    lencoRecipientId = lencoJson.data?.id ?? lencoJson.data?.recipientId;
+    lencoRecipientId = lencoJson.data?.id;
     if (!lencoRecipientId) {
       return new Response(JSON.stringify({ error: "Lenco didn't return a recipient id", detail: lencoJson }), {
         status: 502,

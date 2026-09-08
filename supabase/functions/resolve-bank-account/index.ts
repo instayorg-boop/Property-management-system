@@ -2,6 +2,12 @@
 // show "Confirm this is you: JOHN M BANDA" before the landlord commits to saving a payout
 // recipient. Read-only — never touches the database.
 //
+// Endpoint confirmed against this account's live Lenco API reference (v2.0):
+//   POST https://api.lenco.co/access/v2/resolve/bank-account
+//   body: { accountNumber, bankId, country? }   -- note: bankId, not bankCode
+//   200: { status, message, data: { type, accountName, accountNumber, bank: { id, name, country } } }
+//   400: { status: false, message: "Account details was not found", data: null }
+//
 // Deploy:  supabase functions deploy resolve-bank-account
 // Invoke:  supabase.functions.invoke("resolve-bank-account", { body: { accountNumber, bankCode } })
 
@@ -50,11 +56,15 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const url = new URL("https://api.lenco.co/access/v2/resolve");
-    url.searchParams.set("accountNumber", accountNumber);
-    url.searchParams.set("bankCode", bankCode);
-
-    const lencoResponse = await fetch(url, { headers: { Authorization: `Bearer ${lencoSecretKey}` } });
+    const lencoResponse = await fetch("https://api.lenco.co/access/v2/resolve/bank-account", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${lencoSecretKey}`,
+        "Content-Type": "application/json",
+        accept: "application/json",
+      },
+      body: JSON.stringify({ accountNumber, bankId: bankCode, country: "zm" }),
+    });
     const lencoJson = await lencoResponse.json();
 
     if (lencoResponse.status === 400) {
@@ -64,13 +74,13 @@ Deno.serve(async (req) => {
       );
     }
     if (!lencoResponse.ok) {
-      return new Response(JSON.stringify({ error: "Lenco rejected the resolve request", detail: lencoJson }), {
-        status: 502,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ error: "Lenco rejected the resolve request", lencoStatus: lencoResponse.status, detail: lencoJson }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    const accountName: string | undefined = lencoJson.data?.accountName ?? lencoJson.data?.account_name;
+    const accountName: string | undefined = lencoJson.data?.accountName;
     if (!accountName) {
       return new Response(JSON.stringify({ error: "Couldn't resolve that account — check the account number and bank." }), {
         status: 400,
