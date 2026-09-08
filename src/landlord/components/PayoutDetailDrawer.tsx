@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Wallet, TrendUp } from "@phosphor-icons/react";
+import { Wallet, CheckCircle } from "@phosphor-icons/react";
 import SlideOver from "./SlideOver";
 import Button from "./Button";
 import { useSettings } from "../SettingsContext";
@@ -85,55 +85,42 @@ export default function PayoutDetailDrawer({
         )
       }
     >
-      <div className="space-y-5">
-        {/* Balance card — this is the tenants' own money moving straight from mobile money into
-            the landlord's account via Lenco; the wording here (and everywhere in this drawer)
-            deliberately avoids "withdraw"/"collect", which reads as if the platform is holding
-            the money itself. It never does — Lenco transfers it directly. */}
-        <div className="overflow-hidden rounded-2xl bg-ink p-5 text-paper">
-          <div className="flex items-center gap-2 text-paper/70">
+      {/* One compact card instead of three stacked ones — plain white, a small icon, tight rows
+          with dividers rather than each fact getting its own boxed block. */}
+      <div className="rounded-xl border border-line">
+        <div className="flex items-center gap-3 px-4 py-4">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-mist text-ink">
             <Wallet size={16} weight="duotone" />
-            <span className="text-xs font-medium">Balance</span>
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs text-muted">Balance · {payout.date}</p>
+            <p className="font-display text-2xl font-semibold tracking-tight text-ink">{payout.amount}</p>
           </div>
-          <p className="mt-3 font-display text-3xl font-semibold tracking-tight">{payout.amount}</p>
-          <div className="mt-3 flex items-center gap-1.5">
-            <span
-              className={`inline-flex h-5 w-5 items-center justify-center rounded-full ${
-                lencoConnected ? "bg-emerald-400/20 text-emerald-300" : "bg-paper/10 text-paper/60"
-              }`}
-            >
-              <TrendUp size={11} weight="bold" />
-            </span>
-            <span className="text-xs font-medium text-paper/90">{payout.status}</span>
-          </div>
-          <p className="mt-3 text-xs text-paper/50">{payout.date}</p>
+          <span
+            className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${
+              lencoConnected ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"
+            }`}
+          >
+            {payout.status}
+          </span>
         </div>
 
-        <div className="divide-y divide-line rounded-xl border border-line">
-          <div className="px-4 py-3">
-            <p className="text-xs text-muted">Bank account</p>
-            <p className="mt-1 text-sm font-medium text-ink">{payout.bankAccount}</p>
+        <div className="divide-y divide-line border-t border-line">
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <span className="text-xs text-muted">Bank account</span>
+            <span className="text-sm font-medium text-ink">{payout.bankAccount}</span>
           </div>
-          <div className="px-4 py-3">
-            <p className="text-xs text-muted">Transfer schedule</p>
-            <p className="mt-1 text-sm font-medium text-ink">{payout.schedule}</p>
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <span className="text-xs text-muted">Transfer schedule</span>
+            <span className="text-sm font-medium text-ink">{payout.schedule}</span>
           </div>
         </div>
 
         {lencoConnected && (
-          <div className="rounded-xl border border-brand/20 bg-brand-soft/50 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-medium text-brand">Lenco</p>
-                <p className="mt-1 text-sm font-medium text-ink">Connected</p>
-              </div>
-              <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-600">
-                Active
-              </span>
-            </div>
-            <p className="mt-3 text-xs text-muted">
-              Online payments are transferred to your bank automatically via Lenco. Transfers usually arrive within
-              one business day.
+          <div className="flex items-start gap-2 border-t border-line px-4 py-3">
+            <CheckCircle size={14} weight="fill" className="mt-0.5 shrink-0 text-emerald-500" />
+            <p className="text-xs text-muted">
+              Transferred automatically via Lenco — usually within one business day.
             </p>
           </div>
         )}
