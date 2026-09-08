@@ -260,20 +260,13 @@ export default function TenantProfile() {
               <div className="mt-5 space-y-1 border-t border-line pt-4">
                 <InfoRow label="Room" value={tenant.room || "Unassigned"} />
                 <InfoRow label="Room type" value={tenant.roomType || "—"} />
-                <InfoRow
-                  label={tenant.phones.length > 1 ? "Phones" : "Phone"}
-                  value={
-                    tenant.phones.length === 0 ? (
-                      "—"
-                    ) : (
-                      <div className="space-y-0.5">
-                        {tenant.phones.map((p, i) => (
-                          <p key={i}>{p}</p>
-                        ))}
-                      </div>
-                    )
-                  }
-                />
+                {tenant.phones.length === 0 ? (
+                  <InfoRow label="Phone number" value="—" />
+                ) : (
+                  tenant.phones.map((p, i) => (
+                    <InfoRow key={i} label={i === 0 ? "Phone number" : `Additional phone number${tenant.phones.length > 2 ? ` ${i}` : ""}`} value={p} />
+                  ))
+                )}
               </div>
 
               <div className="mt-1 space-y-1 border-t border-line pt-4">
@@ -294,8 +287,10 @@ export default function TenantProfile() {
             </div>
           </div>
 
-          {/* Right: tabs — sized purely to its own content (items-start above stops grid row-stretch) */}
-          <div className="rounded-lg border border-line bg-paper">
+          {/* Right: tabs — min-w-0 stops long unbreakable content (e.g. a maintenance report's
+              description) from forcing this grid track wider than its 1fr share, which would
+              otherwise push the whole page into horizontal scroll instead of wrapping/truncating. */}
+          <div className="min-w-0 rounded-lg border border-line bg-paper">
             <div className="flex items-center gap-1 border-b border-line px-4">
               {tabs.map((t) => (
                 <button
