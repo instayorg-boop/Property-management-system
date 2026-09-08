@@ -109,7 +109,7 @@ export default function BedRentRoll() {
                       {b.tenant && b.tenantId ? (
                         <button
                           type="button"
-                          onClick={() => navigate("/tenants", { state: { openTenantId: b.tenantId } })}
+                          onClick={() => navigate(`/tenants/${b.tenantId}`)}
                           className="text-ink hover:text-brand hover:underline"
                         >
                           {b.tenant}

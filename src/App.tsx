@@ -28,6 +28,7 @@ import DashboardLayout from "./landlord/components/DashboardLayout";
 import Dashboard from "./landlord/pages/Dashboard";
 import Rent from "./landlord/pages/Rent";
 import Tenants from "./landlord/pages/Tenants";
+import TenantProfile from "./landlord/pages/TenantProfile";
 import Rooms from "./landlord/pages/Rooms";
 import Maintenance from "./landlord/pages/Maintenance";
 import Expenses from "./landlord/pages/Expenses";
@@ -77,6 +78,7 @@ export default function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/rent" element={<Rent />} />
             <Route path="/tenants" element={<Tenants />} />
+            <Route path="/tenants/:id" element={<TenantProfile />} />
             <Route path="/rooms" element={<Rooms />} />
             <Route path="/maintenance" element={<Maintenance />} />
             <Route path="/expenses" element={<Expenses />} />

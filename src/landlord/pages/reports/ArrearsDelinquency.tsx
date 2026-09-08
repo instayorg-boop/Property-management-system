@@ -88,7 +88,7 @@ export default function ArrearsDelinquency() {
                     <td className="px-3 py-2 font-medium">
                       <button
                         type="button"
-                        onClick={() => navigate("/tenants", { state: { openTenantId: a.tenantId } })}
+                        onClick={() => navigate(`/tenants/${a.tenantId}`)}
                         className="text-ink hover:text-brand hover:underline"
                       >
                         {a.tenant}

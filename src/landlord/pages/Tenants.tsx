@@ -1,27 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import PageHeader from "../components/PageHeader";
-import SlideOver from "../components/SlideOver";
-import Modal from "../components/Modal";
-import LogPaymentModal from "../components/LogPaymentModal";
+import Avatar from "../components/Avatar";
 import TenantFormDrawer from "../components/TenantFormDrawer";
-import MoveOutModal from "../components/MoveOutModal";
-import SectionLabel from "../components/SectionLabel";
-import { useTenants, formatCurrency, relationLabel, type PaymentStatus, type Tenant } from "../TenantsContext";
-import {
-  MagnifyingGlass,
-  PencilSimple,
-  Trash,
-  WhatsappLogo,
-  UsersThree,
-  CheckCircle,
-  WarningCircle,
-  CaretDown,
-  SquaresFour,
-  Rows,
-  DotsThreeVertical,
-} from "@phosphor-icons/react";
+import ConfirmDeleteTenantModal from "../components/ConfirmDeleteTenantModal";
+import { useTenants, formatCurrency, type PaymentStatus, type Tenant } from "../TenantsContext";
+import { MagnifyingGlass, Trash, WhatsappLogo, UsersThree, SquaresFour, Rows, DotsThreeVertical } from "@phosphor-icons/react";
 import Pagination, { DEFAULT_PAGE_SIZE } from "../components/Pagination";
 import { Skeleton, SkeletonRow } from "../components/Skeleton";
 
@@ -29,16 +14,8 @@ function SearchIcon() {
   return <MagnifyingGlass size={16} weight="bold" />;
 }
 
-function EditIcon() {
-  return <PencilSimple size={14} weight="duotone" />;
-}
-
 function TrashIcon() {
   return <Trash size={14} weight="duotone" />;
-}
-
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
 }
 
 /** Zambian mobile numbers stored as "0977 123 456" -> wa.me needs "260977123456". */
@@ -54,44 +31,6 @@ const paymentStatusStyle: Record<PaymentStatus, string> = {
   unpaid: "bg-slate-100 text-slate-600",
   partial: "bg-amber-50 text-amber-600",
 };
-
-const historyFilters = ["All", "Paid", "Overdue", "Partial"] as const;
-const HISTORY_PAGE_SIZE = 5;
-
-/** A tenant's initials over a deterministic colour, standing in for a photo we don't have — picked
- * from the name so the same tenant always lands on the same colour instead of shuffling on reload. */
-const AVATAR_PALETTE = [
-  "bg-rose-100 text-rose-700",
-  "bg-amber-100 text-amber-700",
-  "bg-emerald-100 text-emerald-700",
-  "bg-sky-100 text-sky-700",
-  "bg-violet-100 text-violet-700",
-  "bg-fuchsia-100 text-fuchsia-700",
-  "bg-cyan-100 text-cyan-700",
-  "bg-orange-100 text-orange-700",
-];
-
-function initials(name: string) {
-  const parts = name.trim().split(/\s+/);
-  return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "?";
-}
-
-function avatarPalette(name: string) {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
-  return AVATAR_PALETTE[hash % AVATAR_PALETTE.length];
-}
-
-function Avatar({ name, size = 44 }: { name: string; size?: number }) {
-  return (
-    <span
-      className={`flex shrink-0 items-center justify-center rounded-full font-display font-semibold ${avatarPalette(name)}`}
-      style={{ width: size, height: size, fontSize: size * 0.36 }}
-    >
-      {initials(name)}
-    </span>
-  );
-}
 
 /** Small "···" menu for the one destructive action a card doesn't want as a permanent button. */
 function CardMenu({ onDelete }: { onDelete: () => void }) {
@@ -209,290 +148,20 @@ function TenantCard({
   );
 }
 
-function TenantDrawer({
-  tenant,
-  onClose,
-  onLogPayment,
-  onMoveOut,
-  onReactivate,
-  onEdit,
-}: {
-  tenant: Tenant;
-  onClose: () => void;
-  onLogPayment: () => void;
-  onMoveOut: () => void;
-  onReactivate: () => void;
-  onEdit: () => void;
-}) {
-  const [historyFilter, setHistoryFilter] = useState<(typeof historyFilters)[number]>("All");
-  const [historyExpanded, setHistoryExpanded] = useState(false);
-
-  const filteredLedger = tenant.ledger.filter((row) => historyFilter === "All" || statusLabel[row.status ?? "paid"] === historyFilter);
-  const visibleLedger = historyExpanded ? filteredLedger : filteredLedger.slice(0, HISTORY_PAGE_SIZE);
-
-  return (
-    <SlideOver
-      onClose={onClose}
-      title={tenant.name}
-      description={`${tenant.room} · ${tenant.property}`}
-      headerActions={
-        <button
-          type="button"
-          onClick={onEdit}
-          aria-label="Edit tenant"
-          className="flex h-8 w-8 items-center justify-center rounded-lg border border-line text-muted transition-colors hover:bg-mist hover:text-ink"
-        >
-          <EditIcon />
-        </button>
-      }
-      footer={
-        tenant.active ? (
-          <div>
-            <button
-              type="button"
-              onClick={onLogPayment}
-              className="w-full rounded-lg bg-brand py-3 text-sm font-medium text-paper transition-transform hover:scale-[1.01]"
-            >
-              Log payment
-            </button>
-            <div className="mt-2.5 flex items-center justify-between">
-              <a
-                href={whatsAppLink(tenant.phones[0] ?? "")}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-1.5 text-xs font-medium text-muted hover:text-ink"
-              >
-                <WhatsappLogo size={14} weight="fill" />
-                Send reminder
-              </a>
-              <button type="button" onClick={onMoveOut} className="text-xs font-medium text-red-600 hover:underline">
-                Move out
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={onReactivate}
-            className="w-full rounded-lg bg-brand py-3 text-sm font-medium text-paper transition-transform hover:scale-[1.01]"
-          >
-            Reactivate tenant
-          </button>
-        )
-      }
-    >
-      {/* Contacts — labeled sections, plain text rows, no boxes */}
-      <div>
-        <SectionLabel>Phone{tenant.phones.length > 1 ? "s" : ""}</SectionLabel>
-        <div className="mt-1 space-y-0.5">
-          {tenant.phones.length === 0 && <p className="text-sm text-muted">—</p>}
-          {tenant.phones.map((p, i) => (
-            <p key={i} className="text-sm text-ink">
-              {p}
-            </p>
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-4">
-        <SectionLabel>Emergency contact{tenant.emergencyContacts.length > 1 ? "s" : ""}</SectionLabel>
-        <div className="mt-1.5 space-y-3">
-          {tenant.emergencyContacts.length === 0 && <p className="text-sm text-muted">None on file</p>}
-          {tenant.emergencyContacts.map((c) => (
-            <div key={c.id}>
-              <p className="text-sm text-ink">
-                {c.name} <span className="text-muted">· {relationLabel(c)}</span>
-              </p>
-              <div className="mt-0.5 space-y-0.5">
-                {c.phones.length === 0 && <p className="text-sm text-muted">—</p>}
-                {c.phones.map((p, i) => (
-                  <p key={i} className="text-sm text-muted">
-                    {p}
-                  </p>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {!tenant.active && tenant.moveOutDate && <p className="mt-4 text-sm text-muted">Moved out: {tenant.moveOutDate}</p>}
-
-      {tenant.notes && (
-        <div className="mt-4 border-l-2 border-line pl-3">
-          <SectionLabel>Landlord note</SectionLabel>
-          <p className="mt-0.5 text-sm text-ink">{tenant.notes}</p>
-        </div>
-      )}
-
-      {/* Status — one banner answers "are they paid up" */}
-      <div className={`mt-4 flex items-start gap-2.5 rounded-lg px-4 py-3 ${tenant.owedAmount === 0 ? "bg-emerald-50" : "bg-amber-50"}`}>
-        {tenant.owedAmount === 0 ? (
-          <CheckCircle size={18} weight="fill" className="mt-0.5 shrink-0 text-emerald-600" />
-        ) : (
-          <WarningCircle size={18} weight="fill" className="mt-0.5 shrink-0 text-amber-600" />
-        )}
-        <div>
-          <p className={`text-sm font-semibold ${tenant.owedAmount === 0 ? "text-emerald-700" : "text-amber-700"}`}>
-            {tenant.owedAmount === 0 ? "Fully paid up" : `${formatCurrency(tenant.owedAmount)} owed`}
-          </p>
-          <p className={`text-xs ${tenant.owedAmount === 0 ? "text-emerald-700/70" : "text-amber-700/70"}`}>
-            Paid on time {tenant.onTimeCount} of {tenant.totalMonthsCount || tenant.onTimeCount} months
-          </p>
-        </div>
-      </div>
-
-      {/* Deposit — one plain text row */}
-      <div className="mt-4 flex items-center justify-between gap-3 text-sm">
-        <span className="text-muted">Deposit {tenant.depositStatus.toLowerCase()}</span>
-        <span className="text-right font-medium text-ink">
-          {formatCurrency(tenant.depositAmount)} · {tenant.depositMethod === "mobile" ? "mobile money" : "cash"}, {tenant.depositDate}
-        </span>
-      </div>
-      {tenant.depositResolutionNote && <p className="mt-1 text-right text-xs text-muted">{tenant.depositResolutionNote}</p>}
-
-      {/* Payment history — hairlines only, status already covered by the banner above */}
-      <div className="mt-6 flex items-center justify-between gap-2">
-        <p className="text-sm font-medium text-ink">Payment history</p>
-        <div className="relative">
-          <select
-            value={historyFilter}
-            onChange={(e) => {
-              setHistoryFilter(e.target.value as (typeof historyFilters)[number]);
-              setHistoryExpanded(false);
-            }}
-            className="appearance-none rounded-md py-1 pr-5 pl-1 text-xs font-medium text-muted outline-none hover:text-ink"
-          >
-            {historyFilters.map((f) => (
-              <option key={f}>{f}</option>
-            ))}
-          </select>
-          <CaretDown size={10} weight="bold" className="pointer-events-none absolute top-1/2 right-1 -translate-y-1/2 text-muted" />
-        </div>
-      </div>
-      <div className="mt-1 divide-y divide-line">
-        {filteredLedger.length === 0 && <p className="py-4 text-sm text-muted">No payments recorded yet.</p>}
-        {visibleLedger.map((row, i) => (
-          <div key={`${row.label}-${i}`} className="flex items-center justify-between py-2.5">
-            <div className="flex items-center gap-1.5">
-              <span className="text-sm text-ink">{row.label}</span>
-              {row.label.toLowerCase().includes("pro-rata") && (
-                <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-600">Pro-rata</span>
-              )}
-            </div>
-            <span className="text-sm text-muted">
-              {row.paidAmount !== undefined ? `${formatCurrency(row.paidAmount)} of ${formatCurrency(row.amount)}` : formatCurrency(row.amount)}
-            </span>
-          </div>
-        ))}
-      </div>
-      {filteredLedger.length > HISTORY_PAGE_SIZE && (
-        <button type="button" onClick={() => setHistoryExpanded((v) => !v)} className="mt-2 text-xs font-medium text-brand hover:underline">
-          {historyExpanded ? "Show fewer" : "Show earlier months"}
-        </button>
-      )}
-    </SlideOver>
-  );
-}
-
-function ConfirmDeleteModal({
-  tenant,
-  onClose,
-  onConfirm,
-}: {
-  tenant: Tenant;
-  onClose: () => void;
-  onConfirm: () => void;
-}) {
-  return (
-    <Modal
-      onClose={onClose}
-      maxWidth="max-w-sm"
-      title="Delete tenant?"
-      footer={
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist">
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-paper transition-colors hover:bg-red-700"
-          >
-            Delete
-          </button>
-        </div>
-      }
-    >
-      <p className="text-sm text-muted">
-        This will permanently remove <span className="font-medium text-ink">{tenant.name}</span> and their payment history. This
-        can't be undone.
-      </p>
-    </Modal>
-  );
-}
-
-function ReactivateModal({
-  tenant,
-  onClose,
-  onConfirm,
-}: {
-  tenant: Tenant;
-  onClose: () => void;
-  onConfirm: (newMoveInDate: string) => void;
-}) {
-  const [moveInDate, setMoveInDate] = useState(todayISO());
-
-  return (
-    <Modal
-      onClose={onClose}
-      maxWidth="max-w-sm"
-      title="Reactivate tenant"
-      description={`${tenant.name} · ${tenant.room}`}
-      footer={
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist">
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={() => onConfirm(new Date(moveInDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }))}
-            className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-paper"
-          >
-            Reactivate
-          </button>
-        </div>
-      }
-    >
-      <label className="mb-1.5 block text-xs font-medium text-muted">New move-in date</label>
-      <input
-        type="date"
-        value={moveInDate}
-        onChange={(e) => setMoveInDate(e.target.value)}
-        className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
-      />
-    </Modal>
-  );
-}
 
 export default function Tenants() {
-  const { tenants, isReady, deleteTenant, moveOutTenant, reactivateTenant, logPayment } = useTenants();
+  const { tenants, isReady, deleteTenant } = useTenants();
   const location = useLocation();
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"active" | "moved-out">("active");
   const [view, setView] = useState<"grid" | "table">(() => (window.localStorage.getItem("instay-tenants-view") === "table" ? "table" : "grid"));
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [showLogPayment, setShowLogPayment] = useState(false);
-  const [showMoveOut, setShowMoveOut] = useState(false);
-  const [showReactivate, setShowReactivate] = useState(false);
   const [page, setPage] = useState(1);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [rowsPerPage, setRowsPerPage] = useState(DEFAULT_PAGE_SIZE);
 
-  const selected = tenants.find((t) => t.id === selectedId) ?? null;
   const editing = tenants.find((t) => t.id === editingId) ?? null;
   const deleting = tenants.find((t) => t.id === deletingId) ?? null;
 
@@ -517,14 +186,12 @@ export default function Tenants() {
   const currentPage = Math.min(page, pageCount);
   const pageRows = filtered.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
 
-  // Arriving from elsewhere in the app — open a specific tenant's drawer, or the Add tenant
-  // drawer, then drop the state so navigating back here later doesn't reopen it.
+  // Arriving from elsewhere in the app to open the Add tenant drawer — then drop the state so
+  // navigating back here later doesn't reopen it. (Opening a specific tenant now links straight
+  // to /tenants/:id instead of routing through this page's state.)
   useEffect(() => {
-    const state = location.state as { openTenantId?: string; openAddTenant?: boolean } | null;
-    if (state?.openTenantId) {
-      setSelectedId(state.openTenantId);
-      navigate(location.pathname, { replace: true, state: null });
-    } else if (state?.openAddTenant) {
+    const state = location.state as { openAddTenant?: boolean } | null;
+    if (state?.openAddTenant) {
       setShowAdd(true);
       navigate(location.pathname, { replace: true, state: null });
     }
@@ -658,7 +325,7 @@ export default function Tenants() {
                     <TenantCard
                       key={t.id}
                       tenant={t}
-                      onView={() => setSelectedId(t.id)}
+                      onView={() => navigate(`/tenants/${t.id}`)}
                       onMessage={() => window.open(whatsAppLink(t.phones[0] ?? ""), "_blank", "noreferrer")}
                       onDelete={() => setDeletingId(t.id)}
                     />
@@ -695,7 +362,7 @@ export default function Tenants() {
                 </div>
               ))}
             {isReady && pageRows.map((t) => (
-              <div key={t.id} onClick={() => setSelectedId(t.id)} className="p-4 transition-colors active:bg-mist">
+              <div key={t.id} onClick={() => navigate(`/tenants/${t.id}`)} className="p-4 transition-colors active:bg-mist">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-ink">{t.name}</p>
@@ -729,7 +396,7 @@ export default function Tenants() {
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        setSelectedId(t.id);
+                        navigate(`/tenants/${t.id}`);
                       }}
                       className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-mist"
                     >
@@ -785,7 +452,7 @@ export default function Tenants() {
                 {isReady && pageRows.map((t) => (
                   <tr
                     key={t.id}
-                    onClick={() => setSelectedId(t.id)}
+                    onClick={() => navigate(`/tenants/${t.id}`)}
                     className="cursor-pointer border-t border-line transition-colors hover:bg-mist"
                   >
                     <td className="px-4 py-3">
@@ -814,7 +481,7 @@ export default function Tenants() {
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setSelectedId(t.id);
+                            navigate(`/tenants/${t.id}`);
                           }}
                           className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-mist"
                         >
@@ -881,62 +548,15 @@ export default function Tenants() {
       </div>
 
       <AnimatePresence>
-        {selected && !editingId && (
-          <TenantDrawer
-            key={selected.id}
-            tenant={selected}
-            onClose={() => setSelectedId(null)}
-            onLogPayment={() => setShowLogPayment(true)}
-            onEdit={() => setEditingId(selected.id)}
-            onMoveOut={() => setShowMoveOut(true)}
-            onReactivate={() => setShowReactivate(true)}
-          />
-        )}
         {showAdd && <TenantFormDrawer editing={null} onClose={() => setShowAdd(false)} />}
         {editing && <TenantFormDrawer editing={editing} onClose={() => setEditingId(null)} />}
         {deleting && (
-          <ConfirmDeleteModal
+          <ConfirmDeleteTenantModal
             tenant={deleting}
             onClose={() => setDeletingId(null)}
             onConfirm={() => {
               deleteTenant(deleting.id);
               setDeletingId(null);
-              setSelectedId((prev) => (prev === deleting.id ? null : prev));
-            }}
-          />
-        )}
-        {showMoveOut && selected && (
-          <MoveOutModal
-            tenant={selected}
-            onClose={() => setShowMoveOut(false)}
-            onConfirm={(details) => {
-              moveOutTenant(selected.id, details);
-              setShowMoveOut(false);
-              setSelectedId(null);
-            }}
-          />
-        )}
-        {showReactivate && selected && (
-          <ReactivateModal
-            tenant={selected}
-            onClose={() => setShowReactivate(false)}
-            onConfirm={(newMoveInDate) => {
-              reactivateTenant(selected.id, newMoveInDate);
-              setShowReactivate(false);
-              setSelectedId(null);
-            }}
-          />
-        )}
-        {showLogPayment && selected && (
-          <LogPaymentModal
-            tenantName={selected.name}
-            room={selected.room}
-            outstanding={selected.owedAmount || selected.rentAmount}
-            onClose={() => setShowLogPayment(false)}
-            onConfirm={() => {
-              logPayment(selected.id, selected.owedAmount || selected.rentAmount);
-              setShowLogPayment(false);
-              setSelectedId(null);
             }}
           />
         )}

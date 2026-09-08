@@ -987,7 +987,7 @@ export default function Rooms() {
             onClose={() => setSelectedNumber(null)}
             onViewRecord={(tenant) => {
               setSelectedNumber(null);
-              navigate("/tenants", { state: { openTenantId: tenant.id } });
+              navigate(`/tenants/${tenant.id}`);
             }}
             onLogPayment={(tenant) => setPayingTenant(tenant)}
             onAssignTenant={() => {
