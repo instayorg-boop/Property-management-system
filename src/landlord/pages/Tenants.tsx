@@ -5,7 +5,7 @@ import PageHeader from "../components/PageHeader";
 import TenantFormDrawer from "../components/TenantFormDrawer";
 import ConfirmDeleteTenantModal from "../components/ConfirmDeleteTenantModal";
 import { useTenants, formatCurrency } from "../TenantsContext";
-import { MagnifyingGlass, Trash, UsersThree, CaretUp, CaretDown } from "@phosphor-icons/react";
+import { MagnifyingGlass, Trash, UsersThree } from "@phosphor-icons/react";
 import Pagination, { DEFAULT_PAGE_SIZE } from "../components/Pagination";
 import { Skeleton, SkeletonRow } from "../components/Skeleton";
 
@@ -21,42 +21,6 @@ function TrashIcon() {
  * different state (not just "behind on rent"), and needs to read as such at a glance. */
 const movedOutStyle = "bg-red-50 text-red-600";
 
-type SortKey = "name" | "room" | "moveInDate" | "rent";
-const sortColumns: { key: SortKey; label: string }[] = [
-  { key: "name", label: "Tenant" },
-  { key: "room", label: "Room" },
-  { key: "moveInDate", label: "Move-in date" },
-  { key: "rent", label: "Rent" },
-];
-
-function SortHeader({
-  label,
-  active,
-  direction,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  direction: "asc" | "desc";
-  onClick: () => void;
-}) {
-  return (
-    <th className="px-4 py-3 font-medium uppercase tracking-wide">
-      <button
-        type="button"
-        onClick={onClick}
-        className={`flex items-center gap-1 transition-colors ${active ? "text-ink" : "text-muted hover:text-ink"}`}
-      >
-        {label}
-        <span className={`flex flex-col leading-none ${active ? "opacity-100" : "opacity-30"}`}>
-          <CaretUp size={8} weight="bold" className={direction === "asc" && active ? "text-brand" : ""} />
-          <CaretDown size={8} weight="bold" className={direction === "desc" && active ? "text-brand" : ""} />
-        </span>
-      </button>
-    </th>
-  );
-}
-
 export default function Tenants() {
   const { tenants, isReady, deleteTenant } = useTenants();
   const location = useLocation();
@@ -68,24 +32,12 @@ export default function Tenants() {
   const [page, setPage] = useState(1);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [rowsPerPage, setRowsPerPage] = useState(DEFAULT_PAGE_SIZE);
-  const [sortKey, setSortKey] = useState<SortKey>("name");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
   const editing = tenants.find((t) => t.id === editingId) ?? null;
   const deleting = tenants.find((t) => t.id === deletingId) ?? null;
 
-  const toggleSort = (key: SortKey) => {
-    if (key === sortKey) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortKey(key);
-      setSortDir("asc");
-    }
-    setPage(1);
-  };
-
   const filtered = useMemo(() => {
-    const rows = tenants.filter((t) => {
+    return tenants.filter((t) => {
       const q = query.trim().toLowerCase();
       const matchesQuery =
         q.length === 0 ||
@@ -95,23 +47,7 @@ export default function Tenants() {
       const matchesStatus = statusFilter === "active" ? t.active : !t.active;
       return matchesQuery && matchesStatus;
     });
-
-    const dir = sortDir === "asc" ? 1 : -1;
-    return rows.sort((a, b) => {
-      switch (sortKey) {
-        case "name":
-          return dir * a.name.localeCompare(b.name);
-        case "room":
-          return dir * a.room.localeCompare(b.room, undefined, { numeric: true });
-        case "rent":
-          return dir * (a.rentAmount - b.rentAmount);
-        case "moveInDate":
-          return dir * (new Date(a.moveInDate).getTime() - new Date(b.moveInDate).getTime());
-        default:
-          return 0;
-      }
-    });
-  }, [tenants, query, statusFilter, sortKey, sortDir]);
+  }, [tenants, query, statusFilter]);
 
   // Independent of the search box/tab — the metric row always reflects the whole tenant list.
   const counts = useMemo(
@@ -295,32 +231,33 @@ export default function Tenants() {
             )}
           </div>
 
-          {/* Desktop / tablet: table */}
-          <div className="hidden overflow-x-auto md:block">
+          {/* Desktop / tablet: table — bounded height with its own scroll, so the sticky header
+              has an actual scroll container to stick within (relying on the page/shell's own
+              scroll container doesn't work reliably here: overflow-x-auto below implicitly
+              resolves overflow-y to auto too, per the CSS spec, silently making this div its own
+              non-scrolling-looking-but-still-a-container context). */}
+          <div className="hidden max-h-[70vh] overflow-auto md:block">
             <table className="w-full text-left text-sm">
               <thead className="sticky top-0 z-10 bg-mist text-[11px] text-muted">
                 <tr>
-                  {sortColumns.map((col) => (
-                    <SortHeader
-                      key={col.key}
-                      label={col.label}
-                      active={sortKey === col.key}
-                      direction={sortDir}
-                      onClick={() => toggleSort(col.key)}
-                    />
-                  ))}
+                  <th className="px-4 py-3 font-medium uppercase tracking-wide">#</th>
+                  <th className="px-4 py-3 font-medium uppercase tracking-wide">Tenant</th>
+                  <th className="px-4 py-3 font-medium uppercase tracking-wide">Room</th>
+                  <th className="px-4 py-3 font-medium uppercase tracking-wide">Move-in date</th>
+                  <th className="px-4 py-3 font-medium uppercase tracking-wide">Rent</th>
                   <th className="px-4 py-3 font-medium uppercase tracking-wide">Status</th>
                   <th className="px-4 py-3 font-medium uppercase tracking-wide">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {!isReady && Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={7} />)}
-                {isReady && pageRows.map((t) => (
+                {isReady && pageRows.map((t, i) => (
                   <tr
                     key={t.id}
                     onClick={() => navigate(`/tenants/${t.id}`)}
                     className="cursor-pointer border-t border-line transition-colors hover:bg-mist"
                   >
+                    <td className="px-4 py-3 text-muted">{(currentPage - 1) * rowsPerPage + i + 1}</td>
                     <td className="px-4 py-3">
                       <p className="font-medium text-ink">{t.name}</p>
                       <p className="text-xs text-muted">{t.phones[0] ?? "—"}</p>
@@ -370,7 +307,7 @@ export default function Tenants() {
                 ))}
                 {isReady && pageRows.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-10">
+                    <td colSpan={7} className="px-4 py-10">
                       <div className="flex flex-col items-center justify-center gap-3 text-center">
                         <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
                           <UsersThree size={22} weight="duotone" />
