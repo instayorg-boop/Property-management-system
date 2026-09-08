@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useLocation, Link } from "react-router-dom";
-import { CaretLeft, Wrench, DeviceMobile, CreditCard, CaretRight, ShieldCheck } from "@phosphor-icons/react";
+import {
+  CaretLeft as CaretLeftIcon,
+  Wrench as WrenchIcon,
+  DeviceMobile as DeviceMobileIcon,
+  CreditCard as CreditCardIcon,
+  ShieldCheck as ShieldCheckIcon,
+  CaretRight as CaretRightIcon,
+} from "@phosphor-icons/react";
 import { formatCurrency } from "../../landlord/TenantsContext";
 import {
   getPortalProperty,
@@ -43,10 +50,6 @@ export default function TenantBalance() {
   const [cardExpiry, setCardExpiry] = useState("");
   const [cardCvv, setCardCvv] = useState("");
 
-  // Identity-proof gate — picking a name on the search screen doesn't unlock anything by itself;
-  // an OTP sent to the phone on file does. `verified` starts true only if a still-valid session
-  // (see payPortal.ts's sessionStorage helpers) already exists for this tenant, e.g. a page refresh
-  // within the same 30-minute window.
   const [verified, setVerified] = useState(() => (tenantId ? !!getPortalSessionToken(tenantId) : false));
   const [otpMaskedPhone, setOtpMaskedPhone] = useState<string | null>(null);
   const [otpDevCode, setOtpDevCode] = useState<string | null>(null);
@@ -75,10 +78,6 @@ export default function TenantBalance() {
       .finally(() => setOtpSending(false));
   };
 
-  // Auto-send on arrival, same as the design's "selecting a name triggers an OTP" — no extra click.
-  // Guarded with a ref (not just the `verified` check) so StrictMode's dev-only double-invoke of
-  // effects — or any other double-mount — can't fire two competing OTP requests for one visit;
-  // sendOtp() itself resets this per-tenant when the tenant/property actually changes.
   const autoSentFor = useRef<string | null>(null);
   useEffect(() => {
     if (verified || !tenantId) return;
@@ -120,26 +119,22 @@ export default function TenantBalance() {
           onClick={() => navigate(`/pay/${propertySlug}`)}
           className="flex items-center gap-1 text-xs font-medium text-muted hover:text-ink"
         >
-          <CaretLeft size={12} weight="bold" />
+          <CaretLeftIcon size={12} weight="duotone" />
           Not you?
         </button>
 
-        <div className="mt-3 flex items-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-soft text-brand">
-            <ShieldCheck size={16} weight="fill" />
-          </div>
-          <div>
-            <p className="font-display text-base font-semibold tracking-tight text-ink">
-              {claimedName ? `Verify it's ${claimedName.split(" ")[0]}` : "Verify it's you"}
-            </p>
-            <p className="text-xs text-muted">for your privacy, we need to confirm your phone number first</p>
-          </div>
+        <div className="mt-4 flex items-center gap-2">
+          <ShieldCheckIcon size={20} weight="duotone" className="text-brand" />
+          <h1 className="font-display text-2xl font-semibold tracking-tight text-ink">
+            {claimedName ? `Verify it's ${claimedName.split(" ")[0]}` : "Verify it's you"}
+          </h1>
         </div>
+        <p className="mt-1 text-sm text-muted">For your privacy, we need to confirm your phone number first.</p>
 
-        {otpSending && !otpMaskedPhone && <p className="mt-5 text-sm text-muted">Sending a code…</p>}
+        {otpSending && !otpMaskedPhone && <p className="mt-6 text-sm text-muted">Sending a code…</p>}
 
         {otpSendError && (
-          <div className="mt-5 space-y-2">
+          <div className="mt-6 space-y-2">
             <p className="text-sm text-red-600">{otpSendError}</p>
             <button type="button" onClick={sendOtp} className="text-sm font-medium text-brand hover:underline">
               Try again
@@ -149,7 +144,7 @@ export default function TenantBalance() {
 
         {otpMaskedPhone && (
           <>
-            <p className="mt-5 text-sm text-ink">
+            <p className="mt-6 text-sm text-ink">
               We sent a 6-digit code to the number on file, ending in <span className="font-medium">{otpMaskedPhone}</span>.
             </p>
             {otpDevCode && (
@@ -158,8 +153,7 @@ export default function TenantBalance() {
               </p>
             )}
 
-            <div className="mt-4">
-              <label className="mb-1.5 block text-xs font-medium text-muted">Verification code</label>
+            <div className="mt-5">
               <input
                 autoFocus
                 value={otpCode}
@@ -170,16 +164,16 @@ export default function TenantBalance() {
                 onKeyDown={(e) => e.key === "Enter" && submitOtp()}
                 inputMode="numeric"
                 placeholder="000000"
-                className="w-full rounded-lg border border-line px-3 py-2.5 text-center text-lg font-semibold tracking-[0.3em] outline-none focus:border-brand"
+                className="w-full border-b border-line bg-transparent pb-3 text-center text-2xl font-semibold tracking-[0.3em] text-ink outline-none focus:border-brand"
               />
-              {otpVerifyError && <p className="mt-1.5 text-xs text-red-600">{otpVerifyError}</p>}
+              {otpVerifyError && <p className="mt-2 text-xs text-red-600">{otpVerifyError}</p>}
             </div>
 
             <button
               type="button"
               onClick={submitOtp}
               disabled={otpCode.length !== 6 || otpVerifying}
-              className="mt-4 w-full rounded-lg bg-brand py-3 text-sm font-medium text-paper transition-transform hover:scale-[1.01] disabled:opacity-50 disabled:hover:scale-100"
+              className="mt-5 w-full rounded-lg bg-brand py-3 text-sm font-medium text-paper transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {otpVerifying ? "Verifying…" : "Verify"}
             </button>
@@ -199,7 +193,7 @@ export default function TenantBalance() {
       <PayShell propertyName={propertyName}>
         <p className="text-sm text-muted">We couldn't find that tenant.</p>
         <Link to={`/pay/${propertySlug}`} className="mt-3 inline-block text-sm font-medium text-brand hover:underline">
-          ← Back to search
+          Back to search
         </Link>
       </PayShell>
     );
@@ -233,11 +227,11 @@ export default function TenantBalance() {
             onClick={() => navigate(`/pay/${propertySlug}`)}
             className="flex items-center gap-1 text-xs font-medium text-muted hover:text-ink"
           >
-            <CaretLeft size={12} weight="bold" />
+            <CaretLeftIcon size={12} weight="duotone" />
             Not you?
           </button>
 
-          <div className="mt-3 flex items-center justify-between">
+          <div className="mt-4 flex items-baseline justify-between">
             <div>
               <p className="font-display text-lg font-semibold tracking-tight text-ink">{tenant.name}</p>
               <p className="text-xs text-muted">
@@ -249,9 +243,9 @@ export default function TenantBalance() {
             </span>
           </div>
 
-          <div className="mt-5 rounded-lg bg-mist px-4 py-4 text-center">
+          <div className="mt-6 border-y border-line py-6 text-center">
             <p className="text-xs text-muted">{fullyPaid ? "You're all paid up" : "Amount due"}</p>
-            <p className="mt-1 font-display text-3xl font-semibold tracking-tight text-ink">
+            <p className="mt-1 font-display text-4xl font-semibold tracking-tight text-ink">
               {fullyPaid ? formatCurrency(tenant.rentAmount) : formatCurrency(amountDue)}
             </p>
             {tenant.status === "overdue" && tenant.daysOverdue ? (
@@ -260,9 +254,9 @@ export default function TenantBalance() {
           </div>
 
           {!fullyPaid && openLedger.length > 0 && (
-            <div className="mt-3 divide-y divide-line overflow-hidden rounded-lg border border-line">
+            <div className="mt-4">
               {openLedger.map((row, i) => (
-                <div key={i} className="flex items-center justify-between px-3.5 py-2 text-sm">
+                <div key={i} className="flex items-baseline justify-between border-b border-line py-2.5 text-sm">
                   <span className="text-muted">{row.label}</span>
                   <span className="font-medium text-ink">
                     {formatCurrency(row.paidAmount ? row.amount - row.paidAmount : row.amount)}
@@ -276,18 +270,17 @@ export default function TenantBalance() {
             <button
               type="button"
               onClick={() => setFlowStep("method")}
-              className="mt-5 flex w-full items-center justify-center gap-1.5 rounded-lg bg-brand py-3 text-sm font-medium text-paper transition-transform hover:scale-[1.01]"
+              className="mt-6 w-full rounded-lg bg-brand py-3 text-sm font-medium text-paper transition-opacity hover:opacity-90"
             >
               Continue to pay {formatCurrency(amountDue)}
-              <CaretRight size={14} weight="bold" />
             </button>
           )}
 
           <Link
             to={`/pay/${propertySlug}/${tenant.id}/report`}
-            className="mt-3 flex items-center justify-center gap-1.5 rounded-lg border border-line py-2.5 text-sm font-medium text-ink transition-colors hover:bg-mist"
+            className="mt-4 flex items-center justify-center gap-1.5 text-sm text-muted hover:text-ink"
           >
-            <Wrench size={14} weight="duotone" />
+            <WrenchIcon size={14} weight="duotone" />
             Report a maintenance issue instead
           </Link>
         </>
@@ -295,35 +288,31 @@ export default function TenantBalance() {
 
       {flowStep === "method" && (
         <>
-          <button
-            type="button"
-            onClick={() => setFlowStep("review")}
-            className="flex items-center gap-1 text-xs font-medium text-muted hover:text-ink"
-          >
-            <CaretLeft size={12} weight="bold" />
+          <button type="button" onClick={() => setFlowStep("review")} className="flex items-center gap-1 text-xs font-medium text-muted hover:text-ink">
+            <CaretLeftIcon size={12} weight="duotone" />
             Back
           </button>
 
-          <p className="mt-3 font-display text-lg font-semibold tracking-tight text-ink">How would you like to pay?</p>
-          <p className="mt-1 text-sm text-muted">{formatCurrency(amountDue)} due for {tenant.room}</p>
+          <div className="mt-4">
+            <h1 className="font-display text-lg font-semibold tracking-tight text-ink">How would you like to pay?</h1>
+            <p className="mt-1 text-sm text-muted">{formatCurrency(amountDue)} due for {tenant.room}</p>
+          </div>
 
-          <div className="mt-4 space-y-2.5">
+          <div className="mt-4">
             <button
               type="button"
               onClick={() => {
                 setMethod("mobile");
                 setFlowStep("pay");
               }}
-              className="flex w-full items-center gap-3 rounded-lg border border-line px-4 py-3.5 text-left transition-colors hover:border-brand hover:bg-brand-soft/40"
+              className="group flex w-full items-center gap-3 border-b border-line py-4 text-left"
             >
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-soft text-brand">
-                <DeviceMobile size={18} weight="fill" />
-              </div>
+              <DeviceMobileIcon size={18} weight="duotone" className="text-muted" />
               <div className="flex-1">
-                <p className="text-sm font-medium text-ink">Mobile money</p>
+                <p className="text-base text-ink transition-colors group-hover:text-brand">Mobile money</p>
                 <p className="text-xs text-muted">MTN, Airtel or Zamtel</p>
               </div>
-              <CaretRight size={14} weight="bold" className="text-muted" />
+              <CaretRightIcon size={14} weight="duotone" className="text-muted" />
             </button>
 
             <button
@@ -332,16 +321,14 @@ export default function TenantBalance() {
                 setMethod("card");
                 setFlowStep("pay");
               }}
-              className="flex w-full items-center gap-3 rounded-lg border border-line px-4 py-3.5 text-left transition-colors hover:border-brand hover:bg-brand-soft/40"
+              className="group flex w-full items-center gap-3 border-b border-line py-4 text-left"
             >
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-soft text-brand">
-                <CreditCard size={18} weight="fill" />
-              </div>
+              <CreditCardIcon size={18} weight="duotone" className="text-muted" />
               <div className="flex-1">
-                <p className="text-sm font-medium text-ink">Debit / credit card</p>
+                <p className="text-base text-ink transition-colors group-hover:text-brand">Debit / credit card</p>
                 <p className="text-xs text-muted">Visa or Mastercard</p>
               </div>
-              <CaretRight size={14} weight="bold" className="text-muted" />
+              <CaretRightIcon size={14} weight="duotone" className="text-muted" />
             </button>
           </div>
         </>
@@ -349,54 +336,48 @@ export default function TenantBalance() {
 
       {flowStep === "pay" && method === "mobile" && (
         <>
-          <button
-            type="button"
-            onClick={() => setFlowStep("method")}
-            className="flex items-center gap-1 text-xs font-medium text-muted hover:text-ink"
-          >
-            <CaretLeft size={12} weight="bold" />
+          <button type="button" onClick={() => setFlowStep("method")} className="flex items-center gap-1 text-xs font-medium text-muted hover:text-ink">
+            <CaretLeftIcon size={12} weight="duotone" />
             Back
           </button>
 
-          <p className="mt-3 font-display text-lg font-semibold tracking-tight text-ink">Pay with mobile money</p>
-          <p className="mt-1 text-sm text-muted">{formatCurrency(amountDue)} due for {tenant.room}</p>
-
           <div className="mt-4">
-            <label className="mb-1.5 block text-xs font-medium text-muted">Network</label>
-            <div className="flex gap-2">
-              {PROVIDERS.map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setProvider(p)}
-                  className={`flex-1 rounded-lg border py-2 text-sm font-medium transition-colors ${
-                    provider === p ? "border-brand bg-brand-soft text-brand" : "border-line text-muted hover:bg-mist"
-                  }`}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
+            <h1 className="font-display text-lg font-semibold tracking-tight text-ink">Pay with mobile money</h1>
+            <p className="mt-1 text-sm text-muted">{formatCurrency(amountDue)} due for {tenant.room}</p>
           </div>
 
-          <div className="mt-4">
-            <label className="mb-1.5 block text-xs font-medium text-muted">Phone number</label>
+          <div className="mt-5 flex gap-6 border-b border-line">
+            {PROVIDERS.map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => setProvider(p)}
+                className={`border-b-2 pb-2.5 text-sm font-medium transition-colors ${
+                  provider === p ? "border-brand text-ink" : "border-transparent text-muted hover:text-ink"
+                }`}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-5">
             <input
               autoFocus
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               inputMode="tel"
-              placeholder="e.g. 097 123 4567"
-              className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+              placeholder="Phone number"
+              className="w-full border-b border-line bg-transparent pb-3 text-base text-ink outline-none placeholder:text-muted focus:border-brand"
             />
-            <p className="mt-1.5 text-xs text-muted">You'll get a prompt on this number to approve the payment.</p>
+            <p className="mt-2 text-xs text-muted">You'll get a prompt on this number to approve the payment.</p>
           </div>
 
           <button
             type="button"
             onClick={submitPayment}
             disabled={!canPay}
-            className="mt-5 w-full rounded-lg bg-brand py-3 text-sm font-medium text-paper transition-transform hover:scale-[1.01] disabled:opacity-50 disabled:hover:scale-100"
+            className="mt-6 w-full rounded-lg bg-brand py-3 text-sm font-medium text-paper transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             Pay {formatCurrency(amountDue)}
           </button>
@@ -405,50 +386,39 @@ export default function TenantBalance() {
 
       {flowStep === "pay" && method === "card" && (
         <>
-          <button
-            type="button"
-            onClick={() => setFlowStep("method")}
-            className="flex items-center gap-1 text-xs font-medium text-muted hover:text-ink"
-          >
-            <CaretLeft size={12} weight="bold" />
+          <button type="button" onClick={() => setFlowStep("method")} className="flex items-center gap-1 text-xs font-medium text-muted hover:text-ink">
+            <CaretLeftIcon size={12} weight="duotone" />
             Back
           </button>
 
-          <p className="mt-3 font-display text-lg font-semibold tracking-tight text-ink">Pay with card</p>
-          <p className="mt-1 text-sm text-muted">{formatCurrency(amountDue)} due for {tenant.room}</p>
+          <div className="mt-4">
+            <h1 className="font-display text-lg font-semibold tracking-tight text-ink">Pay with card</h1>
+            <p className="mt-1 text-sm text-muted">{formatCurrency(amountDue)} due for {tenant.room}</p>
+          </div>
 
-          <div className="mt-4 space-y-3">
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-muted">Card number</label>
+          <div className="mt-5 space-y-5">
+            <input
+              autoFocus
+              value={cardNumber}
+              onChange={(e) => setCardNumber(e.target.value)}
+              inputMode="numeric"
+              placeholder="Card number"
+              className="w-full border-b border-line bg-transparent pb-3 text-base text-ink outline-none placeholder:text-muted focus:border-brand"
+            />
+            <div className="flex gap-6">
               <input
-                autoFocus
-                value={cardNumber}
-                onChange={(e) => setCardNumber(e.target.value)}
-                inputMode="numeric"
-                placeholder="1234 1234 1234 1234"
-                className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+                value={cardExpiry}
+                onChange={(e) => setCardExpiry(e.target.value)}
+                placeholder="MM/YY"
+                className="w-full border-b border-line bg-transparent pb-3 text-base text-ink outline-none placeholder:text-muted focus:border-brand"
               />
-            </div>
-            <div className="flex gap-3">
-              <div className="flex-1">
-                <label className="mb-1.5 block text-xs font-medium text-muted">Expiry</label>
-                <input
-                  value={cardExpiry}
-                  onChange={(e) => setCardExpiry(e.target.value)}
-                  placeholder="MM/YY"
-                  className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
-                />
-              </div>
-              <div className="flex-1">
-                <label className="mb-1.5 block text-xs font-medium text-muted">CVV</label>
-                <input
-                  value={cardCvv}
-                  onChange={(e) => setCardCvv(e.target.value)}
-                  inputMode="numeric"
-                  placeholder="123"
-                  className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
-                />
-              </div>
+              <input
+                value={cardCvv}
+                onChange={(e) => setCardCvv(e.target.value)}
+                inputMode="numeric"
+                placeholder="CVV"
+                className="w-full border-b border-line bg-transparent pb-3 text-base text-ink outline-none placeholder:text-muted focus:border-brand"
+              />
             </div>
           </div>
 
@@ -456,7 +426,7 @@ export default function TenantBalance() {
             type="button"
             onClick={submitPayment}
             disabled={!canPay}
-            className="mt-5 w-full rounded-lg bg-brand py-3 text-sm font-medium text-paper transition-transform hover:scale-[1.01] disabled:opacity-50 disabled:hover:scale-100"
+            className="mt-6 w-full rounded-lg bg-brand py-3 text-sm font-medium text-paper transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             Pay {formatCurrency(amountDue)}
           </button>
@@ -464,8 +434,8 @@ export default function TenantBalance() {
       )}
 
       {flowStep === "processing" && (
-        <div className="flex flex-col items-center justify-center py-10 text-center">
-          <span className="h-9 w-9 animate-spin rounded-full border-[3px] border-brand-soft border-t-brand" />
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <span className="h-8 w-8 animate-spin rounded-full border-[3px] border-brand-soft border-t-brand" />
           <p className="mt-4 text-sm font-medium text-ink">
             {method === "mobile" ? `Check your phone to approve on ${provider}…` : "Processing your card payment…"}
           </p>

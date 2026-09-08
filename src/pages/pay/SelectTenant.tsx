@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { MagnifyingGlass, CaretRight, House } from "@phosphor-icons/react";
+import { MagnifyingGlass, CaretRight } from "@phosphor-icons/react";
 import { getPortalProperty, searchPortalTenants, type PortalTenantSummary } from "../../lib/payPortal";
 import PayShell from "./PayShell";
 
@@ -32,17 +32,12 @@ export default function SelectTenant() {
 
   return (
     <PayShell propertyName={propertyName}>
-      <div className="flex items-center gap-2.5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-soft text-brand">
-          <House size={16} weight="fill" />
-        </div>
-        <div>
-          <p className="font-display text-base font-semibold tracking-tight text-ink">Find your name</p>
-          <p className="text-xs text-muted">to view your balance and pay rent</p>
-        </div>
+      <div className="mb-4">
+        <h1 className="font-display text-2xl font-semibold tracking-tight text-ink">Pay rent</h1>
+        <p className="mt-1 text-sm text-muted">Select your name to see your balance and pay.</p>
       </div>
 
-      <div className="mt-4 flex items-center gap-2 rounded-lg border border-line bg-mist px-3 py-2.5 focus-within:border-brand">
+      <div className="mt-2 flex items-center gap-2 rounded-lg border border-line bg-mist px-3 py-2.5 focus-within:border-brand">
         <MagnifyingGlass size={16} weight="bold" className="text-muted" />
         <input
           autoFocus
@@ -62,7 +57,7 @@ export default function SelectTenant() {
             className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-mist active:scale-[0.99]"
           >
             <div className="flex items-center gap-2.5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-mist text-[11px] font-semibold text-muted">
+              <div className="flex h-9 w-9 items-center justify-center border border-gray-300 rounded-full bg-mist text-[11px] font-semibold text-muted">
                 {t.name.split(" ").map((s) => s[0]).join("")}
               </div>
               <div>

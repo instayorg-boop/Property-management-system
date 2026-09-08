@@ -23,7 +23,7 @@ export default function PayShell({
   const activeIndex = step ? STEPS.findIndex((s) => s.key === step) : -1;
 
   return (
-    <div className="min-h-screen bg-linear-to-b from-brand-soft/60 via-mist to-mist">
+    <div className="min-h-screen bg-white">
       <div className="mx-auto flex min-h-screen w-full max-w-md flex-col px-5 py-8">
         <div className="flex items-center justify-center">
           <img src="https://cdn.brandfetch.io/idkuvXnjOH/theme/dark/logo.svg?c=1dxbfHSJFAPEGdCLU4o5B" alt="Instay" className="h-6" />
@@ -45,9 +45,9 @@ export default function PayShell({
           </div>
         )}
 
-        <div className="mt-5 flex-1 rounded-xl border border-line bg-paper p-5 shadow-card">{children}</div>
+        <div className="mt-5 flex-1 rounded-lg border border-line  p-5 ">{children}</div>
 
-        <div className="mt-6 flex items-center justify-center gap-1.5 text-[11px] text-muted">
+        <div className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-muted">
           <LockSimple size={11} weight="fill" />
           Secured by Instay · Payments processed by Lenco
         </div>

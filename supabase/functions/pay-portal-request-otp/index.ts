@@ -24,6 +24,15 @@ const MAX_REQUESTS_PER_HOUR = 3;
 
 type RequestOtpPayload = { propertySlug?: string; tenantId?: string };
 
+/** Tenant phones are stored in local Zambian format ("0977 502 913") — Africa's Talking requires
+ * E.164 ("+260977502913"). "0" -> "+260"; already-international numbers pass through unchanged. */
+function toE164Zambia(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.startsWith("260")) return `+${digits}`;
+  if (digits.startsWith("0")) return `+260${digits.slice(1)}`;
+  return `+260${digits}`;
+}
+
 Deno.serve(async (req) => {
   const preflight = handleOptions(req);
   if (preflight) return preflight;
@@ -137,20 +146,37 @@ Deno.serve(async (req) => {
           },
           body: new URLSearchParams({
             username: atUsername,
-            to: phone,
+            to: toE164Zambia(phone),
             message: `Your Instay verification code is ${code}. It expires in ${OTP_TTL_MINUTES} minutes.`,
           }),
         }
       );
-      if (!smsResponse.ok) {
-        const detail = await smsResponse.text();
-        console.error("[pay-portal-request-otp] Africa's Talking rejected the SMS", smsResponse.status, detail);
-        // A key is configured but the send genuinely failed — don't tell the tenant a code is on
-        // its way when it isn't. The stored code/row is harmless to leave; it'll just expire unused.
-        return new Response(JSON.stringify({ error: "Failed to send the code. Try again shortly." }), {
-          status: 502,
+      const smsResponseText = await smsResponse.text();
+      let smsRecipientStatus: string | undefined;
+      try {
+        smsRecipientStatus = JSON.parse(smsResponseText)?.SMSMessageData?.Recipients?.[0]?.status;
+      } catch {
+        // non-JSON body — leave smsRecipientStatus undefined, handled below
+      }
+      // Africa's Talking can return HTTP 200/201 even when the actual send failed — the real
+      // outcome is in SMSMessageData.Recipients[0].status ("Success" vs a rejection reason like
+      // "InvalidPhoneNumber", "UserInBlacklist", "InsufficientBalance" etc.
+      if (!smsResponse.ok || (smsRecipientStatus && smsRecipientStatus !== "Success")) {
+        console.error("[pay-portal-request-otp] Africa's Talking rejected the SMS", smsResponse.status, smsResponseText);
+        // ⚠️ TEMPORARY, requested explicitly: the sandbox app has no simulated credit right now
+        // (InsufficientBalance), which would otherwise block all portal testing until it's topped
+        // up. Falling back to the same devCode response used when no key is configured at all, so
+        // the rest of the flow/UI can be tested. REVERT this fallback (go back to returning the 502
+        // below) once the Africa's Talking balance is topped up — leaving it in means a real send
+        // failure would silently hand the code back in the API response instead of erroring.
+        return new Response(JSON.stringify({ ok: true, maskedPhone: maskPhone(phone), devCode: code }), {
+          status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
+        // return new Response(
+        //   JSON.stringify({ error: "Failed to send the code. Try again shortly.", detail: smsResponseText, atStatus: smsResponse.status }),
+        //   { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        // );
       }
     } catch (err) {
       console.error("[pay-portal-request-otp] failed to reach Africa's Talking", String(err));
