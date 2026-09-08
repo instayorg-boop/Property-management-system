@@ -1,8 +1,18 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams, Link } from "react-router-dom";
-import { CaretLeft, Wrench, DeviceMobile, CreditCard, CaretRight } from "@phosphor-icons/react";
+import { useNavigate, useParams, useLocation, Link } from "react-router-dom";
+import { CaretLeft, Wrench, DeviceMobile, CreditCard, CaretRight, ShieldCheck } from "@phosphor-icons/react";
 import { formatCurrency } from "../../landlord/TenantsContext";
-import { getPortalProperty, getPortalTenant, getPortalLedger, logPortalPayment, type PortalTenant, type PortalLedgerRow } from "../../lib/payPortal";
+import {
+  getPortalProperty,
+  getPortalTenant,
+  getPortalLedger,
+  logPortalPayment,
+  getPortalSessionToken,
+  requestPortalOtp,
+  verifyPortalOtp,
+  type PortalTenant,
+  type PortalLedgerRow,
+} from "../../lib/payPortal";
 import PayShell, { type PayStep } from "./PayShell";
 
 const statusStyle: Record<string, string> = {
@@ -19,6 +29,7 @@ const PROVIDERS = ["MTN", "Airtel", "Zamtel"] as const;
 
 export default function TenantBalance() {
   const { propertySlug, tenantId } = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const [propertyName, setPropertyName] = useState("");
   const [tenant, setTenant] = useState<PortalTenant | null | undefined>(undefined);
@@ -32,20 +43,148 @@ export default function TenantBalance() {
   const [cardExpiry, setCardExpiry] = useState("");
   const [cardCvv, setCardCvv] = useState("");
 
+  // Identity-proof gate — picking a name on the search screen doesn't unlock anything by itself;
+  // an OTP sent to the phone on file does. `verified` starts true only if a still-valid session
+  // (see payPortal.ts's sessionStorage helpers) already exists for this tenant, e.g. a page refresh
+  // within the same 30-minute window.
+  const [verified, setVerified] = useState(() => (tenantId ? !!getPortalSessionToken(tenantId) : false));
+  const [otpMaskedPhone, setOtpMaskedPhone] = useState<string | null>(null);
+  const [otpDevCode, setOtpDevCode] = useState<string | null>(null);
+  const [otpSending, setOtpSending] = useState(false);
+  const [otpSendError, setOtpSendError] = useState<string | null>(null);
+  const [otpCode, setOtpCode] = useState("");
+  const [otpVerifying, setOtpVerifying] = useState(false);
+  const [otpVerifyError, setOtpVerifyError] = useState<string | null>(null);
+  const claimedName = (location.state as { name?: string; room?: string } | null)?.name;
+
   useEffect(() => {
+    if (!propertySlug) return;
+    getPortalProperty(propertySlug).then((property) => setPropertyName(property?.name ?? ""));
+  }, [propertySlug]);
+
+  const sendOtp = () => {
     if (!propertySlug || !tenantId) return;
+    setOtpSending(true);
+    setOtpSendError(null);
+    requestPortalOtp(propertySlug, tenantId)
+      .then(({ maskedPhone, devCode }) => {
+        setOtpMaskedPhone(maskedPhone);
+        setOtpDevCode(devCode ?? null);
+      })
+      .catch((err) => setOtpSendError(err instanceof Error ? err.message : "Failed to send a code."))
+      .finally(() => setOtpSending(false));
+  };
+
+  // Auto-send on arrival, same as the design's "selecting a name triggers an OTP" — no extra click.
+  useEffect(() => {
+    if (verified) return;
+    sendOtp();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [propertySlug, tenantId, verified]);
+
+  const submitOtp = () => {
+    if (!propertySlug || !tenantId || otpCode.trim().length !== 6) return;
+    setOtpVerifying(true);
+    setOtpVerifyError(null);
+    verifyPortalOtp(propertySlug, tenantId, otpCode.trim())
+      .then(() => setVerified(true))
+      .catch((err) => setOtpVerifyError(err instanceof Error ? err.message : "Incorrect code."))
+      .finally(() => setOtpVerifying(false));
+  };
+
+  useEffect(() => {
+    if (!verified || !propertySlug || !tenantId) return;
     let cancelled = false;
     (async () => {
-      const [property, t] = await Promise.all([getPortalProperty(propertySlug), getPortalTenant(propertySlug, tenantId)]);
+      const t = await getPortalTenant(propertySlug, tenantId);
       if (cancelled) return;
-      setPropertyName(property?.name ?? "");
       setTenant(t);
       if (t) setLedger(await getPortalLedger(t.id));
     })();
     return () => {
       cancelled = true;
     };
-  }, [propertySlug, tenantId]);
+  }, [verified, propertySlug, tenantId]);
+
+  if (!verified) {
+    return (
+      <PayShell propertyName={propertyName}>
+        <button
+          type="button"
+          onClick={() => navigate(`/pay/${propertySlug}`)}
+          className="flex items-center gap-1 text-xs font-medium text-muted hover:text-ink"
+        >
+          <CaretLeft size={12} weight="bold" />
+          Not you?
+        </button>
+
+        <div className="mt-3 flex items-center gap-2.5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-soft text-brand">
+            <ShieldCheck size={16} weight="fill" />
+          </div>
+          <div>
+            <p className="font-display text-base font-semibold tracking-tight text-ink">
+              {claimedName ? `Verify it's ${claimedName.split(" ")[0]}` : "Verify it's you"}
+            </p>
+            <p className="text-xs text-muted">for your privacy, we need to confirm your phone number first</p>
+          </div>
+        </div>
+
+        {otpSending && !otpMaskedPhone && <p className="mt-5 text-sm text-muted">Sending a code…</p>}
+
+        {otpSendError && (
+          <div className="mt-5 space-y-2">
+            <p className="text-sm text-red-600">{otpSendError}</p>
+            <button type="button" onClick={sendOtp} className="text-sm font-medium text-brand hover:underline">
+              Try again
+            </button>
+          </div>
+        )}
+
+        {otpMaskedPhone && (
+          <>
+            <p className="mt-5 text-sm text-ink">
+              We sent a 6-digit code to the number on file, ending in <span className="font-medium">{otpMaskedPhone}</span>.
+            </p>
+            {otpDevCode && (
+              <p className="mt-1 text-xs text-amber-600">
+                Dev mode — SMS isn't connected yet, your code is <span className="font-mono font-semibold">{otpDevCode}</span>.
+              </p>
+            )}
+
+            <div className="mt-4">
+              <label className="mb-1.5 block text-xs font-medium text-muted">Verification code</label>
+              <input
+                autoFocus
+                value={otpCode}
+                onChange={(e) => {
+                  setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6));
+                  setOtpVerifyError(null);
+                }}
+                onKeyDown={(e) => e.key === "Enter" && submitOtp()}
+                inputMode="numeric"
+                placeholder="000000"
+                className="w-full rounded-lg border border-line px-3 py-2.5 text-center text-lg font-semibold tracking-[0.3em] outline-none focus:border-brand"
+              />
+              {otpVerifyError && <p className="mt-1.5 text-xs text-red-600">{otpVerifyError}</p>}
+            </div>
+
+            <button
+              type="button"
+              onClick={submitOtp}
+              disabled={otpCode.length !== 6 || otpVerifying}
+              className="mt-4 w-full rounded-lg bg-brand py-3 text-sm font-medium text-paper transition-transform hover:scale-[1.01] disabled:opacity-50 disabled:hover:scale-100"
+            >
+              {otpVerifying ? "Verifying…" : "Verify"}
+            </button>
+            <button type="button" onClick={sendOtp} disabled={otpSending} className="mt-3 text-xs font-medium text-muted hover:text-ink">
+              Didn't get it? Send another code
+            </button>
+          </>
+        )}
+      </PayShell>
+    );
+  }
 
   if (tenant === undefined) return <PayShell propertyName={propertyName}>{null}</PayShell>;
 

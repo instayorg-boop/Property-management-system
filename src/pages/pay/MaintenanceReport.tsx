@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { CaretLeft, Paperclip, CheckCircle, X } from "@phosphor-icons/react";
-import { getPortalProperty, getPortalTenant, submitPortalMaintenanceReport, type PortalTenant } from "../../lib/payPortal";
+import { getPortalProperty, getPortalTenant, getPortalSessionToken, submitPortalMaintenanceReport, type PortalTenant } from "../../lib/payPortal";
 import { uploadPhoto } from "../../lib/storage";
 import PayShell from "./PayShell";
 
@@ -17,6 +17,13 @@ export default function MaintenanceReport() {
 
   useEffect(() => {
     if (!propertySlug || !tenantId) return;
+    // This page requires the same OTP-verified session TenantBalance establishes — if someone
+    // lands here directly (a bookmarked/shared link, a refresh that lost the session) without one,
+    // send them to verify there first rather than showing a silent infinite spinner.
+    if (!getPortalSessionToken(tenantId)) {
+      navigate(`/pay/${propertySlug}/${tenantId}`, { replace: true });
+      return;
+    }
     let cancelled = false;
     (async () => {
       const [property, t] = await Promise.all([getPortalProperty(propertySlug), getPortalTenant(propertySlug, tenantId)]);
@@ -27,7 +34,7 @@ export default function MaintenanceReport() {
     return () => {
       cancelled = true;
     };
-  }, [propertySlug, tenantId]);
+  }, [propertySlug, tenantId, navigate]);
 
   if (tenant === undefined) return <PayShell propertyName={propertyName}>{null}</PayShell>;
 

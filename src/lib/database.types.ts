@@ -986,6 +986,15 @@ export type Database = {
           status: string
         }[]
       }
+      pay_portal_get_ledger_v2: {
+        Args: { p_session_token: string; p_tenant_id: string }
+        Returns: {
+          amount: number
+          label: string
+          paid_amount: number
+          status: string
+        }[]
+      }
       pay_portal_get_property: {
         Args: { p_property_slug: string }
         Returns: {
@@ -1006,8 +1015,25 @@ export type Database = {
           status: string
         }[]
       }
+      pay_portal_get_tenant_v2: {
+        Args: { p_property_slug: string; p_session_token: string; p_tenant_id: string }
+        Returns: {
+          days_overdue: number
+          id: string
+          name: string
+          owed_amount: number
+          rent_amount: number
+          room: string
+          room_type: string
+          status: string
+        }[]
+      }
       pay_portal_log_payment: {
         Args: { p_amount: number; p_label: string; p_tenant_id: string }
+        Returns: undefined
+      }
+      pay_portal_log_payment_v2: {
+        Args: { p_amount: number; p_label: string; p_session_token: string; p_tenant_id: string }
         Returns: undefined
       }
       pay_portal_search_tenants: {
@@ -1045,6 +1071,10 @@ export type Database = {
           p_tenant_id: string
         }
         Returns: undefined
+      }
+      pay_portal_verify_session: {
+        Args: { p_session_token: string; p_tenant_id: string }
+        Returns: boolean
       }
     }
     Enums: {

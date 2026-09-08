@@ -58,7 +58,7 @@ export default function SelectTenant() {
           <button
             key={t.id}
             type="button"
-            onClick={() => navigate(`/pay/${propertySlug}/${t.id}`)}
+            onClick={() => navigate(`/pay/${propertySlug}/${t.id}`, { state: { name: t.name, room: t.room } })}
             className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-mist active:scale-[0.99]"
           >
             <div className="flex items-center gap-2.5">

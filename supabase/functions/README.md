@@ -21,6 +21,13 @@ is still an unconfirmed guess — see that file's top comment before relying on 
 | `sync-lenco-banks` | Refreshes the local `banks` cache from Lenco's bank list | Manually, or on a schedule — see that function's comment |
 | `resolve-bank-account` | Resolves an account number + bank code to the account holder's name | `src/lib/payoutApi.ts` (`resolveBankAccount`) — Settings page, on "Check account" |
 | `create-payout-recipient` | Registers a Lenco transfer recipient and saves it to `payout_recipients` | `src/lib/payoutApi.ts` (`createPayoutRecipient`) — Settings page, on confirm |
+| `pay-portal-request-otp` | Sends a 6-digit OTP (via Africa's Talking SMS) to the tenant's phone on file | `src/lib/payPortal.ts` (`requestPortalOtp`) — public payment portal, on landing on a claimed tenant |
+| `pay-portal-verify-otp` | Verifies the OTP and issues a `portal_sessions` token | `src/lib/payPortal.ts` (`verifyPortalOtp`) — public payment portal, OTP entry |
+
+`pay-portal-request-otp`/`pay-portal-verify-otp` are real and deployed. Without `AT_API_KEY` set,
+`pay-portal-request-otp` doesn't send an SMS but still works end-to-end for testing — it returns
+the code directly in the response as `devCode` (logged server-side too) instead of texting it,
+same "keep working with no real delivery" convention as the other placeholder functions.
 
 ## Deploy
 
@@ -32,6 +39,8 @@ npx supabase functions deploy lenco-webhook --project-ref <your-project-ref> --n
 npx supabase functions deploy sync-lenco-banks --project-ref <your-project-ref>
 npx supabase functions deploy resolve-bank-account --project-ref <your-project-ref>
 npx supabase functions deploy create-payout-recipient --project-ref <your-project-ref>
+npx supabase functions deploy pay-portal-request-otp --project-ref <your-project-ref>
+npx supabase functions deploy pay-portal-verify-otp --project-ref <your-project-ref>
 ```
 
 `lenco-webhook` needs `--no-verify-jwt` because Lenco calls it directly (no Supabase session) —
@@ -43,7 +52,14 @@ five are all invoked by a signed-in landlord's own browser session and keep the 
 ```
 npx supabase secrets set WHATSAPP_TOKEN=... WHATSAPP_PHONE_NUMBER_ID=... --project-ref <your-project-ref>
 npx supabase secrets set LENCO_SECRET_KEY=... --project-ref <your-project-ref>
+npx supabase secrets set AT_API_KEY=... --project-ref <your-project-ref>
+npx supabase secrets set AT_USERNAME=sandbox --project-ref <your-project-ref>
 ```
+
+`AT_USERNAME` defaults to `"sandbox"` if unset (Africa's Talking's sandbox environment) —
+`pay-portal-request-otp` sends to `api.sandbox.africastalking.com` only when the username is
+literally `"sandbox"`, and to the real `api.africastalking.com` for any other username. Set
+`AT_USERNAME` to your live app username once you move off the sandbox.
 
 `LENCO_SECRET_KEY` is the one Lenco dashboard key that must never reach the frontend — it's read
 inside every `lenco-*`/`sync-lenco-banks`/`resolve-bank-account`/`create-payout-recipient`
