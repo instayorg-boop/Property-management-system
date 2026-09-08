@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import PageHeader from "../components/PageHeader";
@@ -12,7 +12,7 @@ import { useTenants, formatCurrency, type PaymentStatus, type Tenant } from "../
 import { useRoomTypeRent } from "../RoomsContext";
 import { useSettings } from "../SettingsContext";
 import { calcTotalOwed } from "../invoiceUtils";
-import { LinkSimple, MagnifyingGlass, Plus, CaretLeft, CaretRight, Receipt } from "@phosphor-icons/react";
+import { LinkSimple, MagnifyingGlass, Plus, CaretLeft, CaretRight, Receipt, DotsThreeVertical } from "@phosphor-icons/react";
 import Pagination, { DEFAULT_PAGE_SIZE } from "../components/Pagination";
 import { Skeleton, SkeletonRow } from "../components/Skeleton";
 import MetricCard from "../components/MetricCard";
@@ -115,6 +115,8 @@ export default function Rent() {
   const [linkCopied, setLinkCopied] = useState(false);
   const [invoiceMode, setInvoiceMode] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
 
   const [paymentStep, setPaymentStep] = useState<PaymentStep | null>(null);
   const [payingTenant, setPayingTenant] = useState<Tenant | null>(null);
@@ -208,6 +210,15 @@ export default function Rent() {
     window.setTimeout(() => setLinkCopied(false), 1500);
   };
 
+  useEffect(() => {
+    if (!moreMenuOpen) return;
+    const onClick = (e: MouseEvent) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) setMoreMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [moreMenuOpen]);
+
   const showToast = (msg: string) => {
     setToast(msg);
     window.setTimeout(() => setToast((t) => (t === msg ? null : t)), 2000);
@@ -243,48 +254,79 @@ export default function Rent() {
             transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1], delay: 0.05 }}
             className="space-y-5"
           >
-        {/* Header row */}
+        {/* Header row — one clear primary action (Log payment); Generate invoices and Share
+            payment link are occasional, not daily, so they sit in a quiet overflow menu instead
+            of competing with the primary button for attention. */}
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-1 rounded-lg border border-line bg-paper px-1.5 py-1">
-            <button
-              type="button"
-              onClick={() => setMonthOffset((o) => o - 1)}
-              aria-label="Previous month"
-              className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-mist hover:text-ink"
-            >
-              <CaretLeft size={14} weight="bold" />
-            </button>
-            <span className="w-36 text-center text-sm font-medium text-ink">{month}</span>
-            <button
-              type="button"
-              onClick={() => setMonthOffset((o) => Math.min(0, o + 1))}
-              disabled={monthOffset === 0}
-              aria-label="Next month"
-              className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-mist hover:text-ink disabled:opacity-30 disabled:hover:bg-transparent"
-            >
-              <CaretRight size={14} weight="bold" />
-            </button>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 rounded-lg border border-line bg-paper px-1.5 py-1">
+              <button
+                type="button"
+                onClick={() => setMonthOffset((o) => o - 1)}
+                aria-label="Previous month"
+                className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-mist hover:text-ink"
+              >
+                <CaretLeft size={14} weight="bold" />
+              </button>
+              <span className="w-36 text-center text-sm font-medium text-ink">{month}</span>
+              <button
+                type="button"
+                onClick={() => setMonthOffset((o) => Math.min(0, o + 1))}
+                disabled={monthOffset === 0}
+                aria-label="Next month"
+                className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-mist hover:text-ink disabled:opacity-30 disabled:hover:bg-transparent"
+              >
+                <CaretRight size={14} weight="bold" />
+              </button>
+            </div>
+            {monthOffset !== 0 && (
+              <button
+                type="button"
+                onClick={() => setMonthOffset(0)}
+                className="rounded-md px-2 py-1 text-xs font-medium text-brand hover:bg-brand-soft"
+              >
+                Back to this month
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
-            {invoicesOn && (
+            <div ref={moreMenuRef} className="relative">
               <button
                 type="button"
-                onClick={() => setInvoiceMode(true)}
-                className="flex items-center gap-2 rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist"
+                onClick={() => setMoreMenuOpen((v) => !v)}
+                aria-label="More actions"
+                aria-expanded={moreMenuOpen}
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-line text-muted transition-colors hover:bg-mist hover:text-ink"
               >
-                <Receipt size={14} weight="bold" />
-                Generate invoices
+                <DotsThreeVertical size={16} weight="bold" />
               </button>
-            )}
-            <button
-              type="button"
-              onClick={copyLink}
-              className="flex items-center gap-2 rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist"
-            >
-              <LinkIcon />
-              {linkCopied ? "Link copied" : "Share payment link"}
-            </button>
+              {moreMenuOpen && (
+                <div className="absolute top-full right-0 z-10 mt-1 w-52 overflow-hidden rounded-lg border border-line bg-paper py-1 shadow-card">
+                  {invoicesOn && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMoreMenuOpen(false);
+                        setInvoiceMode(true);
+                      }}
+                      className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm font-medium text-ink hover:bg-mist"
+                    >
+                      <Receipt size={15} weight="bold" />
+                      Generate invoices
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={copyLink}
+                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm font-medium text-ink hover:bg-mist"
+                  >
+                    <LinkIcon />
+                    {linkCopied ? "Link copied" : "Share payment link"}
+                  </button>
+                </div>
+              )}
+            </div>
             <button
               type="button"
               onClick={() => setPaymentStep("search")}
