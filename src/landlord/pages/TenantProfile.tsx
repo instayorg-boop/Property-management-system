@@ -342,7 +342,7 @@ export default function TenantProfile() {
                   transition={tabTransition}
                 >
                   {tab === "Profile" && (
-                    <div className="grid grid-cols-1 items-start gap-6 sm:grid-cols-2">
+                    <div className="space-y-6">
                       <div>
                         <SectionLabel>Tenant information</SectionLabel>
                         <div className="mt-2 divide-y divide-line">
