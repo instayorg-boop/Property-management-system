@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import PageHeader from "../components/PageHeader";
@@ -7,7 +7,6 @@ import Modal from "../components/Modal";
 import LogPaymentModal from "../components/LogPaymentModal";
 import TenantFormDrawer from "../components/TenantFormDrawer";
 import MoveOutModal from "../components/MoveOutModal";
-import MetricCard from "../components/MetricCard";
 import SectionLabel from "../components/SectionLabel";
 import { useTenants, formatCurrency, relationLabel, type PaymentStatus, type Tenant } from "../TenantsContext";
 import {
@@ -19,7 +18,9 @@ import {
   CheckCircle,
   WarningCircle,
   CaretDown,
-  SignOut,
+  SquaresFour,
+  Rows,
+  DotsThreeVertical,
 } from "@phosphor-icons/react";
 import Pagination, { DEFAULT_PAGE_SIZE } from "../components/Pagination";
 import { Skeleton, SkeletonRow } from "../components/Skeleton";
@@ -47,9 +48,166 @@ function whatsAppLink(phone: string) {
 }
 
 const statusLabel: Record<PaymentStatus, string> = { paid: "Paid", overdue: "Overdue", unpaid: "Unpaid", partial: "Partial" };
+const paymentStatusStyle: Record<PaymentStatus, string> = {
+  paid: "bg-emerald-50 text-emerald-600",
+  overdue: "bg-red-50 text-red-600",
+  unpaid: "bg-slate-100 text-slate-600",
+  partial: "bg-amber-50 text-amber-600",
+};
 
 const historyFilters = ["All", "Paid", "Overdue", "Partial"] as const;
 const HISTORY_PAGE_SIZE = 5;
+
+/** A tenant's initials over a deterministic colour, standing in for a photo we don't have — picked
+ * from the name so the same tenant always lands on the same colour instead of shuffling on reload. */
+const AVATAR_PALETTE = [
+  "bg-rose-100 text-rose-700",
+  "bg-amber-100 text-amber-700",
+  "bg-emerald-100 text-emerald-700",
+  "bg-sky-100 text-sky-700",
+  "bg-violet-100 text-violet-700",
+  "bg-fuchsia-100 text-fuchsia-700",
+  "bg-cyan-100 text-cyan-700",
+  "bg-orange-100 text-orange-700",
+];
+
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/);
+  return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "?";
+}
+
+function avatarPalette(name: string) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  return AVATAR_PALETTE[hash % AVATAR_PALETTE.length];
+}
+
+function Avatar({ name, size = 44 }: { name: string; size?: number }) {
+  return (
+    <span
+      className={`flex shrink-0 items-center justify-center rounded-full font-display font-semibold ${avatarPalette(name)}`}
+      style={{ width: size, height: size, fontSize: size * 0.36 }}
+    >
+      {initials(name)}
+    </span>
+  );
+}
+
+/** Small "···" menu for the one destructive action a card doesn't want as a permanent button. */
+function CardMenu({ onDelete }: { onDelete: () => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        aria-label="More actions"
+        aria-expanded={open}
+        className="flex h-7 w-7 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-ink"
+      >
+        <DotsThreeVertical size={16} weight="bold" />
+      </button>
+      {open && (
+        <div className="absolute top-full right-0 z-10 mt-1 w-40 overflow-hidden rounded-lg border border-line bg-paper py-1 shadow-card">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setOpen(false);
+              onDelete();
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-red-600 hover:bg-red-50"
+          >
+            <Trash size={13} weight="bold" />
+            Delete tenant
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TenantCard({
+  tenant,
+  onView,
+  onMessage,
+  onDelete,
+}: {
+  tenant: Tenant;
+  onView: () => void;
+  onMessage: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="flex flex-col rounded-lg border border-line bg-paper p-4 transition-shadow hover:shadow-card">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-3">
+          <Avatar name={tenant.name} />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-ink">{tenant.name}</p>
+            <p className="mt-0.5 text-xs text-muted">{tenant.phones[0] ?? "No phone on file"}</p>
+          </div>
+        </div>
+        <CardMenu onDelete={onDelete} />
+      </div>
+
+      <div className="mt-4 space-y-1.5 border-t border-line pt-3 text-xs">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-muted">Room</span>
+          <span className="truncate font-medium text-ink">
+            {tenant.room || "Unassigned"} {tenant.roomType && <span className="font-normal text-muted">· {tenant.roomType}</span>}
+          </span>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-muted">Rent</span>
+          <span className="font-medium text-ink">{formatCurrency(tenant.rentAmount)}/mo</span>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-muted">Status</span>
+          {tenant.active ? (
+            <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${paymentStatusStyle[tenant.status]}`}>
+              {statusLabel[tenant.status]}
+            </span>
+          ) : (
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">Moved out</span>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-4 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onMessage}
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-50 py-2 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100"
+        >
+          <WhatsappLogo size={14} weight="fill" />
+          Message
+        </button>
+        <button
+          type="button"
+          onClick={onView}
+          className="flex-1 rounded-lg border border-line py-2 text-xs font-medium text-ink transition-colors hover:bg-mist"
+        >
+          View profile
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function TenantDrawer({
   tenant,
@@ -323,6 +481,7 @@ export default function Tenants() {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"active" | "moved-out">("active");
+  const [view, setView] = useState<"grid" | "table">(() => (window.localStorage.getItem("instay-tenants-view") === "table" ? "table" : "grid"));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -348,7 +507,6 @@ export default function Tenants() {
   // Independent of the search box/tab — the metric row always reflects the whole tenant list.
   const counts = useMemo(
     () => ({
-      total: tenants.length,
       active: tenants.filter((t) => t.active).length,
       movedOut: tenants.filter((t) => !t.active).length,
     }),
@@ -395,13 +553,6 @@ export default function Tenants() {
           >
             + Add tenant
           </button>
-        </div>
-
-        {/* Metrics — how many tenants, independent of the search/tab below */}
-        <div className="grid grid-cols-3 gap-4">
-          <MetricCard compact icon={<UsersThree size={16} weight="duotone" />} iconClassName="bg-slate-100 text-slate-600" label="Total tenants" value={counts.total} />
-          <MetricCard compact icon={<CheckCircle size={16} weight="duotone" />} iconClassName="bg-emerald-100 text-emerald-600" label="Active" value={counts.active} />
-          <MetricCard compact icon={<SignOut size={16} weight="duotone" />} iconClassName="bg-slate-100 text-slate-600" label="Moved out" value={counts.movedOut} />
         </div>
 
         <div className="rounded-lg border border-line bg-paper">
@@ -453,9 +604,88 @@ export default function Tenants() {
                 );
               })}
             </div>
+
+            {/* Layout toggle — grid mirrors a card-based CRM view, table is the dense operator view */}
+            <div className="flex rounded-lg border border-line p-0.5">
+              {(
+                [
+                  { id: "grid" as const, Icon: SquaresFour, label: "Grid view" },
+                  { id: "table" as const, Icon: Rows, label: "Table view" },
+                ]
+              ).map(({ id, Icon, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => {
+                    setView(id);
+                    window.localStorage.setItem("instay-tenants-view", id);
+                  }}
+                  aria-label={label}
+                  aria-pressed={view === id}
+                  className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
+                    view === id ? "bg-ink text-paper" : "text-muted hover:bg-mist"
+                  }`}
+                >
+                  <Icon size={16} weight="duotone" />
+                </button>
+              ))}
+            </div>
           </div>
 
-          {/* Mobile: cards — an HTML table doesn't have room to breathe on a phone screen */}
+          {/* Grid view — card-based, photo-first once real tenant photos exist */}
+          {view === "grid" && (
+            <div className="p-4">
+              {!isReady && (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <div key={i} className="rounded-lg border border-line p-4">
+                      <div className="flex items-center gap-3">
+                        <Skeleton className="h-11 w-11 rounded-full" />
+                        <div className="flex-1 space-y-1.5">
+                          <Skeleton className="h-3.5 w-2/3" />
+                          <Skeleton className="h-3 w-1/2" />
+                        </div>
+                      </div>
+                      <Skeleton className="mt-4 h-16 w-full" />
+                      <Skeleton className="mt-4 h-8 w-full" />
+                    </div>
+                  ))}
+                </div>
+              )}
+              {isReady && pageRows.length > 0 && (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {pageRows.map((t) => (
+                    <TenantCard
+                      key={t.id}
+                      tenant={t}
+                      onView={() => setSelectedId(t.id)}
+                      onMessage={() => window.open(whatsAppLink(t.phones[0] ?? ""), "_blank", "noreferrer")}
+                      onDelete={() => setDeletingId(t.id)}
+                    />
+                  ))}
+                </div>
+              )}
+              {isReady && pageRows.length === 0 && (
+                <div className="flex flex-col items-center justify-center gap-3 px-4 py-14 text-center">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
+                    <UsersThree size={22} weight="duotone" />
+                  </span>
+                  <div>
+                    <p className="text-xs font-semibold text-ink">
+                      {tenants.length === 0 ? "No tenants yet" : statusFilter === "active" ? "No active tenants" : "No moved-out tenants"}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted">
+                      {tenants.length === 0 ? "Add your first tenant to get started." : "Try a different search or tab."}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Table view: mobile cards — an HTML table doesn't have room to breathe on a phone screen */}
+          {view === "table" && (
+          <>
           <div className="divide-y divide-line md:hidden">
             {!isReady &&
               Array.from({ length: 4 }).map((_, i) => (
@@ -633,6 +863,8 @@ export default function Tenants() {
               </tbody>
             </table>
           </div>
+          </>
+          )}
 
           <Pagination
             page={currentPage}
