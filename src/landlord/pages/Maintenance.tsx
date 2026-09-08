@@ -1,16 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
 import SlideOver from "../components/SlideOver";
-import { Eye, MagnifyingGlass, Paperclip, Wrench, PencilSimple, Trash } from "@phosphor-icons/react";
+import { Eye, MagnifyingGlass, Paperclip, Wrench, PencilSimple, Trash, CaretDown } from "@phosphor-icons/react";
 import { useMaintenance, type MaintenanceReport, type MaintenanceStatus } from "../MaintenanceContext";
 import { useTenants } from "../TenantsContext";
-import Pagination, { DEFAULT_PAGE_SIZE } from "../components/Pagination";
 import Modal from "../components/Modal";
 import { uploadPhoto } from "../../lib/storage";
-import { Skeleton, SkeletonRow } from "../components/Skeleton";
-import MetricCard from "../components/MetricCard";
+import { Skeleton } from "../components/Skeleton";
 
 function EyeIcon() {
   return <Eye size={14} weight="duotone" />;
@@ -28,12 +26,15 @@ const statusStyle: Record<MaintenanceStatus, string> = {
   resolved: "bg-emerald-50 text-emerald-600",
 };
 
-const filterOptions = [
-  { value: "all", label: "All statuses" },
-  { value: "open", label: "Open" },
-  { value: "in-progress", label: "In progress" },
-  { value: "resolved", label: "Resolved" },
-];
+/** Groups render in this order regardless of which statuses actually have reports right now. */
+const STATUS_GROUPS: MaintenanceStatus[] = ["open", "in-progress", "resolved"];
+
+/** The little accent bar identifying each group at a glance — same hue family as its status pill. */
+const statusAccent: Record<MaintenanceStatus, string> = {
+  open: "bg-red-500",
+  "in-progress": "bg-amber-500",
+  resolved: "bg-emerald-500",
+};
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
@@ -385,34 +386,37 @@ export default function Maintenance() {
   const { reports, isReady, setStatus, markRead, addReport, updateReport, deleteReport } = useMaintenance();
   const location = useLocation();
   const navigate = useNavigate();
-  const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
-  const [page, setPage] = useState(1);
-  const [rowsPerPage, setRowsPerPage] = useState(DEFAULT_PAGE_SIZE);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [addingRequest, setAddingRequest] = useState(false);
+  // Every group starts expanded — collapsing is something you do per-visit to focus on one status,
+  // not a preference worth persisting (next time you land here, you want to see everything again).
+  const [collapsed, setCollapsed] = useState<Set<MaintenanceStatus>>(new Set());
 
   const selected = reports.find((r) => r.id === selectedId) ?? null;
 
   const filtered = useMemo(() => {
-    const rows = reports
-      .filter((r) => filter === "all" || r.status === filter)
-      .filter((r) => r.location.toLowerCase().includes(query.toLowerCase()) || r.description.toLowerCase().includes(query.toLowerCase()));
+    const rows = reports.filter(
+      (r) => r.location.toLowerCase().includes(query.toLowerCase()) || r.description.toLowerCase().includes(query.toLowerCase())
+    );
     return [...rows].sort((a, b) => (a.submittedAt < b.submittedAt ? 1 : -1));
-  }, [reports, filter, query]);
+  }, [reports, query]);
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
-  const currentPage = Math.min(page, pageCount);
-  const pageRows = filtered.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
+  const grouped = useMemo(() => {
+    const map = new Map<MaintenanceStatus, MaintenanceReport[]>();
+    for (const status of STATUS_GROUPS) map.set(status, []);
+    for (const r of filtered) map.get(r.status)?.push(r);
+    return map;
+  }, [filtered]);
 
-  const counts = useMemo(
-    () => ({
-      open: reports.filter((r) => r.status === "open").length,
-      inProgress: reports.filter((r) => r.status === "in-progress").length,
-      unread: reports.filter((r) => r.unread).length,
-    }),
-    [reports]
-  );
+  const toggleGroup = (status: MaintenanceStatus) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(status)) next.delete(status);
+      else next.add(status);
+      return next;
+    });
+  };
 
   const openRequest = (r: MaintenanceReport) => {
     setSelectedId(r.id);
@@ -436,7 +440,16 @@ export default function Maintenance() {
 
       <div className="space-y-5 px-4 sm:px-8 pb-10">
         {/* Top actions */}
-        <div className="flex items-center justify-end">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 rounded-lg border border-line bg-paper px-3 py-2">
+            <SearchIcon />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search by location or description"
+              className="w-56 bg-transparent text-sm outline-none placeholder:text-muted"
+            />
+          </div>
           <button
             type="button"
             onClick={() => setAddingRequest(true)}
@@ -446,226 +459,166 @@ export default function Maintenance() {
           </button>
         </div>
 
-        {/* Stat cards */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          {!isReady ? (
-            <>
-              <div className="rounded-lg border border-line bg-paper p-5">
-                <Skeleton className="h-3 w-12" />
-                <Skeleton className="mt-2 h-7 w-10" />
+        {/* Grouped by status, each in its own collapsible section — collapse a group to focus on
+            just the others, matching a Kanban-style board's status columns without needing an
+            actual multi-column layout that wouldn't fit this page's width. */}
+        {!isReady ? (
+          <div className="space-y-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="rounded-lg border border-line bg-paper p-4">
+                <Skeleton className="h-4 w-32" />
+                <div className="mt-4 space-y-2">
+                  <Skeleton className="h-3 w-full" />
+                  <Skeleton className="h-3 w-2/3" />
+                </div>
               </div>
-              <div className="rounded-lg border border-line bg-paper p-5">
-                <Skeleton className="h-3 w-16" />
-                <Skeleton className="mt-2 h-7 w-10" />
-              </div>
-              <div className="rounded-lg border border-line bg-paper p-5">
-                <Skeleton className="h-3 w-12" />
-                <Skeleton className="mt-2 h-7 w-10" />
-              </div>
-            </>
-          ) : (
-            <>
-              <MetricCard
-                compact
-                label="Open"
-                value={counts.open}
-                tone={counts.open > 0 ? "warning" : "success"}
-                caption={counts.open > 0 ? "Waiting to be picked up" : "Nothing waiting"}
-              />
-              <MetricCard
-                compact
-                label="In progress"
-                value={counts.inProgress}
-                caption="Currently being worked on"
-              />
-              <MetricCard
-                compact
-                label="Unread"
-                value={counts.unread}
-                tone={counts.unread > 0 ? "danger" : "success"}
-                caption={counts.unread > 0 ? "New reports to review" : "You're all caught up"}
-              />
-            </>
-          )}
-        </div>
-
-        {/* Search + status filter */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-2 rounded-lg border border-line bg-paper px-3 py-2">
-            <SearchIcon />
-            <input
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setPage(1);
-              }}
-              placeholder="Search by location or description"
-              className="w-56 bg-transparent text-sm outline-none placeholder:text-muted"
-            />
-          </div>
-          <div className="flex gap-2 overflow-x-auto">
-            {filterOptions.map((o) => (
-              <button
-                key={o.value}
-                type="button"
-                onClick={() => {
-                  setFilter(o.value);
-                  setPage(1);
-                }}
-                className={`shrink-0 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-                  filter === o.value ? "bg-ink text-paper" : "border border-line text-muted hover:bg-mist"
-                }`}
-              >
-                {o.label}
-              </button>
             ))}
           </div>
-        </div>
+        ) : reports.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-line bg-paper px-4 py-14 text-center">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
+              <Wrench size={22} weight="duotone" />
+            </span>
+            <div>
+              <p className="text-xs font-semibold text-ink">No maintenance requests yet</p>
+              <p className="mt-0.5 text-xs text-muted">Requests tenants submit will show up here.</p>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {STATUS_GROUPS.map((status) => {
+              const rows = grouped.get(status) ?? [];
+              const isCollapsed = collapsed.has(status);
+              return (
+                <div key={status} className="overflow-hidden rounded-lg border border-line bg-paper">
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(status)}
+                    className="flex w-full items-center gap-2.5 px-4 py-3 text-left transition-colors hover:bg-mist"
+                  >
+                    <span className={`h-4 w-1 shrink-0 rounded-full ${statusAccent[status]}`} />
+                    <span className="text-xs font-semibold tracking-wide text-ink uppercase">{statusLabel[status]}</span>
+                    <span className="text-xs text-muted">({rows.length})</span>
+                    <CaretDown size={14} weight="bold" className={`ml-auto text-muted transition-transform ${isCollapsed ? "-rotate-90" : ""}`} />
+                  </button>
 
-        {/* Request table */}
-        <div className="rounded-lg border border-line">
-          {/* Mobile: cards — an HTML table doesn't have room to breathe on a phone screen */}
-          <div className="divide-y divide-line md:hidden">
-            {!isReady &&
-              Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="space-y-2 p-4">
-                  <Skeleton className="h-4 w-1/2" />
-                  <Skeleton className="h-3 w-1/3" />
+                  <AnimatePresence initial={false}>
+                    {!isCollapsed && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                        className="overflow-hidden border-t border-line"
+                      >
+                        {rows.length === 0 ? (
+                          <p className="px-4 py-6 text-center text-xs text-muted">
+                            {query ? "No matches in this group." : `Nothing ${statusLabel[status].toLowerCase()} right now.`}
+                          </p>
+                        ) : (
+                          <>
+                            {/* Mobile: cards — an HTML table doesn't have room to breathe on a phone screen */}
+                            <div className="divide-y divide-line md:hidden">
+                              {rows.map((r) => (
+                                <button
+                                  key={r.id}
+                                  type="button"
+                                  onClick={() => openRequest(r)}
+                                  className="flex w-full items-start justify-between gap-3 p-4 text-left transition-colors active:bg-mist"
+                                >
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                      {r.unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />}
+                                      <p className="truncate text-sm font-medium text-ink">{r.location}</p>
+                                    </div>
+                                    <p className="mt-0.5 truncate text-xs text-muted">{r.description}</p>
+                                    <p className="mt-1.5 text-[11px] text-muted">
+                                      {r.tenant} · {formatDate(r.submittedAt)}
+                                    </p>
+                                  </div>
+                                  <EyeIcon />
+                                </button>
+                              ))}
+                            </div>
+
+                            {/* Desktop / tablet: table */}
+                            <div className="hidden overflow-x-auto md:block">
+                              <table className="w-full table-fixed text-left text-sm">
+                                <colgroup>
+                                  <col className="w-40" />
+                                  <col className="w-32" />
+                                  <col />
+                                  <col className="w-32" />
+                                  <col className="w-16" />
+                                </colgroup>
+                                <thead className="bg-mist text-xs text-muted">
+                                  <tr>
+                                    <th className="px-3 py-2 font-medium">Location</th>
+                                    <th className="px-3 py-2 font-medium">Reported by</th>
+                                    <th className="px-3 py-2 font-medium">Description</th>
+                                    <th className="px-3 py-2 font-medium">Date</th>
+                                    <th className="px-3 py-2 font-medium"></th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {rows.map((r) => (
+                                    <tr
+                                      key={r.id}
+                                      onClick={() => openRequest(r)}
+                                      className="cursor-pointer border-t border-line transition-colors hover:bg-mist"
+                                    >
+                                      <td className="px-3 py-2.5">
+                                        <div className="flex items-center gap-1.5">
+                                          {r.unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />}
+                                          <span className="truncate font-medium text-ink">{r.location}</span>
+                                        </div>
+                                      </td>
+                                      <td className="truncate px-3 py-2.5 text-ink">{r.tenant}</td>
+                                      <td className="truncate px-3 py-2.5 text-muted" title={r.description}>
+                                        {r.description}
+                                      </td>
+                                      <td className="px-3 py-2.5 text-muted">
+                                        <span className="whitespace-nowrap">{formatDate(r.submittedAt)}</span>
+                                      </td>
+                                      <td className="px-3 py-2.5 text-right">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            openRequest(r);
+                                          }}
+                                          aria-label={`View maintenance request for ${r.location}`}
+                                          className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-line text-muted transition-colors hover:bg-paper hover:text-ink"
+                                        >
+                                          <EyeIcon />
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </>
+                        )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
-              ))}
-            {isReady && pageRows.map((r) => (
-              <button
-                key={r.id}
-                type="button"
-                onClick={() => openRequest(r)}
-                className="flex w-full items-start justify-between gap-3 p-4 text-left transition-colors active:bg-mist"
-              >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    {r.unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />}
-                    <p className="truncate text-sm font-medium text-ink">{r.location}</p>
-                  </div>
-                  <p className="mt-0.5 truncate text-xs text-muted">{r.description}</p>
-                  <p className="mt-1.5 text-[11px] text-muted">
-                    {r.tenant} · {formatDate(r.submittedAt)}
-                  </p>
-                </div>
-                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${statusStyle[r.status]}`}>
-                  {statusLabel[r.status]}
-                </span>
-              </button>
-            ))}
-            {isReady && pageRows.length === 0 && (
-              <div className="flex flex-col items-center justify-center gap-3 px-4 py-10 text-center">
+              );
+            })}
+            {filtered.length === 0 && (
+              <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-line bg-paper px-4 py-10 text-center">
                 <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
                   <Wrench size={22} weight="duotone" />
                 </span>
                 <div>
-                  <p className="text-xs font-semibold text-ink">
-                    {reports.length === 0 ? "No maintenance requests yet" : "No requests match this filter"}
-                  </p>
-                  <p className="mt-0.5 text-xs text-muted">
-                    {reports.length === 0 ? "Requests tenants submit will show up here." : "Try a different search or status filter."}
-                  </p>
+                  <p className="text-xs font-semibold text-ink">No requests match your search</p>
+                  <p className="mt-0.5 text-xs text-muted">Try a different search term.</p>
                 </div>
               </div>
             )}
           </div>
-
-          {/* Desktop / tablet: table */}
-          <div className="hidden overflow-x-auto md:block">
-          <table className="w-full table-fixed text-left text-sm">
-            <colgroup>
-              <col className="w-32" />
-              <col className="w-32" />
-              <col />
-              <col className="w-36" />
-              <col className="w-28" />
-              <col className="w-20" />
-            </colgroup>
-            <thead className="bg-mist text-xs text-muted">
-              <tr>
-                <th className="px-3 py-2.5 font-medium">Location</th>
-                <th className="px-3 py-2.5 font-medium">Reported by</th>
-                <th className="px-3 py-2.5 font-medium">Description</th>
-                <th className="px-3 py-2.5 font-medium">Date</th>
-                <th className="px-3 py-2.5 font-medium">Status</th>
-                <th className="px-3 py-2.5 font-medium"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {!isReady && Array.from({ length: 4 }).map((_, i) => <SkeletonRow key={i} cols={6} />)}
-              {isReady && pageRows.map((r) => (
-                <tr key={r.id} className="border-t border-line transition-colors hover:bg-mist">
-                  <td className="px-3 py-2.5">
-                    <div className="flex items-center gap-1.5">
-                      {r.unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />}
-                      <span className="truncate font-medium text-ink">{r.location}</span>
-                    </div>
-                  </td>
-                  <td className="truncate px-3 py-2.5 text-ink">{r.tenant}</td>
-                  <td className="truncate px-3 py-2.5 text-muted" title={r.description}>
-                    {r.description}
-                  </td>
-                  <td className="px-3 py-2.5 text-muted">
-                    <span className="whitespace-nowrap">{formatDate(r.submittedAt)}</span>
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${statusStyle[r.status]}`}>
-                      {statusLabel[r.status]}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2.5 text-right">
-                    <button
-                      type="button"
-                      onClick={() => openRequest(r)}
-                      aria-label={`View maintenance request for ${r.location}`}
-                      className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-line text-muted transition-colors hover:bg-paper hover:text-ink"
-                    >
-                      <EyeIcon />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {isReady && pageRows.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-4 py-10">
-                    <div className="flex flex-col items-center justify-center gap-3 text-center">
-                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
-                        <Wrench size={22} weight="duotone" />
-                      </span>
-                      <div>
-                        <p className="text-xs font-semibold text-ink">
-                          {reports.length === 0 ? "No maintenance requests yet" : "No requests match this filter"}
-                        </p>
-                        <p className="mt-0.5 text-xs text-muted">
-                          {reports.length === 0
-                            ? "Requests tenants submit will show up here."
-                            : "Try a different search or status filter."}
-                        </p>
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-          </div>
-
-          {filtered.length > 0 && (
-            <Pagination
-              page={currentPage}
-              pageCount={pageCount}
-              pageSize={rowsPerPage}
-              totalItems={filtered.length}
-              onPageChange={setPage}
-              onPageSizeChange={(size) => {
-                setRowsPerPage(size);
-                setPage(1);
-              }}
-            />
-          )}
-        </div>
+        )}
       </div>
 
       <AnimatePresence>
