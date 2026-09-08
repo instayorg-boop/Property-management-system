@@ -264,7 +264,7 @@ export default function TenantProfile() {
                   <InfoRow label="Phone number" value="—" />
                 ) : (
                   tenant.phones.map((p, i) => (
-                    <InfoRow key={i} label={i === 0 ? "Phone number" : `Additional phone number${tenant.phones.length > 2 ? ` ${i}` : ""}`} value={p} />
+                    <InfoRow key={i} label={i === 0 ? "Phone number" : `Additional${tenant.phones.length > 2 ? ` ${i}` : ""}`} value={p} />
                   ))
                 )}
               </div>
@@ -354,20 +354,13 @@ export default function TenantProfile() {
                                 <div className="divide-y divide-line">
                                   <InfoRow label="Name" value={c.name} />
                                   <InfoRow label="Relationship" value={relationLabel(c)} />
-                                  <InfoRow
-                                    label={c.phones.length > 1 ? "Mobile numbers" : "Mobile"}
-                                    value={
-                                      c.phones.length === 0 ? (
-                                        "—"
-                                      ) : (
-                                        <div className="space-y-0.5">
-                                          {c.phones.map((p, i) => (
-                                            <p key={i}>{p}</p>
-                                          ))}
-                                        </div>
-                                      )
-                                    }
-                                  />
+                                  {c.phones.length === 0 ? (
+                                    <InfoRow label="Mobile" value="—" />
+                                  ) : (
+                                    c.phones.map((p, i) => (
+                                      <InfoRow key={i} label={i === 0 ? "Mobile" : `Additional${c.phones.length > 2 ? ` ${i}` : ""}`} value={p} />
+                                    ))
+                                  )}
                                 </div>
                               </div>
                             ))}
