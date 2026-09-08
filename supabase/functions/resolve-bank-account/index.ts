@@ -32,8 +32,10 @@ Deno.serve(async (req) => {
 
   const accountNumber = payload.accountNumber?.trim() ?? "";
   const bankCode = payload.bankCode?.trim() ?? "";
-  if (!/^\d{10}$/.test(accountNumber) || !bankCode) {
-    return new Response(JSON.stringify({ error: "A 10-digit accountNumber and a bankCode are required" }), {
+  // Zambian bank account numbers aren't a fixed 10-digit NUBAN format (that's Nigeria's convention) —
+  // just require digits of a plausible length and let Lenco itself be the source of truth on validity.
+  if (!/^\d{5,20}$/.test(accountNumber) || !bankCode) {
+    return new Response(JSON.stringify({ error: "A valid accountNumber and a bankCode are required" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

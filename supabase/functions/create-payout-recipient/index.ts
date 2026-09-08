@@ -52,9 +52,9 @@ Deno.serve(async (req) => {
   const accountName = payload.accountName?.trim() ?? "";
   const propertyId = payload.propertyId?.trim() ?? "";
 
-  if (!/^\d{10}$/.test(accountNumber) || !bankCode || !accountName || !propertyId) {
+  if (!/^\d{5,20}$/.test(accountNumber) || !bankCode || !accountName || !propertyId) {
     return new Response(
-      JSON.stringify({ error: "accountNumber (10 digits), bankCode, accountName and propertyId are all required" }),
+      JSON.stringify({ error: "A valid accountNumber, bankCode, accountName and propertyId are all required" }),
       { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

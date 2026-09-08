@@ -234,7 +234,7 @@ export default function Settings() {
   }, [tab]);
 
   const resolveAccount = async (bank: Bank, accountNumber: string) => {
-    if (!bank || !/^\d{10}$/.test(accountNumber)) return;
+    if (!bank || !accountNumber.trim()) return;
     setResolvingAccount(true);
     setResolveError(null);
     setFormAccountHolderName("");
@@ -716,36 +716,47 @@ export default function Settings() {
                                 selectedCode={formBank?.code ?? null}
                                 onSelect={(bank) => {
                                   setFormBank(bank);
-                                  if (formAccountNumber.length === 10) void resolveAccount(bank, formAccountNumber);
+                                  setResolveError(null);
+                                  setFormAccountHolderName("");
                                 }}
                               />
                             </div>
                             <div>
                               <label className="mb-1.5 block text-xs font-medium text-muted">Account number</label>
-                              <input
-                                value={formAccountNumber}
-                                onChange={(e) => {
-                                  const v = e.target.value.replace(/\D/g, "").slice(0, 10);
-                                  setFormAccountNumber(v);
-                                  setResolveError(null);
-                                  setFormAccountHolderName("");
-                                }}
-                                onBlur={() => {
-                                  if (formBank) void resolveAccount(formBank, formAccountNumber);
-                                }}
-                                inputMode="numeric"
-                                maxLength={10}
-                                placeholder="0000000000"
-                                className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm outline-none focus:border-brand"
-                              />
-                              {formAccountNumber.length > 0 && formAccountNumber.length !== 10 && (
-                                <p className="mt-1 text-xs text-muted">Enter all 10 digits of your NUBAN.</p>
+                              <div className="flex gap-2">
+                                <input
+                                  value={formAccountNumber}
+                                  onChange={(e) => {
+                                    setFormAccountNumber(e.target.value.replace(/\D/g, ""));
+                                    setResolveError(null);
+                                    setFormAccountHolderName("");
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" && formBank && formAccountNumber.trim()) void resolveAccount(formBank, formAccountNumber);
+                                  }}
+                                  inputMode="numeric"
+                                  placeholder="Your full account number"
+                                  className="flex-1 rounded-lg border border-line bg-paper px-3 py-2 text-sm outline-none focus:border-brand"
+                                />
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  className="shrink-0 px-4"
+                                  disabled={!formBank || !formAccountNumber.trim() || resolvingAccount}
+                                  onClick={() => formBank && void resolveAccount(formBank, formAccountNumber)}
+                                >
+                                  {resolvingAccount ? "Checking…" : "Check account"}
+                                </Button>
+                              </div>
+                              {!formBank && formAccountNumber.trim() && (
+                                <p className="mt-1 text-xs text-muted">Pick a bank above, then check the account.</p>
                               )}
                             </div>
 
                             {/* Resolved account name — a read-only confirmation, not an editable field, so the
-                                landlord can't accidentally save a name that doesn't match what Lenco resolved. */}
-                            {resolvingAccount && <p className="text-xs text-muted">Checking account…</p>}
+                                landlord can't accidentally save a name that doesn't match what Lenco resolved.
+                                Only checked when the button (or Enter) is pressed — not on every keystroke or
+                                blur, so this isn't firing a database/API request while you're mid-typing. */}
                             {!resolvingAccount && resolveError && <p className="text-xs text-red-600">{resolveError}</p>}
                             {!resolvingAccount && !resolveError && formAccountHolderName && (
                               <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5">
@@ -763,7 +774,7 @@ export default function Settings() {
                             <Button
                               variant="primary"
                               className="flex-1 py-2.5"
-                              disabled={!formBank || formAccountNumber.length !== 10 || !formAccountHolderName || resolvingAccount}
+                              disabled={!formBank || !formAccountNumber.trim() || !formAccountHolderName || resolvingAccount}
                               onClick={() => setPayoutStep(2)}
                             >
                               Continue
