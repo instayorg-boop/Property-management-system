@@ -119,27 +119,42 @@ function Greeting({ name, onAction }: { name: string; onAction: (action: QuickAc
   );
 }
 
-const toneDot = { red: "bg-red-400", amber: "bg-amber-400" };
+const toneStyle = {
+  red: { bar: "bg-red-500", badge: "bg-red-50 text-red-600" },
+  amber: { bar: "bg-amber-500", badge: "bg-amber-50 text-amber-600" },
+};
 
 // How many briefing items show inline before the rest move behind "View all" — keeps the card
 // from growing to fit an unbounded list.
 const BRIEFING_VISIBLE_LIMIT = 3;
 
-type BriefingItem = { label: string; detail: string; tone: "red" | "amber"; to: string; tenantId?: string; reportId?: string };
+type BriefingItem = {
+  title: string;
+  subtitle: string;
+  detail: string;
+  tone: "red" | "amber";
+  to: string;
+  tenantId?: string;
+  reportId?: string;
+};
 
 function BriefingRow({ item }: { item: BriefingItem }) {
   const state = item.reportId ? { openReportId: item.reportId } : item.tenantId ? { openTenantId: item.tenantId } : undefined;
+  const tone = toneStyle[item.tone];
   return (
     <Link
       to={item.to}
       state={state}
-      className="flex items-center justify-between gap-2 rounded-lg border border-line/70 bg-paper px-3 py-2.5 transition-all hover:border-brand/30 hover:shadow-md"
+      className="group flex items-center gap-3 rounded-lg border border-line/70 bg-paper py-2.5 pr-3 pl-2.5 transition-all hover:border-brand/30 hover:shadow-md"
     >
-      <div className="flex items-center gap-2 overflow-hidden">
-        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot[item.tone]}`} />
-        <span className="truncate text-xs font-medium text-ink">{item.label}</span>
+      <span className={`h-8 w-1 shrink-0 rounded-full ${tone.bar}`} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-ink">{item.title}</p>
+        <p className="truncate text-xs text-muted">{item.subtitle}</p>
       </div>
-      <span className="shrink-0 text-[11px] font-medium text-muted">{item.detail}</span>
+      <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-medium whitespace-nowrap ${tone.badge}`}>
+        {item.detail}
+      </span>
     </Link>
   );
 }
@@ -234,14 +249,15 @@ export default function Dashboard() {
       .filter((t) => t.active && (t.status === "overdue" || t.status === "unpaid"))
       .sort((a, b) => (b.daysOverdue ?? 0) - (a.daysOverdue ?? 0))
       .map((t) => ({
-        label: `${t.name} - ${t.room}`,
-        detail: t.daysOverdue ? `${t.daysOverdue} days overdue` : "Unpaid",
+        title: t.name,
+        subtitle: t.room,
+        detail: t.daysOverdue ? `${t.daysOverdue}d overdue` : "Unpaid",
         tone: "red",
         to: "/rent",
         tenantId: t.id,
       }));
     for (const r of reports.filter((r) => r.unread)) {
-      items.push({ label: `Maintenance - ${r.location}`, detail: "Unread", tone: "amber", to: "/maintenance", reportId: r.id });
+      items.push({ title: r.location, subtitle: "Maintenance request", detail: "Unread", tone: "amber", to: "/maintenance", reportId: r.id });
     }
     return items;
   }, [tenants, reports]);
@@ -566,7 +582,7 @@ export default function Dashboard() {
 
               <div className="mt-4 space-y-2">
                 {briefing.slice(0, BRIEFING_VISIBLE_LIMIT).map((item) => (
-                  <BriefingRow key={item.label} item={item} />
+                  <BriefingRow key={item.tenantId ?? item.reportId} item={item} />
                 ))}
               </div>
 
@@ -738,7 +754,7 @@ export default function Dashboard() {
           >
             <div className="space-y-2">
               {briefing.map((item) => (
-                <BriefingRow key={item.label} item={item} />
+                <BriefingRow key={item.tenantId ?? item.reportId} item={item} />
               ))}
             </div>
           </SlideOver>

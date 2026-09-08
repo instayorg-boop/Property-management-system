@@ -218,6 +218,7 @@ function RequestDrawer({
           </div>
         ) : (
           <div className="space-y-2">
+            <p className="text-[11px] font-medium text-muted">Tap a stage to move this request</p>
             {/* Segmented control, not three separate bordered tiles — the active status slides
                 between options, matching the same pattern used across the rest of this page. */}
             <div className="inline-flex w-full gap-0.5 rounded-md bg-mist p-1">
@@ -232,7 +233,13 @@ function RequestDrawer({
                       active ? statusHeaderText[s] : "text-muted hover:text-ink"
                     }`}
                   >
-                    {active && <span className="absolute inset-0 rounded-md bg-paper shadow-sm" />}
+                    {active && (
+                      <motion.span
+                        layoutId="maintenance-status-pill"
+                        transition={{ type: "spring", stiffness: 480, damping: 38 }}
+                        className="absolute inset-0 rounded-md bg-paper shadow-sm"
+                      />
+                    )}
                     <span className="relative">{statusLabel[s]}</span>
                   </button>
                 );
@@ -248,18 +255,18 @@ function RequestDrawer({
                   categoryId: "maintenance",
                 },
               }}
-              className="block w-full rounded-lg border border-line py-2 text-center text-xs font-medium text-ink transition-colors hover:bg-mist"
+              className="block w-full rounded-lg border border-line py-2 text-center text-xs font-medium text-ink transition-colors hover:border-ink hover:bg-mist"
             >
-              Log a repair cost for this →
+              Log a repair cost for this → opens the Expenses page
             </Link>
 
             <button
               type="button"
               onClick={() => setConfirmingDelete(true)}
-              className="flex w-full items-center justify-center gap-1.5 py-1 text-xs font-medium text-red-600 hover:underline"
+              className="flex w-full items-center justify-center gap-1.5 rounded-md py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-50"
             >
               <Trash size={11} weight="bold" />
-              Delete report
+              Delete this report
             </button>
           </div>
         )
@@ -304,7 +311,7 @@ function RequestDrawer({
               shape of an actual annotation rather than just a grey rectangle of text. */}
           <div className="mt-4">
             <SectionLabel>Description</SectionLabel>
-            <div className="mt-1.5 rounded-lg border-l-2 border-brand bg-mist py-2.5 pr-4 pl-3.5">
+            <div className="mt-1.5  border-l-2 border-brand bg-mist py-2.5 pr-4 pl-3.5">
               <p className="text-sm leading-relaxed text-ink">{request.description}</p>
             </div>
           </div>
@@ -320,7 +327,7 @@ function RequestDrawer({
                     key={i}
                     type="button"
                     onClick={() => setLightboxIndex(i)}
-                    className="h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-line transition-opacity hover:opacity-80"
+                    className="h-32 w-32 shrink-0 overflow-hidden rounded-lg border border-line transition-opacity hover:opacity-80"
                   >
                     <img src={url} alt="" className="h-full w-full object-cover" />
                   </button>
