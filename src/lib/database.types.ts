@@ -14,6 +14,24 @@ export type Database = {
   }
   public: {
     Tables: {
+      banks: {
+        Row: {
+          code: string
+          logo_url: string | null
+          name: string
+        }
+        Insert: {
+          code: string
+          logo_url?: string | null
+          name: string
+        }
+        Update: {
+          code?: string
+          logo_url?: string | null
+          name?: string
+        }
+        Relationships: []
+      }
       clock_entries: {
         Row: {
           created_at: string
@@ -509,6 +527,51 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "payroll_runs_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payout_recipients: {
+        Row: {
+          account_name: string
+          account_number: string
+          bank_code: string
+          created_at: string
+          id: string
+          lenco_recipient_id: string
+          property_id: string
+        }
+        Insert: {
+          account_name: string
+          account_number: string
+          bank_code: string
+          created_at?: string
+          id?: string
+          lenco_recipient_id: string
+          property_id: string
+        }
+        Update: {
+          account_name?: string
+          account_number?: string
+          bank_code?: string
+          created_at?: string
+          id?: string
+          lenco_recipient_id?: string
+          property_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payout_recipients_bank_code_fkey"
+            columns: ["bank_code"]
+            isOneToOne: false
+            referencedRelation: "banks"
+            referencedColumns: ["code"]
+          },
+          {
+            foreignKeyName: "payout_recipients_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
             referencedRelation: "properties"

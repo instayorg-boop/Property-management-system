@@ -27,7 +27,9 @@ import {
 import PageHeader from "../components/PageHeader";
 import ThemeSwitcher from "../components/ThemeSwitcher";
 import Button from "../components/Button";
+import BankSelect from "../components/BankSelect";
 import { useSettings, type NotificationPrefs, type PaymentMethod } from "../SettingsContext";
+import { listBanks, resolveBankAccount, createPayoutRecipient, type Bank } from "../../lib/payoutApi";
 
 function CopyIcon() {
   return <CopyIconBase size={14} weight="duotone" />;
@@ -180,6 +182,7 @@ export default function Settings() {
     escalationDays, setEscalationDays,
     contactOrder, setContactOrder,
     notificationPrefs, setNotificationPref,
+    propertyId,
     lencoConnected, setLencoConnected,
     bankName, setBankName,
     accountNumber, setAccountNumber,
@@ -200,23 +203,63 @@ export default function Settings() {
   // first connection or an edit to an already-connected account.
   const [payoutStep, setPayoutStep] = useState(0);
   const [editingBank, setEditingBank] = useState(false);
-  const [formBankName, setFormBankName] = useState("");
+  const [banks, setBanks] = useState<Bank[]>([]);
+  const [formBank, setFormBank] = useState<Bank | null>(null);
   const [formAccountNumber, setFormAccountNumber] = useState("");
   const [formAccountHolderName, setFormAccountHolderName] = useState("");
+  // The resolved account name from Lenco — separate from formAccountHolderName, which only ever
+  // gets set once resolution succeeds, so "Continue" can gate on it without conflating a stale
+  // typed value with a confirmed one.
+  const [resolvingAccount, setResolvingAccount] = useState(false);
+  const [resolveError, setResolveError] = useState<string | null>(null);
+  const [savingRecipient, setSavingRecipient] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     setPayoutStep(0);
     setEditingBank(false);
   }, [tab]);
 
+  useEffect(() => {
+    if (tab !== "Online payments") return;
+    let cancelled = false;
+    listBanks()
+      .then((rows) => {
+        if (!cancelled) setBanks(rows);
+      })
+      .catch((err) => console.error("Failed to load banks", err));
+    return () => {
+      cancelled = true;
+    };
+  }, [tab]);
+
+  const resolveAccount = async (bank: Bank, accountNumber: string) => {
+    if (!bank || !/^\d{10}$/.test(accountNumber)) return;
+    setResolvingAccount(true);
+    setResolveError(null);
+    setFormAccountHolderName("");
+    try {
+      const accountName = await resolveBankAccount(accountNumber, bank.code);
+      setFormAccountHolderName(accountName);
+    } catch (err) {
+      setResolveError(err instanceof Error ? err.message : "Couldn't resolve that account.");
+    } finally {
+      setResolvingAccount(false);
+    }
+  };
+
   // The setup flow (intro + wizard) is a centered, full-width screen, not a left-aligned settings
   // form — it needs the full content width to actually center in, not just within the narrow column.
   const onlinePaymentsWizard = tab === "Online payments" && (!lencoConnected || editingBank);
 
   const startEditingBank = () => {
-    setFormBankName(bankName);
+    // The previously-saved bank was stored by name, not code (before this table existed) — best-effort
+    // match it in the local cache; if it's not found the landlord just reselects it, which is a one-time cost.
+    setFormBank(banks.find((b) => b.name === bankName) ?? null);
     setFormAccountNumber(accountNumber);
     setFormAccountHolderName(accountHolderName);
+    setResolveError(null);
+    setSaveError(null);
     setEditingBank(true);
     setPayoutStep(1);
   };
@@ -667,32 +710,49 @@ export default function Settings() {
                           </p>
                           <div className="mt-4 space-y-3">
                             <div>
-                              <label className="mb-1.5 block text-xs font-medium text-muted">Bank name</label>
-                              <input
-                                value={formBankName}
-                                onChange={(e) => setFormBankName(e.target.value)}
-                                placeholder="e.g. Zanaco"
-                                className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm outline-none focus:border-brand"
+                              <label className="mb-1.5 block text-xs font-medium text-muted">Bank</label>
+                              <BankSelect
+                                banks={banks}
+                                selectedCode={formBank?.code ?? null}
+                                onSelect={(bank) => {
+                                  setFormBank(bank);
+                                  if (formAccountNumber.length === 10) void resolveAccount(bank, formAccountNumber);
+                                }}
                               />
                             </div>
                             <div>
                               <label className="mb-1.5 block text-xs font-medium text-muted">Account number</label>
                               <input
                                 value={formAccountNumber}
-                                onChange={(e) => setFormAccountNumber(e.target.value.replace(/\D/g, ""))}
+                                onChange={(e) => {
+                                  const v = e.target.value.replace(/\D/g, "").slice(0, 10);
+                                  setFormAccountNumber(v);
+                                  setResolveError(null);
+                                  setFormAccountHolderName("");
+                                }}
+                                onBlur={() => {
+                                  if (formBank) void resolveAccount(formBank, formAccountNumber);
+                                }}
+                                inputMode="numeric"
+                                maxLength={10}
                                 placeholder="0000000000"
                                 className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm outline-none focus:border-brand"
                               />
+                              {formAccountNumber.length > 0 && formAccountNumber.length !== 10 && (
+                                <p className="mt-1 text-xs text-muted">Enter all 10 digits of your NUBAN.</p>
+                              )}
                             </div>
-                            <div>
-                              <label className="mb-1.5 block text-xs font-medium text-muted">Account holder name</label>
-                              <input
-                                value={formAccountHolderName}
-                                onChange={(e) => setFormAccountHolderName(e.target.value)}
-                                placeholder="Must match the bank account"
-                                className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm outline-none focus:border-brand"
-                              />
-                            </div>
+
+                            {/* Resolved account name — a read-only confirmation, not an editable field, so the
+                                landlord can't accidentally save a name that doesn't match what Lenco resolved. */}
+                            {resolvingAccount && <p className="text-xs text-muted">Checking account…</p>}
+                            {!resolvingAccount && resolveError && <p className="text-xs text-red-600">{resolveError}</p>}
+                            {!resolvingAccount && !resolveError && formAccountHolderName && (
+                              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+                                <p className="text-xs text-emerald-700">Account holder</p>
+                                <p className="mt-0.5 text-sm font-medium text-emerald-800">{formAccountHolderName}</p>
+                              </div>
+                            )}
                           </div>
                           <div className="mt-5 flex gap-2">
                             {editingBank && (
@@ -703,7 +763,7 @@ export default function Settings() {
                             <Button
                               variant="primary"
                               className="flex-1 py-2.5"
-                              disabled={!formBankName.trim() || !formAccountNumber.trim() || !formAccountHolderName.trim()}
+                              disabled={!formBank || formAccountNumber.length !== 10 || !formAccountHolderName || resolvingAccount}
                               onClick={() => setPayoutStep(2)}
                             >
                               Continue
@@ -712,14 +772,14 @@ export default function Settings() {
                         </>
                       )}
 
-                      {payoutStep === 2 && (
+                      {payoutStep === 2 && formBank && (
                         <>
                           <p className="mt-1 font-display text-lg font-semibold text-ink">Confirm your details</p>
                           <p className="mt-1 text-sm text-muted">Double-check these are correct — this is where every payout will be sent.</p>
                           <div className="mt-4 divide-y divide-line rounded-lg border border-line">
                             <div className="px-4 py-3">
                               <p className="text-xs text-muted">Bank name</p>
-                              <p className="mt-0.5 text-sm font-medium text-ink">{formBankName}</p>
+                              <p className="mt-0.5 text-sm font-medium text-ink">{formBank.name}</p>
                             </div>
                             <div className="px-4 py-3">
                               <p className="text-xs text-muted">Account number</p>
@@ -730,28 +790,45 @@ export default function Settings() {
                               <p className="mt-0.5 text-sm font-medium text-ink">{formAccountHolderName}</p>
                             </div>
                           </div>
+                          {saveError && <p className="mt-3 text-xs text-red-600">{saveError}</p>}
                           <div className="mt-5 flex gap-2">
-                            <Button variant="secondary" className="flex-1 py-2.5" onClick={() => setPayoutStep(1)}>
+                            <Button variant="secondary" className="flex-1 py-2.5" onClick={() => setPayoutStep(1)} disabled={savingRecipient}>
                               Back
                             </Button>
                             <Button
                               variant="primary"
                               className="flex-1 py-2.5"
-                              onClick={() => {
-                                setBankName(formBankName.trim());
-                                setAccountNumber(formAccountNumber.trim());
-                                setAccountHolderName(formAccountHolderName.trim());
-                                setLencoConnected(true);
-                                if (editingBank) {
-                                  setEditingBank(false);
-                                  setPayoutStep(0);
-                                  flash("Payout details updated");
-                                } else {
-                                  setPayoutStep(3);
+                              disabled={savingRecipient}
+                              onClick={async () => {
+                                if (!propertyId || !formBank) return;
+                                setSavingRecipient(true);
+                                setSaveError(null);
+                                try {
+                                  await createPayoutRecipient({
+                                    accountNumber: formAccountNumber,
+                                    bankCode: formBank.code,
+                                    accountName: formAccountHolderName,
+                                    propertyId,
+                                  });
+                                  setBankName(formBank.name);
+                                  setAccountNumber(formAccountNumber);
+                                  setAccountHolderName(formAccountHolderName);
+                                  setLencoConnected(true);
+                                  if (editingBank) {
+                                    setEditingBank(false);
+                                    setPayoutStep(0);
+                                    flash("Payout details updated");
+                                  } else {
+                                    setPayoutStep(3);
+                                  }
+                                } catch (err) {
+                                  setSaveError(err instanceof Error ? err.message : "Failed to save payout details.");
+                                } finally {
+                                  setSavingRecipient(false);
                                 }
                               }}
                             >
-                              {editingBank ? "Save changes" : "Confirm & connect"}
+                              {savingRecipient ? "Saving…" : editingBank ? "Save changes" : "Confirm & connect"}
                             </Button>
                           </div>
                         </>
@@ -764,7 +841,7 @@ export default function Settings() {
                           </span>
                           <p className="mt-4 font-display text-lg font-semibold text-ink">You're all set</p>
                           <p className="mt-1.5 text-sm text-muted">
-                            All rent collected through your payment link will now be paid out to {formBankName} · •••• {formAccountNumber.slice(-4)}.
+                            All rent collected through your payment link will now be paid out to {formBank?.name} · •••• {formAccountNumber.slice(-4)}.
                           </p>
                           <Button variant="primary" className="mt-5 py-2.5" onClick={() => setPayoutStep(0)}>
                             Done

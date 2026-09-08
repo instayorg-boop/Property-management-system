@@ -189,7 +189,7 @@ export default function Tenants() {
                         navigate(`/tenants/${t.id}`);
                       }}
                     >
-                      View details
+                      View profile
                     </Button>
                     <button
                       type="button"
@@ -238,7 +238,7 @@ export default function Tenants() {
                   <th className="px-4 py-3 font-medium uppercase tracking-wide">Move-in date</th>
                   <th className="px-4 py-3 font-medium uppercase tracking-wide">Rent</th>
                   <th className="px-4 py-3 font-medium uppercase tracking-wide">Status</th>
-                  <th className="px-4 py-3 font-medium uppercase tracking-wide">Action</th>
+                  <th className="px-4 py-3 text-right font-medium uppercase tracking-wide">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -271,7 +271,7 @@ export default function Tenants() {
                       {!t.active && t.moveOutDate && <p className="mt-0.5 text-[11px] text-muted">{t.moveOutDate}</p>}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center justify-end gap-2">
                         <Button
                           variant="secondary"
                           size="sm"
@@ -280,7 +280,7 @@ export default function Tenants() {
                             navigate(`/tenants/${t.id}`);
                           }}
                         >
-                          View details
+                          View profile
                         </Button>
                         <button
                           type="button"
