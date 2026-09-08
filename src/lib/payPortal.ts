@@ -150,6 +150,45 @@ export async function logPortalPayment(tenantId: string, amount: number, label?:
   if (error) throw error;
 }
 
+export type CollectionStatus = "pending" | "pay-offline" | "successful" | "failed";
+
+/** Kicks off a real mobile-money charge via Lenco — the amount is computed server-side from the
+ * tenant's actual balance, never sent from here. Returns almost immediately with "pay-offline"
+ * (the tenant still has to approve on their phone); call getCollectionStatus to poll for the real
+ * outcome once lenco-webhook confirms it. Never writes to the ledger itself. */
+export async function initiateCollection(
+  propertySlug: string,
+  tenantId: string,
+  phone: string,
+  operator: "mtn" | "airtel" | "zamtel"
+): Promise<{ collectionId: string; status: CollectionStatus }> {
+  const sessionToken = requireSessionToken(tenantId);
+  const { data, error } = await supabase.functions.invoke<{ ok?: boolean; collectionId?: string; status?: CollectionStatus; error?: string }>(
+    "pay-portal-collect-payment",
+    { body: { propertySlug, tenantId, phone, operator, sessionToken } }
+  );
+  if (error || !data?.ok || !data?.collectionId) {
+    throw new Error(await edgeFunctionErrorMessage(error, "Failed to start the payment."));
+  }
+  return { collectionId: data.collectionId, status: data.status ?? "pay-offline" };
+}
+
+export async function getCollectionStatus(
+  tenantId: string,
+  collectionId: string
+): Promise<{ status: CollectionStatus; failureReason: string | null }> {
+  const sessionToken = requireSessionToken(tenantId);
+  const { data, error } = await supabase.rpc("pay_portal_get_collection_status", {
+    p_collection_id: collectionId,
+    p_tenant_id: tenantId,
+    p_session_token: sessionToken,
+  });
+  if (error) throw error;
+  const row = data?.[0];
+  if (!row) throw new Error("Couldn't find that payment.");
+  return { status: row.status as CollectionStatus, failureReason: row.failure_reason };
+}
+
 export async function submitPortalMaintenanceReport(
   propertySlug: string,
   tenantId: string,

@@ -10,10 +10,11 @@ import {
   getPortalProperty,
   getPortalTenant,
   getPortalLedger,
-  logPortalPayment,
   getPortalSessionToken,
   requestPortalOtp,
   verifyPortalOtp,
+  initiateCollection,
+  getCollectionStatus,
   type PortalTenant,
   type PortalLedgerRow,
 } from "../../lib/payPortal";
@@ -53,6 +54,9 @@ export default function TenantBalance() {
   const [flowStep, setFlowStep] = useState<FlowStep>("review");
   const [phone, setPhone] = useState("");
   const [provider, setProvider] = useState<(typeof PROVIDERS)[number]>("MTN");
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [stillWaiting, setStillWaiting] = useState(false);
+  const pollTimer = useRef<number | null>(null);
 
   const [verified, setVerified] = useState(() => (tenantId ? !!getPortalSessionToken(tenantId) : false));
   const [otpMaskedPhone, setOtpMaskedPhone] = useState<string | null>(null);
@@ -120,6 +124,12 @@ export default function TenantBalance() {
       cancelled = true;
     };
   }, [verified, propertySlug, tenantId]);
+
+  useEffect(() => {
+    return () => {
+      if (pollTimer.current) window.clearTimeout(pollTimer.current);
+    };
+  }, []);
 
   if (!verified) {
     return (
@@ -215,14 +225,67 @@ export default function TenantBalance() {
 
   const canPay = phone.trim().length >= 9;
 
-  const submitPayment = () => {
-    setFlowStep("processing");
-    window.setTimeout(() => {
-      void logPortalPayment(tenant.id, amountDue).catch((e) => console.error("Failed to log payment", e));
-      navigate(`/pay/${propertySlug}/${tenant.id}/success`, {
-        state: { amount: amountDue, method: "mobile", provider },
+  // Real payment: kick off a Lenco mobile-money collection, then poll for the outcome — the
+  // ledger is only ever updated by lenco-webhook once Lenco actually confirms it, never from here.
+  const POLL_INTERVAL_MS = 3000;
+  const MAX_POLLS = 20; // ~60s of polling before telling the tenant to check back later
+
+  const pollCollectionStatus = (collectionId: string, attempt: number) => {
+    getCollectionStatus(tenant.id, collectionId)
+      .then(({ status, failureReason }) => {
+        if (status === "successful") {
+          navigate(`/pay/${propertySlug}/${tenant.id}/success`, {
+            state: { amount: amountDue, method: "mobile", provider },
+          });
+          return;
+        }
+        if (status === "failed") {
+          setPaymentError(failureReason ?? "The payment failed. Try again.");
+          setFlowStep("pay");
+          return;
+        }
+        // still pending/pay-offline — keep polling until MAX_POLLS
+        if (attempt >= MAX_POLLS) {
+          setStillWaiting(true);
+          return;
+        }
+        pollTimer.current = window.setTimeout(() => pollCollectionStatus(collectionId, attempt + 1), POLL_INTERVAL_MS);
+      })
+      .catch(() => {
+        // A transient network/RPC error while polling shouldn't abandon a payment that might still
+        // succeed — keep trying up to MAX_POLLS rather than surfacing a false failure.
+        if (attempt >= MAX_POLLS) {
+          setStillWaiting(true);
+          return;
+        }
+        pollTimer.current = window.setTimeout(() => pollCollectionStatus(collectionId, attempt + 1), POLL_INTERVAL_MS);
       });
-    }, 1600);
+  };
+
+  const submitPayment = () => {
+    if (!propertySlug) return;
+    setPaymentError(null);
+    setStillWaiting(false);
+    setFlowStep("processing");
+    initiateCollection(propertySlug, tenant.id, phone, provider.toLowerCase() as "mtn" | "airtel" | "zamtel")
+      .then(({ collectionId, status }) => {
+        if (status === "successful") {
+          navigate(`/pay/${propertySlug}/${tenant.id}/success`, {
+            state: { amount: amountDue, method: "mobile", provider },
+          });
+          return;
+        }
+        if (status === "failed") {
+          setPaymentError("The payment failed. Try again.");
+          setFlowStep("pay");
+          return;
+        }
+        pollCollectionStatus(collectionId, 0);
+      })
+      .catch((err) => {
+        setPaymentError(err instanceof Error ? err.message : "Failed to start the payment.");
+        setFlowStep("pay");
+      });
   };
 
   const shellStep: PayStep = flowStep === "review" ? "balance" : "pay";
@@ -338,6 +401,8 @@ export default function TenantBalance() {
             <p className="mt-2 text-xs text-muted">You'll get a prompt on this number to approve the payment.</p>
           </div>
 
+          {paymentError && <p className="mt-3 text-sm text-red-600">{paymentError}</p>}
+
           <button
             type="button"
             onClick={submitPayment}
@@ -349,11 +414,27 @@ export default function TenantBalance() {
         </>
       )}
 
-      {flowStep === "processing" && (
+      {flowStep === "processing" && !stillWaiting && (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <span className="h-8 w-8 animate-spin rounded-full border-[3px] border-brand-soft border-t-brand" />
           <p className="mt-4 text-sm font-medium text-ink">Check your phone to approve on {provider}…</p>
           <p className="mt-1 text-xs text-muted">Don't close this page.</p>
+        </div>
+      )}
+
+      {flowStep === "processing" && stillWaiting && (
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <p className="text-sm font-medium text-ink">Still waiting on approval</p>
+          <p className="mt-1 max-w-xs text-xs text-muted">
+            This is taking longer than usual. Approve the prompt on your phone whenever you're ready — your balance
+            will update automatically once it goes through.
+          </p>
+          <Link
+            to={`/pay/${propertySlug}/${tenant.id}`}
+            className="mt-5 rounded-lg border border-line px-4 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-mist"
+          >
+            View my balance
+          </Link>
         </div>
       )}
     </PayShell>

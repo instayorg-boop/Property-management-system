@@ -80,6 +80,63 @@ export type Database = {
           },
         ]
       }
+      collections: {
+        Row: {
+          amount: number
+          created_at: string
+          failure_reason: string | null
+          id: string
+          lenco_collection_id: string | null
+          operator: string
+          phone: string
+          property_id: string
+          status: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          failure_reason?: string | null
+          id?: string
+          lenco_collection_id?: string | null
+          operator: string
+          phone: string
+          property_id: string
+          status?: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          failure_reason?: string | null
+          id?: string
+          lenco_collection_id?: string | null
+          operator?: string
+          phone?: string
+          property_id?: string
+          status?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "collections_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collections_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       employees: {
         Row: {
           active: boolean
@@ -983,6 +1040,13 @@ export type Database = {
           amount: number
           label: string
           paid_amount: number
+          status: string
+        }[]
+      }
+      pay_portal_get_collection_status: {
+        Args: { p_collection_id: string; p_session_token: string; p_tenant_id: string }
+        Returns: {
+          failure_reason: string
           status: string
         }[]
       }

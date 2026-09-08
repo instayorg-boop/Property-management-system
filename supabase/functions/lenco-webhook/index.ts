@@ -8,11 +8,18 @@
 //   - Respond 200 fast — Lenco retries every 30 minutes for 24h on anything outside 200/201/202,
 //     and may treat a slow response as a timeout, so this does the minimum work before replying.
 //
-// Currently handled: transfer.successful / transfer.failed — updates the matching `payouts` row
-// (matched by `reference`, which lenco-payout sets to the payouts.id it just inserted).
-// collection.* / transaction.* events are logged but not acted on yet — there's no real tenant
-// payment collection integration in this app yet (TenantBalance.tsx's "Pay now" is still
-// simulated), so there's nothing in the database for those events to update.
+// Handled: transfer.successful / transfer.failed — updates the matching `payouts` row (matched by
+// `reference`, which lenco-payout sets to the payouts.id it just inserted).
+//
+// Handled: collection.successful / collection.failed — updates the matching `collections` row
+// (matched by `reference`, which pay-portal-collect-payment sets to the collections.id it just
+// inserted) and, on success, marks the tenant paid + inserts a ledger entry directly — this is the
+// ONLY place a real tenant payment ever updates the ledger; TenantBalance.tsx's "Pay" button never
+// writes to the ledger itself, it just polls collections.status until this webhook lands.
+//
+// collection.settled / transaction.* are logged but not acted on — settlement confirms money
+// already reflected as "successful" actually reached the account, no further tenant-facing state
+// change needed.
 //
 // Register this function's URL with Lenco by emailing support@lenco.co (per their docs — there's
 // no self-serve webhook URL setting).
@@ -22,13 +29,13 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, handleOptions } from "../_shared/cors.ts";
 
-type LencoTransferEvent = {
-  event: "transfer.successful" | "transfer.failed" | string;
+type LencoEvent = {
+  event: "transfer.successful" | "transfer.failed" | "collection.successful" | "collection.failed" | string;
   data: {
     id: string;
     reference: string | null;
     reasonForFailure: string | null;
-    status: "pending" | "successful" | "failed";
+    status: "pending" | "successful" | "failed" | "pay-offline";
   };
 };
 
@@ -79,7 +86,7 @@ Deno.serve(async (req) => {
     });
   }
 
-  let event: LencoTransferEvent;
+  let event: LencoEvent;
   try {
     event = JSON.parse(rawBody);
   } catch {
@@ -113,8 +120,62 @@ Deno.serve(async (req) => {
     if (error) {
       console.error("[lenco-webhook] failed to update payouts row", error.message);
     }
+  } else if (event.event === "collection.successful" || event.event === "collection.failed") {
+    const { data } = event;
+    const success = event.event === "collection.successful";
+    const matchColumn = data.reference ? "id" : "lenco_collection_id";
+    const matchValue = data.reference ?? data.id;
+
+    const { data: collectionRow, error: fetchError } = await supabase
+      .from("collections")
+      .select("id, tenant_id, amount")
+      .eq(matchColumn, matchValue)
+      .maybeSingle();
+
+    if (fetchError || !collectionRow) {
+      console.error("[lenco-webhook] no matching collections row", matchColumn, matchValue, fetchError?.message);
+    } else {
+      await supabase
+        .from("collections")
+        .update({
+          status: success ? "successful" : "failed",
+          lenco_collection_id: data.id,
+          failure_reason: data.reasonForFailure ?? null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", collectionRow.id);
+
+      if (success) {
+        // Same effect as the old pay_portal_log_payment_v2 (mark paid + insert a ledger entry) —
+        // done directly here with the service-role key since this webhook, not a tenant session,
+        // is the actual source of truth for "did the money really arrive".
+        const { data: tenantRow } = await supabase
+          .from("tenants")
+          .select("status, on_time_count, total_months_count")
+          .eq("id", collectionRow.tenant_id)
+          .maybeSingle();
+        if (tenantRow) {
+          const wasLate = ["overdue", "unpaid"].includes(tenantRow.status);
+          await supabase
+            .from("tenants")
+            .update({
+              status: "paid",
+              owed_amount: 0,
+              on_time_count: wasLate ? tenantRow.on_time_count : tenantRow.on_time_count + 1,
+              total_months_count: tenantRow.total_months_count + 1,
+            })
+            .eq("id", collectionRow.tenant_id);
+          await supabase.from("ledger_entries").insert({
+            tenant_id: collectionRow.tenant_id,
+            label: "Rent payment",
+            amount: collectionRow.amount,
+            status: "paid",
+          });
+        }
+      }
+    }
   } else {
-    console.log(`[lenco-webhook] received ${event.event} — not acted on yet (no collections integration exists)`);
+    console.log(`[lenco-webhook] received ${event.event} — not acted on`);
   }
 
   // Always 200 once the signature checks out — per Lenco's docs, anything else queues a retry

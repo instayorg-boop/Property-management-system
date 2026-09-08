@@ -18,20 +18,12 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, handleOptions } from "../_shared/cors.ts";
 import { sha256Hex, randomOtpCode, maskPhone } from "../_shared/otpCrypto.ts";
+import { toE164Zambia } from "../_shared/phone.ts";
 
 const OTP_TTL_MINUTES = 5;
 const MAX_REQUESTS_PER_HOUR = 3;
 
 type RequestOtpPayload = { propertySlug?: string; tenantId?: string };
-
-/** Tenant phones are stored in local Zambian format ("0977 502 913") — Africa's Talking requires
- * E.164 ("+260977502913"). "0" -> "+260"; already-international numbers pass through unchanged. */
-function toE164Zambia(phone: string): string {
-  const digits = phone.replace(/\D/g, "");
-  if (digits.startsWith("260")) return `+${digits}`;
-  if (digits.startsWith("0")) return `+260${digits.slice(1)}`;
-  return `+260${digits}`;
-}
 
 Deno.serve(async (req) => {
   const preflight = handleOptions(req);

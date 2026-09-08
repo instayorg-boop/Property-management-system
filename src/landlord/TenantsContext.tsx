@@ -72,7 +72,17 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
   const addTenant = (t: Omit<Tenant, "id">): Tenant => {
     const tenant: Tenant = { ...t, id: crypto.randomUUID() };
     setTenants((prev) => [tenant, ...prev]);
-    if (propertyId) void insertTenant(propertyId, tenant.id, t).catch((e) => console.error("Failed to save tenant", e));
+    if (propertyId) {
+      void insertTenant(propertyId, tenant.id, t).catch((e) => {
+        console.error("Failed to save tenant", e);
+        setTenants((prev) => prev.filter((x) => x.id !== tenant.id));
+        window.alert(`Couldn't save ${t.name || "this tenant"} — please try again. (${e instanceof Error ? e.message : "unknown error"})`);
+      });
+    } else {
+      // propertyId isn't loaded yet, so this save has nowhere to go — don't let it disappear silently on reload.
+      setTenants((prev) => prev.filter((x) => x.id !== tenant.id));
+      window.alert(`Couldn't save ${t.name || "this tenant"} — the app is still loading. Please wait a moment and try again.`);
+    }
     return tenant;
   };
 
