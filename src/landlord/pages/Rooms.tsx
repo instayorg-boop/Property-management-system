@@ -92,6 +92,7 @@ function vacantRoomFor(room: RoomView): VacantRoom {
     rent: room.typeConfig.rent,
     depositAmount: room.typeConfig.depositAmount,
     depositRefundability: room.typeConfig.depositRefundability,
+    openBeds: room.beds.filter((b) => !b).length,
   };
 }
 

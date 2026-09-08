@@ -149,7 +149,9 @@ function RoomPicker({
         className="flex w-full items-center justify-between rounded-lg border border-line px-3 py-2.5 text-left text-sm outline-none focus:border-brand"
       >
         <span className={selected ? "text-ink" : "text-muted"}>
-          {selected ? `${selected.room} · ${selected.roomType} · K${selected.rent.toLocaleString()}` : "Select a vacant room"}
+          {selected
+            ? `${selected.room} · ${selected.roomType} · K${selected.rent.toLocaleString()}`
+            : "Select a room with a bed free"}
         </span>
         <CaretDown size={14} weight="bold" className="shrink-0 text-muted" />
       </button>
@@ -186,11 +188,12 @@ function RoomPicker({
               >
                 <span className="text-ink">
                   {r.room} · {r.roomType}
+                  {r.openBeds > 1 && <span className="ml-1.5 text-xs text-muted">({r.openBeds} beds free)</span>}
                 </span>
                 <span className="text-muted">K{r.rent.toLocaleString()}</span>
               </button>
             ))}
-            {results.length === 0 && <p className="px-3 py-3 text-sm text-muted">No vacant rooms match.</p>}
+            {results.length === 0 && <p className="px-3 py-3 text-sm text-muted">No rooms with a free bed match.</p>}
           </div>
         </div>
       )}

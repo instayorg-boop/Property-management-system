@@ -159,21 +159,36 @@ export function useRoomsView(): RoomView[] {
   }, [rooms, roomTypeConfigs, tenants]);
 }
 
-export type VacantRoom = { room: string; roomType: RoomType; rent: number; depositAmount: number; depositRefundability: DepositRefundability };
+export type VacantRoom = {
+  room: string;
+  roomType: RoomType;
+  rent: number;
+  depositAmount: number;
+  depositRefundability: DepositRefundability;
+  /** Free beds in this room right now — 1 for a private room, up to `capacity` for a shared one.
+   * Lets the picker distinguish "brand new, nobody's moved in" from "shared room, some beds still open". */
+  openBeds: number;
+};
 
-/** Vacant rooms available to assign a new tenant to — always in sync since it's filtered from the live merged view. */
+/** Rooms available to assign a new tenant to — always in sync since it's filtered from the live
+ * merged view. Includes both fully empty rooms AND shared rooms (e.g. 4-sharing) that still have
+ * open beds — a room with 1 of 4 beds filled is `status === "occupied"` (see useRoomsView above)
+ * but still has 3 spare beds, and previously was completely invisible here despite the Rooms page
+ * showing that same open capacity via its bed meters. `reserved`/`not-ready` rooms are still
+ * excluded — those are deliberately held back, not just partially filled. */
 export function useVacantRoomsForAssignment(): VacantRoom[] {
   const view = useRoomsView();
   return useMemo(
     () =>
       view
-        .filter((r) => r.status === "vacant")
+        .filter((r) => r.status === "vacant" || (r.status === "occupied" && r.beds.some((b) => !b)))
         .map((r) => ({
           room: roomLabel(r.number),
           roomType: r.typeConfig.name,
           rent: r.typeConfig.rent,
           depositAmount: r.typeConfig.depositAmount,
           depositRefundability: r.typeConfig.depositRefundability,
+          openBeds: r.beds.filter((b) => !b).length,
         })),
     [view]
   );
