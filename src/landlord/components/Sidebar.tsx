@@ -92,6 +92,10 @@ const groups: { label: string; items: NavItem[] }[] = [
       },
     ],
   },
+  {
+    label: "Account",
+    items: [{ label: "Settings", to: "/settings", icon: "settings" }],
+  },
 ];
 
 /** Message-app-style count badge — shown at the trailing end of the row, not up front by the icon,
@@ -118,7 +122,7 @@ function NavRow({ item, onNavigate, attentionCount }: { item: NavItem; onNavigat
         data-tour={`nav-${item.icon}`}
         className={({ isActive }) =>
           `relative flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-            isActive ? "font-semibold text-brand" : "text-muted hover:bg-paper hover:text-ink"
+            isActive ? "font-semibold text-brand" : "text-muted hover:bg-mist hover:text-ink"
           }`
         }
       >
@@ -148,7 +152,7 @@ function NavRow({ item, onNavigate, attentionCount }: { item: NavItem; onNavigat
         type="button"
         onClick={() => setOpen((o) => !o)}
         className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors ${
-          isOnPage ? "font-semibold text-brand" : "text-muted hover:bg-paper hover:text-ink"
+          isOnPage ? "font-semibold text-brand" : "text-muted hover:bg-mist hover:text-ink"
         }`}
       >
         <ItemIcon size={18} weight="duotone" />
@@ -228,7 +232,7 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
       role="dialog"
       aria-modal={open ? true : undefined}
       aria-label="Navigation"
-      className={`fixed inset-y-0 left-0 z-50 flex h-full w-64 max-w-[85vw] shrink-0 flex-col bg-mist transition-transform duration-200 lg:static lg:z-auto lg:h-full lg:w-64 lg:max-w-none lg:translate-x-0 ${
+      className={`fixed inset-y-0 left-0 z-50 flex h-full w-64 max-w-[85vw] shrink-0 flex-col border-r border-line bg-paper transition-transform duration-200 lg:static lg:z-auto lg:h-full lg:w-64 lg:max-w-none lg:translate-x-0 ${
         open ? "translate-x-0" : "-translate-x-full"
       }`}
     >
@@ -247,7 +251,7 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
             type="button"
             aria-label="Notifications"
             onClick={() => setNotificationsOpen((v) => !v)}
-            className="relative flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-paper hover:text-ink"
+            className="relative flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-ink"
           >
             <BellIcon size={17} weight="duotone" />
             <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-brand" />
@@ -256,7 +260,7 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
             type="button"
             onClick={() => setOpen(false)}
             aria-label="Close menu"
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-paper hover:text-ink lg:hidden"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-ink lg:hidden"
           >
             <X size={16} weight="bold" />
           </button>
@@ -294,9 +298,9 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
           onClick={() => setAccountOpen((v) => !v)}
           aria-label="Account menu"
           aria-expanded={accountOpen}
-          className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-paper"
+          className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-mist"
         >
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-paper text-muted">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-mist text-muted">
             <UserCircle size={20} weight="fill" />
           </span>
           <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">{propertyName}</span>
