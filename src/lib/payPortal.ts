@@ -1,6 +1,6 @@
 import { supabase } from "./supabaseClient";
 
-export type PortalTenantSummary = { id: string; name: string; room: string; owedAmount: number };
+export type PortalTenantSummary = { id: string; name: string; room: string };
 export type PortalTenant = {
   id: string;
   name: string;
@@ -23,10 +23,14 @@ export async function getPortalProperty(propertySlug: string): Promise<{ id: str
   return data?.[0] ?? null;
 }
 
+/** Deliberately narrow — name + room only, no balance. Any unauthenticated visitor can browse this
+ * list (that's the point, it's how "search for yourself" works), so it must never carry anything
+ * financial. See pay_portal_search_tenants_v2's migration comment for why this replaced the old
+ * balance-carrying pay_portal_search_tenants. */
 export async function searchPortalTenants(propertySlug: string): Promise<PortalTenantSummary[]> {
-  const { data, error } = await supabase.rpc("pay_portal_search_tenants", { p_property_slug: propertySlug });
+  const { data, error } = await supabase.rpc("pay_portal_search_tenants_v2", { p_property_slug: propertySlug });
   if (error) throw error;
-  return (data ?? []).map((row) => ({ id: row.id, name: row.name, room: roomLabel(row.room), owedAmount: row.owed_amount }));
+  return (data ?? []).map((row) => ({ id: row.id, name: row.name, room: roomLabel(row.room) }));
 }
 
 export async function getPortalTenant(propertySlug: string, tenantId: string): Promise<PortalTenant | null> {

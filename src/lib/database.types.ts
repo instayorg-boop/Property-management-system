@@ -1019,6 +1019,14 @@ export type Database = {
           room: string
         }[]
       }
+      pay_portal_search_tenants_v2: {
+        Args: { p_property_slug: string }
+        Returns: {
+          id: string
+          name: string
+          room: string
+        }[]
+      }
       pay_portal_submit_maintenance_report: {
         Args: {
           p_description: string

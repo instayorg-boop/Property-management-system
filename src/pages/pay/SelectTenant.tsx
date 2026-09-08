@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { MagnifyingGlass, CaretRight, House } from "@phosphor-icons/react";
-import { formatCurrency } from "../../landlord/TenantsContext";
 import { getPortalProperty, searchPortalTenants, type PortalTenantSummary } from "../../lib/payPortal";
 import PayShell from "./PayShell";
 
@@ -71,16 +70,7 @@ export default function SelectTenant() {
                 <p className="text-xs text-muted">{t.room}</p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              {t.owedAmount > 0 ? (
-                <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-600">
-                  {formatCurrency(t.owedAmount)}
-                </span>
-              ) : (
-                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-600">Paid up</span>
-              )}
-              <CaretRight size={14} weight="bold" className="text-muted" />
-            </div>
+            <CaretRight size={14} weight="bold" className="text-muted" />
           </button>
         ))}
         {results.length === 0 && <p className="px-3 py-6 text-center text-sm text-muted">No match. Check the spelling and try again.</p>}
