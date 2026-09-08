@@ -1022,6 +1022,7 @@ export type Database = {
           id: string
           name: string
           owed_amount: number
+          phone: string
           rent_amount: number
           room: string
           room_type: string

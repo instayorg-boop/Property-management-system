@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useLocation, Link } from "react-router-dom";
 import {
   CaretLeft as CaretLeftIcon,
-  Wrench as WrenchIcon,
   DeviceMobile as DeviceMobileIcon,
   CreditCard as CreditCardIcon,
   ShieldCheck as ShieldCheckIcon,
   CaretRight as CaretRightIcon,
+  Wrench as WrenchIcon,
 } from "@phosphor-icons/react";
 import { formatCurrency } from "../../landlord/TenantsContext";
 import {
@@ -33,6 +33,18 @@ const statusLabel: Record<string, string> = { paid: "Paid", overdue: "Overdue", 
 type Method = "mobile" | "card";
 type FlowStep = "review" | "method" | "pay" | "processing";
 const PROVIDERS = ["MTN", "Airtel", "Zamtel"] as const;
+
+/** Zambian mobile network prefixes — lets the mobile-money step skip asking "which network?" when
+ * we already know the tenant's phone (from the number they just verified via OTP). Falls back to
+ * MTN (the pre-selected default) if the prefix isn't recognized; the tenant can still switch it. */
+function detectProvider(phone: string): (typeof PROVIDERS)[number] {
+  const digits = phone.replace(/\D/g, "").replace(/^260/, "").replace(/^0/, "");
+  const prefix = digits.slice(0, 2);
+  if (["96", "76"].includes(prefix)) return "MTN";
+  if (["97", "77"].includes(prefix)) return "Airtel";
+  if (["95", "75"].includes(prefix)) return "Zamtel";
+  return "MTN";
+}
 
 export default function TenantBalance() {
   const { propertySlug, tenantId } = useParams();
@@ -104,6 +116,12 @@ export default function TenantBalance() {
       const t = await getPortalTenant(propertySlug, tenantId);
       if (cancelled) return;
       setTenant(t);
+      // Pre-fill mobile-money details from the phone already on file (the one they just verified
+      // via OTP) — one less thing to type before paying.
+      if (t?.phone) {
+        setPhone(t.phone);
+        setProvider(detectProvider(t.phone));
+      }
       if (t) setLedger(await getPortalLedger(t.id));
     })();
     return () => {
@@ -276,13 +294,17 @@ export default function TenantBalance() {
             </button>
           )}
 
-          <Link
-            to={`/pay/${propertySlug}/${tenant.id}/report`}
-            className="mt-4 flex items-center justify-center gap-1.5 text-sm text-muted hover:text-ink"
-          >
-            <WrenchIcon size={14} weight="duotone" />
-            Report a maintenance issue instead
-          </Link>
+          {/* Nothing to pay right now, so this is the only place a paid-up tenant can reach
+              maintenance reporting from — everyone else sees it after paying, on the success page. */}
+          {fullyPaid && (
+            <Link
+              to={`/pay/${propertySlug}/${tenant.id}/report`}
+              className="mt-6 flex items-center justify-center gap-1.5 text-sm text-muted hover:text-ink"
+            >
+              <WrenchIcon size={14} weight="duotone" />
+              Report a maintenance issue
+            </Link>
+          )}
         </>
       )}
 

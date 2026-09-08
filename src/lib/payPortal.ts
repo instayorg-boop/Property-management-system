@@ -80,6 +80,9 @@ export type PortalTenant = {
   rentAmount: number;
   owedAmount: number;
   daysOverdue?: number;
+  /** The tenant's own phone, on file — safe to surface only because getPortalTenant already
+   * requires a verified OTP session; used to pre-fill the mobile-money payment step. */
+  phone: string | null;
 };
 export type PortalLedgerRow = { label: string; amount: number; paidAmount?: number; status?: string };
 
@@ -125,6 +128,7 @@ export async function getPortalTenant(propertySlug: string, tenantId: string): P
     rentAmount: row.rent_amount,
     owedAmount: row.owed_amount,
     daysOverdue: row.days_overdue ?? undefined,
+    phone: row.phone ?? null,
   };
 }
 

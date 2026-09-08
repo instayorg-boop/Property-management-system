@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useParams, Link } from "react-router-dom";
-import { CheckCircle, DownloadSimple } from "@phosphor-icons/react";
+import { CheckCircle, DownloadSimple, Wrench } from "@phosphor-icons/react";
 import { formatCurrency } from "../../landlord/TenantsContext";
 import { getPortalProperty, getPortalTenant, type PortalTenant } from "../../lib/payPortal";
 import PayShell from "./PayShell";
@@ -60,6 +60,13 @@ export default function PaymentSuccess() {
             className="block w-full rounded-lg border border-line py-2.5 text-sm font-medium text-ink transition-colors hover:bg-mist"
           >
             View my balance
+          </Link>
+          <Link
+            to={`/pay/${propertySlug}/${tenantId}/report`}
+            className="flex items-center justify-center gap-1.5 py-1 text-sm text-muted hover:text-ink"
+          >
+            <Wrench size={14} weight="duotone" />
+            Report a maintenance issue
           </Link>
           <p className="text-xs text-muted">You can close this page now.</p>
         </div>
