@@ -69,26 +69,60 @@ function rentDiscountNote(t: Tenant, roomTypeRent: Record<string, number>) {
   return `${formatCurrency(t.rentAmount)}/mo · ${formatCurrency(discount)} discount off ${formatCurrency(typeRate)}`;
 }
 
-/** Money actually received for this billing period — never the amount due, so Overdue/Unpaid rows
- * truthfully show K0 rather than implying a payment that didn't happen. */
-function amountPaidThisMonth(t: Tenant) {
-  if (t.status === "paid") return t.rentAmount;
-  if (t.status === "partial") return t.ledger[0]?.paidAmount ?? 0;
-  return 0;
-}
-
 /** Overdue and unpaid are equally urgent — same rank, same red bucket in the summary line. */
 const urgencyRank: Record<PaymentStatus, number> = { overdue: 0, unpaid: 0, partial: 1, paid: 2 };
+
+/** Everything the table/stats need for one tenant, resolved against the *selected* month rather
+ * than always reflecting today's live state — otherwise navigating to a past month kept showing
+ * this month's numbers relabelled, which is just wrong. */
+type RentRow = {
+  tenant: Tenant;
+  status: PaymentStatus;
+  amountPaid: number;
+  owedAmount: number;
+  /** False for a past month where nothing was ever logged — distinct from "logged and unpaid". */
+  hasRecord: boolean;
+};
+
+function ledgerEntryForMonth(t: Tenant, monthDate: Date) {
+  return t.ledger.find((row) => {
+    if (!row.createdAt) return false;
+    const d = new Date(row.createdAt);
+    return d.getFullYear() === monthDate.getFullYear() && d.getMonth() === monthDate.getMonth();
+  });
+}
+
+function buildRentRow(t: Tenant, monthDate: Date, isCurrentMonth: boolean): RentRow {
+  if (isCurrentMonth) {
+    // "Now" is the live tenant record by definition — no historical lookup needed or possible.
+    const amountPaid = t.status === "paid" ? t.rentAmount : t.status === "partial" ? (t.ledger[0]?.paidAmount ?? 0) : 0;
+    return { tenant: t, status: t.status, amountPaid, owedAmount: t.owedAmount, hasRecord: true };
+  }
+  const entry = ledgerEntryForMonth(t, monthDate);
+  if (!entry) {
+    // Nothing was ever recorded for this tenant in this past month — show that honestly (K0,
+    // "No record") instead of falling back to their current live status.
+    return { tenant: t, status: "unpaid", amountPaid: 0, owedAmount: t.rentAmount, hasRecord: false };
+  }
+  const status = entry.status ?? "paid";
+  const amountPaid = status === "partial" ? (entry.paidAmount ?? 0) : status === "paid" ? entry.amount : 0;
+  return { tenant: t, status, amountPaid, owedAmount: Math.max(0, t.rentAmount - amountPaid), hasRecord: true };
+}
 
 /** The short pill just names the state (Paid/Overdue/Unpaid/Partial) — the amount and day count
  * live in a separate, quieter caption line instead of being crammed into the pill itself, since
  * "Overdue · 12d — K1,440 owed" all in one small badge is a lot to read on every row of a table. */
-function statusDetail(t: Tenant, dailyPenaltyRate: number): string | null {
-  if (t.status === "paid") return null;
-  const totalOwed = calcTotalOwed(t, dailyPenaltyRate);
-  if (t.status === "overdue") return `${t.daysOverdue ? `${t.daysOverdue}d · ` : ""}${formatCurrency(totalOwed)} owed`;
-  if (t.status === "unpaid") return `${formatCurrency(totalOwed)} owed`;
-  return `${formatCurrency(totalOwed)} left`;
+function statusDetail(row: RentRow, dailyPenaltyRate: number, isCurrentMonth: boolean): string | null {
+  if (row.status === "paid") return null;
+  if (!row.hasRecord) return "No record this month";
+  if (isCurrentMonth) {
+    // Live penalty accrual only makes sense against today's date, not a browsed-to past month.
+    const totalOwed = calcTotalOwed(row.tenant, dailyPenaltyRate);
+    if (row.status === "overdue") return `${row.tenant.daysOverdue ? `${row.tenant.daysOverdue}d · ` : ""}${formatCurrency(totalOwed)} owed`;
+    if (row.status === "unpaid") return `${formatCurrency(totalOwed)} owed`;
+    return `${formatCurrency(totalOwed)} left`;
+  }
+  return row.status === "partial" ? `${formatCurrency(row.owedAmount)} left` : `${formatCurrency(row.owedAmount)} owed`;
 }
 
 type PaymentStep = "search" | "ledger" | "confirm";
@@ -124,7 +158,6 @@ export default function Rent() {
   const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
   const [movingOutTenant, setMovingOutTenant] = useState<Tenant | null>(null);
 
-  const activeTenants = useMemo(() => tenants.filter((t) => t.active), [tenants]);
 
   // Arriving from the Dashboard (recent payments / briefing) or the Rooms page — open that
   // tenant's ledger directly, then drop the nav state so back/refresh doesn't reopen it.
@@ -141,70 +174,89 @@ export default function Rent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state]);
 
-  const filtered = useMemo(() => {
-    return activeTenants
-      .filter((t) => filter === "All" || statusLabel[t.status] === filter)
-      .filter((t) => t.name.toLowerCase().includes(query.toLowerCase()) || t.room.toLowerCase().includes(query.toLowerCase()))
-      .sort((a, b) => urgencyRank[a.status] - urgencyRank[b.status]);
-  }, [activeTenants, filter, query]);
+  const isCurrentMonth = monthOffset === 0;
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
+  // Who to show for the *selected* month — the currently-active roster for "now", or whoever was
+  // actually resident during a browsed-to past month (so someone who's since moved out, or hasn't
+  // moved in yet, doesn't wrongly appear in a month they weren't there for).
+  const periodTenants = useMemo(() => {
+    if (isCurrentMonth) return tenants.filter((t) => t.active);
+    const monthStart = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
+    const monthEnd = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
+    return tenants.filter((t) => {
+      const moveIn = new Date(t.moveInDate);
+      if (Number.isNaN(moveIn.getTime()) || moveIn > monthEnd) return false;
+      if (t.moveOutDate) {
+        const moveOut = new Date(t.moveOutDate);
+        if (!Number.isNaN(moveOut.getTime()) && moveOut < monthStart) return false;
+      }
+      return true;
+    });
+  }, [tenants, isCurrentMonth, monthDate]);
+
+  const rentRows = useMemo(
+    () => periodTenants.map((t) => buildRentRow(t, monthDate, isCurrentMonth)),
+    [periodTenants, monthDate, isCurrentMonth]
+  );
+
+  const filteredRows = useMemo(() => {
+    return rentRows
+      .filter((r) => filter === "All" || statusLabel[r.status] === filter)
+      .filter(
+        (r) => r.tenant.name.toLowerCase().includes(query.toLowerCase()) || r.tenant.room.toLowerCase().includes(query.toLowerCase())
+      )
+      .sort((a, b) => urgencyRank[a.status] - urgencyRank[b.status]);
+  }, [rentRows, filter, query]);
+
+  const pageCount = Math.max(1, Math.ceil(filteredRows.length / rowsPerPage));
   const currentPage = Math.min(page, pageCount);
-  const pageRows = filtered.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
+  const pageRows = filteredRows.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
 
   // Per-filter counts, independent of the search box — shown as a badge on each filter tab.
   const filterCounts = useMemo(() => {
     return {
-      All: activeTenants.length,
-      Paid: activeTenants.filter((t) => t.status === "paid").length,
-      Overdue: activeTenants.filter((t) => t.status === "overdue").length,
-      Unpaid: activeTenants.filter((t) => t.status === "unpaid").length,
-      Partial: activeTenants.filter((t) => t.status === "partial").length,
+      All: rentRows.length,
+      Paid: rentRows.filter((r) => r.status === "paid").length,
+      Overdue: rentRows.filter((r) => r.status === "overdue").length,
+      Unpaid: rentRows.filter((r) => r.status === "unpaid").length,
+      Partial: rentRows.filter((r) => r.status === "partial").length,
     } as Record<(typeof filters)[number], number>;
-  }, [activeTenants]);
+  }, [rentRows]);
 
   const stats = useMemo(() => {
-    const totalExpected = activeTenants.reduce((sum, t) => sum + t.rentAmount, 0);
-
-    const collectedTotal = activeTenants.reduce((sum, t) => {
-      if (t.status === "paid") return sum + t.rentAmount;
-      if (t.status === "partial") {
-        const paidPortion = t.ledger[0]?.paidAmount ?? 0;
-        return sum + paidPortion;
-      }
-      return sum;
-    }, 0);
-
-    const outstanding = activeTenants.reduce((sum, t) => sum + t.owedAmount, 0);
-    const delinquentCount = activeTenants.filter((t) => t.status === "overdue" || t.status === "unpaid").length;
-
+    const totalExpected = rentRows.reduce((sum, r) => sum + r.tenant.rentAmount, 0);
+    const collectedTotal = rentRows.reduce((sum, r) => sum + r.amountPaid, 0);
+    const outstanding = rentRows.reduce((sum, r) => sum + r.owedAmount, 0);
+    const delinquentCount = rentRows.filter((r) => r.status === "overdue" || r.status === "unpaid").length;
     const collectedPct = totalExpected > 0 ? Math.round((collectedTotal / totalExpected) * 100) : 0;
 
-    // Real prior-month comparison from ledger timestamps — no fabricated benchmark. `null` when
-    // there's nothing recorded last month to compare against, so the UI can just omit the line.
-    const now = new Date();
-    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    let lastMonthCollected = 0;
-    let hasLastMonthData = false;
-    for (const t of activeTenants) {
-      for (const row of t.ledger) {
-        if (!row.createdAt) continue;
-        const created = new Date(row.createdAt);
-        if (created >= lastMonthStart && created < thisMonthStart && (row.status === "paid" || row.status === "partial")) {
-          hasLastMonthData = true;
-          lastMonthCollected += row.status === "partial" ? (row.paidAmount ?? 0) : row.amount;
+    // Real prior-month comparison from ledger timestamps — no fabricated benchmark. Only shown for
+    // the current month: "vs last month" only means something when "this month" is actually now.
+    let trend: number | null = null;
+    if (isCurrentMonth) {
+      const now = new Date();
+      const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      let lastMonthCollected = 0;
+      let hasLastMonthData = false;
+      for (const r of rentRows) {
+        for (const row of r.tenant.ledger) {
+          if (!row.createdAt) continue;
+          const created = new Date(row.createdAt);
+          if (created >= lastMonthStart && created < thisMonthStart && (row.status === "paid" || row.status === "partial")) {
+            hasLastMonthData = true;
+            lastMonthCollected += row.status === "partial" ? (row.paidAmount ?? 0) : row.amount;
+          }
         }
       }
+      trend = hasLastMonthData && lastMonthCollected > 0 ? Math.round(((collectedTotal - lastMonthCollected) / lastMonthCollected) * 1000) / 10 : null;
     }
-    const trend =
-      hasLastMonthData && lastMonthCollected > 0 ? Math.round(((collectedTotal - lastMonthCollected) / lastMonthCollected) * 1000) / 10 : null;
 
     const outstandingSeverity: "none" | "moderate" | "high" =
       outstanding === 0 ? "none" : delinquentCount >= 3 ? "high" : "moderate";
 
     return { totalExpected, collectedTotal, outstanding, delinquentCount, collectedPct, trend, outstandingSeverity };
-  }, [activeTenants]);
+  }, [rentRows, isCurrentMonth]);
 
   const copyLink = () => {
     setLinkCopied(true);
@@ -472,10 +524,10 @@ export default function Rent() {
                   <Skeleton className="h-3 w-1/3" />
                 </div>
               ))}
-            {tenantsReady && pageRows.map((t) => {
-              const needsAction = t.status !== "paid";
+            {tenantsReady && pageRows.map((row) => {
+              const t = row.tenant;
+              const needsAction = row.status !== "paid";
               const discountNote = rentDiscountNote(t, roomTypeRent);
-              const paidThisMonth = amountPaidThisMonth(t);
               return (
                 <div
                   key={t.id}
@@ -491,9 +543,9 @@ export default function Rent() {
                       <p className="mt-0.5 text-xs text-muted">{t.room}</p>
                     </div>
                     <div className="shrink-0 text-right">
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[t.status]}`}>{statusLabel[t.status]}</span>
-                      {statusDetail(t, dailyPenaltyRate) && (
-                        <p className="mt-1 text-[11px] text-muted">{statusDetail(t, dailyPenaltyRate)}</p>
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[row.status]}`}>{statusLabel[row.status]}</span>
+                      {statusDetail(row, dailyPenaltyRate, isCurrentMonth) && (
+                        <p className="mt-1 text-[11px] text-muted">{statusDetail(row, dailyPenaltyRate, isCurrentMonth)}</p>
                       )}
                     </div>
                   </div>
@@ -506,11 +558,11 @@ export default function Rent() {
                       ) : (
                         <p className="text-xs text-muted">{formatCurrency(t.rentAmount)}/mo</p>
                       )}
-                      <p className={`mt-0.5 text-sm ${paidThisMonth === 0 ? "font-normal text-muted" : "font-medium text-ink"}`}>
-                        {formatCurrency(paidThisMonth)} paid
+                      <p className={`mt-0.5 text-sm ${row.amountPaid === 0 ? "font-normal text-muted" : "font-medium text-ink"}`}>
+                        {formatCurrency(row.amountPaid)} paid
                       </p>
                     </div>
-                    {needsAction ? (
+                    {needsAction && isCurrentMonth ? (
                       <button
                         type="button"
                         onClick={(e) => {
@@ -546,11 +598,13 @@ export default function Rent() {
                 </span>
                 <div>
                   <p className="text-xs font-semibold text-ink">
-                    {activeTenants.length === 0 ? "No tenants yet" : "No tenants match this filter"}
+                    {rentRows.length === 0 ? "No tenants this month" : "No tenants match this filter"}
                   </p>
                   <p className="mt-0.5 text-xs text-muted">
-                    {activeTenants.length === 0
-                      ? "Add a tenant to start tracking rent payments."
+                    {rentRows.length === 0
+                      ? isCurrentMonth
+                        ? "Add a tenant to start tracking rent payments."
+                        : "No one was resident during this month."
                       : "Try a different search or status filter."}
                   </p>
                 </div>
@@ -572,10 +626,10 @@ export default function Rent() {
             </thead>
             <tbody>
               {!tenantsReady && Array.from({ length: 4 }).map((_, i) => <SkeletonRow key={i} cols={5} />)}
-              {tenantsReady && pageRows.map((t) => {
-                const needsAction = t.status !== "paid";
+              {tenantsReady && pageRows.map((row) => {
+                const t = row.tenant;
+                const needsAction = row.status !== "paid";
                 const discountNote = rentDiscountNote(t, roomTypeRent);
-                const paidThisMonth = amountPaidThisMonth(t);
                 return (
                   <tr
                     key={t.id}
@@ -597,17 +651,17 @@ export default function Rent() {
                         <p className="text-xs text-muted">{formatCurrency(t.rentAmount)}/mo</p>
                       )}
                     </td>
-                    <td className={`px-4 py-3 ${paidThisMonth === 0 ? "font-normal text-muted" : "font-medium text-ink"}`}>
-                      {formatCurrency(paidThisMonth)}
+                    <td className={`px-4 py-3 ${row.amountPaid === 0 ? "font-normal text-muted" : "font-medium text-ink"}`}>
+                      {formatCurrency(row.amountPaid)}
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[t.status]}`}>{statusLabel[t.status]}</span>
-                      {statusDetail(t, dailyPenaltyRate) && (
-                        <p className="mt-1 text-[11px] text-muted">{statusDetail(t, dailyPenaltyRate)}</p>
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[row.status]}`}>{statusLabel[row.status]}</span>
+                      {statusDetail(row, dailyPenaltyRate, isCurrentMonth) && (
+                        <p className="mt-1 text-[11px] text-muted">{statusDetail(row, dailyPenaltyRate, isCurrentMonth)}</p>
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      {needsAction ? (
+                      {needsAction && isCurrentMonth ? (
                         <button
                           type="button"
                           onClick={(e) => {
@@ -645,11 +699,13 @@ export default function Rent() {
                       </span>
                       <div>
                         <p className="text-xs font-semibold text-ink">
-                          {activeTenants.length === 0 ? "No tenants yet" : "No tenants match this filter"}
+                          {rentRows.length === 0 ? "No tenants this month" : "No tenants match this filter"}
                         </p>
                         <p className="mt-0.5 text-xs text-muted">
-                          {activeTenants.length === 0
-                            ? "Add a tenant to start tracking rent payments."
+                          {rentRows.length === 0
+                            ? isCurrentMonth
+                              ? "Add a tenant to start tracking rent payments."
+                              : "No one was resident during this month."
                             : "Try a different search or status filter."}
                         </p>
                       </div>
@@ -660,12 +716,12 @@ export default function Rent() {
             </tbody>
           </table>
           </div>
-          {filtered.length > 0 && (
+          {filteredRows.length > 0 && (
             <Pagination
               page={currentPage}
               pageCount={pageCount}
               pageSize={rowsPerPage}
-              totalItems={filtered.length}
+              totalItems={filteredRows.length}
               onPageChange={setPage}
               onPageSizeChange={(size) => {
                 setRowsPerPage(size);
