@@ -33,6 +33,22 @@ const paymentStatusStyle: Record<PaymentStatus, string> = {
   unpaid: "bg-slate-100 text-slate-600",
   partial: "bg-amber-50 text-amber-600",
 };
+// "unknown" covers rows logged before the method column existed — shown as "Manual" rather than
+// guessed at, since there's no real way to know how those were actually paid.
+const paymentMethodLabel: Record<string, string> = {
+  cash: "Cash",
+  "mobile-money": "Mobile money",
+  "bank-transfer": "Bank transfer",
+  other: "Other",
+  unknown: "Manual",
+};
+const paymentMethodStyle: Record<string, string> = {
+  cash: "bg-slate-100 text-slate-600",
+  "mobile-money": "bg-brand-soft text-brand",
+  "bank-transfer": "bg-blue-50 text-blue-600",
+  other: "bg-slate-100 text-slate-600",
+  unknown: "bg-slate-100 text-slate-500",
+};
 const maintenanceStatusStyle: Record<string, string> = {
   open: "bg-red-50 text-red-600",
   "in-progress": "bg-amber-50 text-amber-600",
@@ -414,6 +430,7 @@ export default function TenantProfile() {
                               <tr>
                                 <th className="py-2 font-medium uppercase tracking-wide">Label</th>
                                 <th className="py-2 font-medium uppercase tracking-wide">Date</th>
+                                <th className="py-2 font-medium uppercase tracking-wide">Method</th>
                                 <th className="py-2 font-medium uppercase tracking-wide">Status</th>
                                 <th className="py-2 text-right font-medium uppercase tracking-wide">Amount</th>
                               </tr>
@@ -426,6 +443,11 @@ export default function TenantProfile() {
                                     {row.createdAt
                                       ? new Date(row.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
                                       : "—"}
+                                  </td>
+                                  <td className="py-2.5">
+                                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${paymentMethodStyle[row.method ?? "unknown"]}`}>
+                                      {paymentMethodLabel[row.method ?? "unknown"]}
+                                    </span>
                                   </td>
                                   <td className="py-2.5">
                                     <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${paymentStatusStyle[row.status ?? "paid"]}`}>
@@ -522,8 +544,8 @@ export default function TenantProfile() {
             room={tenant.room}
             outstanding={tenant.owedAmount || tenant.rentAmount}
             onClose={() => setShowLogPayment(false)}
-            onConfirm={() => {
-              logPayment(tenant.id, tenant.owedAmount || tenant.rentAmount);
+            onConfirm={(payment) => {
+              logPayment(tenant.id, payment.amount, undefined, payment.method === "mobile" ? "mobile-money" : "cash");
               setShowLogPayment(false);
             }}
           />

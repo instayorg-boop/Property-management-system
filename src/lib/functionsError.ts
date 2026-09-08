@@ -1,4 +1,4 @@
-import { FunctionsHttpError } from "@supabase/supabase-js";
+import { FunctionsFetchError, FunctionsHttpError } from "@supabase/supabase-js";
 
 /** supabase.functions.invoke() sets `data` to null on any non-2xx response (it throws before
  * parsing the body as data) — so `data?.error` is always undefined for real errors, and every
@@ -14,6 +14,9 @@ export async function edgeFunctionErrorMessage(error: unknown, fallback: string)
     } catch {
       // body wasn't JSON — fall through to the generic message below
     }
+  }
+  if (error instanceof FunctionsFetchError) {
+    return "Couldn't reach the server — check your connection and try again.";
   }
   return error instanceof Error ? error.message : fallback;
 }

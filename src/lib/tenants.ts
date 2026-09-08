@@ -4,6 +4,7 @@ import type { Json, Tables, TablesUpdate } from "./database.types";
 export type PaymentStatus = "paid" | "overdue" | "unpaid" | "partial";
 export type DepositStatus = "Not collected" | "Held" | "Refunded" | "Forfeited" | "Partially refunded";
 export type DepositMethod = "mobile" | "cash" | "bank";
+export type PaymentMethod = "cash" | "mobile-money" | "bank-transfer" | "other";
 export type LedgerRow = {
   label: string;
   amount: number;
@@ -12,6 +13,10 @@ export type LedgerRow = {
   /** When this entry was recorded — powers the Dashboard's monthly collections chart / recent
    * payments list. Optional so client-constructed rows that haven't set it don't break typing. */
   createdAt?: string;
+  /** How the tenant actually paid — null on rows that predate this column (shown as "Manual" in
+   * the UI, not guessed at). Real mobile-money payments get this set by lenco-webhook, never by
+   * the client, so it can't be spoofed. */
+  method?: PaymentMethod | null;
 };
 
 export const RELATION_OPTIONS = ["Parent", "Guardian", "Spouse", "Sibling", "Friend", "Other"] as const;
@@ -184,7 +189,7 @@ function toTenant(row: TenantRow, propertyName: string, ledger: LedgerRow[]): Te
 
 type LedgerEntryRow = Pick<
   Tables<"ledger_entries">,
-  "tenant_id" | "label" | "amount" | "paid_amount" | "status" | "created_at"
+  "tenant_id" | "label" | "amount" | "paid_amount" | "status" | "created_at" | "method"
 >;
 
 function toLedgerRow(row: LedgerEntryRow): LedgerRow {
@@ -194,6 +199,7 @@ function toLedgerRow(row: LedgerEntryRow): LedgerRow {
     paidAmount: row.paid_amount ?? undefined,
     status: (row.status as PaymentStatus) ?? undefined,
     createdAt: row.created_at,
+    method: (row.method as PaymentMethod | null) ?? null,
   };
 }
 
@@ -210,7 +216,7 @@ export async function listTenants(propertyId: string, propertyName: string): Pro
   const tenantIds = tenantRows.map((r) => r.id);
   const { data: ledgerRows, error: ledgerError } = await supabase
     .from("ledger_entries")
-    .select("tenant_id, label, amount, paid_amount, status, created_at")
+    .select("tenant_id, label, amount, paid_amount, status, created_at, method")
     .in("tenant_id", tenantIds)
     .order("created_at", { ascending: false });
   if (ledgerError) throw ledgerError;
@@ -316,6 +322,7 @@ export async function addLedgerEntry(tenantId: string, entry: LedgerRow): Promis
     amount: entry.amount,
     paid_amount: entry.paidAmount ?? null,
     status: entry.status ?? null,
+    method: entry.method ?? null,
   });
   if (error) throw error;
 }

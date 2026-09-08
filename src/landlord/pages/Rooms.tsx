@@ -1036,8 +1036,8 @@ export default function Rooms() {
             room={payingTenant.room}
             outstanding={payingTenant.owedAmount || payingTenant.rentAmount}
             onClose={() => setPayingTenant(null)}
-            onConfirm={() => {
-              logPayment(payingTenant.id, payingTenant.owedAmount || payingTenant.rentAmount);
+            onConfirm={(payment) => {
+              logPayment(payingTenant.id, payment.amount, undefined, payment.method === "mobile" ? "mobile-money" : "cash");
               setPayingTenant(null);
               setSelectedNumber(null);
             }}

@@ -170,6 +170,7 @@ Deno.serve(async (req) => {
             label: "Rent payment",
             amount: collectionRow.amount,
             status: "paid",
+            method: "mobile-money",
           });
         }
       }

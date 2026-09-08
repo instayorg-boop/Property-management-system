@@ -31,6 +31,14 @@ const ledgerStatusStyle: Record<string, string> = {
 
 const ledgerStatusLabel: Record<string, string> = { paid: "Paid", overdue: "Overdue", unpaid: "Unpaid", partial: "Partial" };
 
+const methodTagLabel: Record<string, string> = { cash: "Cash", "mobile-money": "Mobile money", "bank-transfer": "Bank transfer", other: "Other" };
+const methodTagStyle: Record<string, string> = {
+  cash: "bg-slate-100 text-slate-600",
+  "mobile-money": "bg-brand-soft text-brand",
+  "bank-transfer": "bg-blue-50 text-blue-600",
+  other: "bg-slate-100 text-slate-600",
+};
+
 export default function TenantPaymentDrawer({
   tenant,
   onClose,
@@ -187,6 +195,11 @@ export default function TenantPaymentDrawer({
               <span className="text-sm text-ink">{row.label}</span>
               {row.label.toLowerCase().includes("pro-rata") && (
                 <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-600">Pro-rata</span>
+              )}
+              {/* No badge for rows logged before the method column existed — nothing to show is
+                  more honest than guessing. */}
+              {row.method && (
+                <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${methodTagStyle[row.method]}`}>{methodTagLabel[row.method]}</span>
               )}
             </div>
             <div className="flex items-center gap-2">

@@ -13,13 +13,14 @@ import {
   type DepositStatus,
   type DepositMethod,
   type LedgerRow,
+  type PaymentMethod,
   type EmergencyContact,
   type RelationType,
 } from "../lib/tenants";
 
 // --- Types -------------------------------------------------------------------
 
-export type { Tenant, PaymentStatus, DepositStatus, DepositMethod, LedgerRow, EmergencyContact, RelationType };
+export type { Tenant, PaymentStatus, DepositStatus, DepositMethod, LedgerRow, PaymentMethod, EmergencyContact, RelationType };
 export { relationLabel, RELATION_OPTIONS };
 /** The room type's name, e.g. "Single" — an open string since landlords can add their own room types on the Rooms page. */
 export type RoomType = string;
@@ -41,8 +42,11 @@ type TenantsContextValue = {
   moveOutTenant: (id: string, details: { moveOutDate: string; depositStatus: DepositStatus; depositResolutionNote: string }) => void;
   reactivateTenant: (id: string, newMoveInDate: string) => void;
   /** `label` defaults to the standard rent-row label when omitted — pass one explicitly for
-   * anything that isn't a plain full-month rent payment (e.g. a pro-rata partial month). */
-  logPayment: (id: string, amount: number, label?: string) => void;
+   * anything that isn't a plain full-month rent payment (e.g. a pro-rata partial month). `method`
+   * records how the landlord says this was paid (cash/mobile money/etc, from LogPaymentModal) —
+   * real mobile-money payments via the tenant portal are tagged separately by lenco-webhook, never
+   * through this path. */
+  logPayment: (id: string, amount: number, label?: string, method?: PaymentMethod) => void;
 };
 
 const TenantsContext = createContext<TenantsContextValue | null>(null);
@@ -133,7 +137,7 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
       }).catch((e) => console.error("Failed to reactivate tenant", e));
   };
 
-  const logPayment = (id: string, amount: number, label?: string) => {
+  const logPayment = (id: string, amount: number, label?: string, method?: PaymentMethod) => {
     let updated: Tenant | undefined;
     setTenants((prev) =>
       prev.map((t) => {
@@ -150,6 +154,7 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
               amount,
               status: "paid",
               createdAt: new Date().toISOString(),
+              method: method ?? null,
             },
             ...t.ledger,
           ],

@@ -2,9 +2,7 @@ import { useState } from "react";
 import Modal from "./Modal";
 import Button from "./Button";
 
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
-}
+export type LoggedPayment = { amount: number; method: "mobile" | "cash" };
 
 export default function LogPaymentModal({
   tenantName,
@@ -17,12 +15,13 @@ export default function LogPaymentModal({
   room: string;
   outstanding: number;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: (payment: LoggedPayment) => void;
 }) {
   const [amount, setAmount] = useState(String(outstanding));
   const [method, setMethod] = useState<"mobile" | "cash">("mobile");
-  const [date, setDate] = useState(todayISO());
-  const [notes, setNotes] = useState("");
+
+  const parsedAmount = Number(amount);
+  const canConfirm = Number.isFinite(parsedAmount) && parsedAmount > 0;
 
   return (
     <Modal
@@ -30,7 +29,12 @@ export default function LogPaymentModal({
       title="Log payment"
       description={`${tenantName} · ${room}`}
       footer={
-        <Button variant="primary" onClick={onConfirm} className="w-full py-3">
+        <Button
+          variant="primary"
+          disabled={!canConfirm}
+          onClick={() => onConfirm({ amount: parsedAmount, method })}
+          className="w-full py-3"
+        >
           Confirm payment
         </Button>
       }
@@ -63,26 +67,6 @@ export default function LogPaymentModal({
               </button>
             ))}
           </div>
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-muted">Date</label>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="w-full rounded-lg border border-line bg-paper px-3 py-2.5 text-sm outline-none focus:border-brand"
-          />
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-muted">Notes (optional)</label>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={2}
-            className="w-full resize-none rounded-lg border border-line bg-paper px-3 py-2.5 text-sm outline-none focus:border-brand"
-          />
         </div>
       </div>
     </Modal>

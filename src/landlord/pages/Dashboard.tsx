@@ -724,8 +724,8 @@ export default function Dashboard() {
             room={`${payingTenant.room} · ${payingTenant.roomType}`}
             outstanding={payingTenant.owedAmount || payingTenant.rentAmount}
             onClose={() => setPaymentStep("ledger")}
-            onConfirm={() => {
-              logPayment(payingTenant.id, payingTenant.owedAmount || payingTenant.rentAmount);
+            onConfirm={(payment) => {
+              logPayment(payingTenant.id, payment.amount, undefined, payment.method === "mobile" ? "mobile-money" : "cash");
               setPaymentStep(null);
               setPayingTenant(null);
             }}

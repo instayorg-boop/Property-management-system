@@ -465,6 +465,7 @@ export type Database = {
           created_at: string
           id: string
           label: string
+          method: string | null
           paid_amount: number | null
           period: string | null
           status: string | null
@@ -475,6 +476,7 @@ export type Database = {
           created_at?: string
           id?: string
           label: string
+          method?: string | null
           paid_amount?: number | null
           period?: string | null
           status?: string | null
@@ -485,6 +487,7 @@ export type Database = {
           created_at?: string
           id?: string
           label?: string
+          method?: string | null
           paid_amount?: number | null
           period?: string | null
           status?: string | null

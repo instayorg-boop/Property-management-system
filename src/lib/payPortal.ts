@@ -173,7 +173,9 @@ export async function initiateCollection(
   return { collectionId: data.collectionId, status: data.status ?? "pay-offline" };
 }
 
-export async function getCollectionStatus(
+/** Reads our own `collections` row — fast, but only ever reflects what lenco-webhook has written.
+ * Used as a last-resort fallback if the active check below can't reach the edge function at all. */
+async function getStoredCollectionStatus(
   tenantId: string,
   collectionId: string
 ): Promise<{ status: CollectionStatus; failureReason: string | null }> {
@@ -187,6 +189,26 @@ export async function getCollectionStatus(
   const row = data?.[0];
   if (!row) throw new Error("Couldn't find that payment.");
   return { status: row.status as CollectionStatus, failureReason: row.failure_reason };
+}
+
+/** Polled by TenantBalance.tsx. Doesn't just read our DB — it actively requeries Lenco's own
+ * collection-status endpoint (same fallback Lenco's docs recommend alongside webhooks), so a
+ * payment still resolves even if lenco-webhook was never registered or a delivery got lost. */
+export async function getCollectionStatus(
+  tenantId: string,
+  collectionId: string
+): Promise<{ status: CollectionStatus; failureReason: string | null }> {
+  const sessionToken = requireSessionToken(tenantId);
+  const { data, error } = await supabase.functions.invoke<{ ok?: boolean; status?: CollectionStatus; failureReason?: string | null; error?: string }>(
+    "pay-portal-check-collection",
+    { body: { tenantId, collectionId, sessionToken } }
+  );
+  if (error || !data?.ok || !data?.status) {
+    // The active check itself failed to run (network blip, function down, etc.) — fall back to
+    // whatever our own row says rather than surfacing a raw edge-function error mid-poll.
+    return getStoredCollectionStatus(tenantId, collectionId);
+  }
+  return { status: data.status, failureReason: data.failureReason ?? null };
 }
 
 export async function submitPortalMaintenanceReport(
