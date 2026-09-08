@@ -239,11 +239,8 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
       {/* Header — logo + notifications, replacing the old full-width topbar. Lives inside the
           sidebar's own card rather than a separate strip across the whole page. */}
       <div ref={notificationsRef} className="relative flex items-center justify-between px-4 py-4">
-        <Link to="/dashboard" onClick={() => setOpen(false)} className="flex items-center gap-1.5">
-          <div className="flex h-6 w-6 items-center justify-center rounded bg-ink">
-            <span className="font-display text-[11px] font-bold text-paper">I</span>
-          </div>
-          <span className="font-display text-sm font-semibold tracking-tight text-ink">Instay</span>
+        <Link to="/dashboard" onClick={() => setOpen(false)} className="flex items-center">
+          <img src="https://cdn.brandfetch.io/idkuvXnjOH/theme/dark/logo.svg?c=1dxbfHSJFAPEGdCLU4o5B" alt="Instay Manage" className="h-7" />
         </Link>
 
         <div className="flex items-center gap-1">
