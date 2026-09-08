@@ -1,4 +1,5 @@
 import { supabase } from "./supabaseClient";
+import { edgeFunctionErrorMessage } from "./functionsError";
 import type { Tables } from "./database.types";
 
 export type Bank = Tables<"banks">;
@@ -31,7 +32,7 @@ export async function resolveBankAccount(accountNumber: string, bankCode: string
     { body: { accountNumber, bankCode } }
   );
   if (error || !data?.accountName) {
-    throw new Error(data?.error ?? error?.message ?? "Couldn't resolve that account — check the account number and bank.");
+    throw new Error(await edgeFunctionErrorMessage(error, "Couldn't resolve that account — check the account number and bank."));
   }
   return data.accountName;
 }
@@ -47,7 +48,7 @@ export async function createPayoutRecipient(params: {
     { body: params }
   );
   if (error || !data?.recipient) {
-    throw new Error(data?.error ?? error?.message ?? "Failed to save payout details.");
+    throw new Error(await edgeFunctionErrorMessage(error, "Failed to save payout details."));
   }
   return data.recipient;
 }
@@ -60,7 +61,7 @@ export async function sendPayout(propertyId: string, amount: number, narration?:
     body: { propertyId, amount, narration },
   });
   if (error || !data?.ok || !data?.payoutId) {
-    throw new Error(data?.error ?? error?.message ?? "Failed to send payout.");
+    throw new Error(await edgeFunctionErrorMessage(error, "Failed to send payout."));
   }
   return { payoutId: data.payoutId };
 }

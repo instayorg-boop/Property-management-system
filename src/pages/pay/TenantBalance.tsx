@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useLocation, Link } from "react-router-dom";
 import { CaretLeft, Wrench, DeviceMobile, CreditCard, CaretRight, ShieldCheck } from "@phosphor-icons/react";
 import { formatCurrency } from "../../landlord/TenantsContext";
@@ -76,8 +76,14 @@ export default function TenantBalance() {
   };
 
   // Auto-send on arrival, same as the design's "selecting a name triggers an OTP" — no extra click.
+  // Guarded with a ref (not just the `verified` check) so StrictMode's dev-only double-invoke of
+  // effects — or any other double-mount — can't fire two competing OTP requests for one visit;
+  // sendOtp() itself resets this per-tenant when the tenant/property actually changes.
+  const autoSentFor = useRef<string | null>(null);
   useEffect(() => {
-    if (verified) return;
+    if (verified || !tenantId) return;
+    if (autoSentFor.current === tenantId) return;
+    autoSentFor.current = tenantId;
     sendOtp();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [propertySlug, tenantId, verified]);

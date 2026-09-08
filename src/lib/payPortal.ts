@@ -1,4 +1,5 @@
 import { supabase } from "./supabaseClient";
+import { edgeFunctionErrorMessage } from "./functionsError";
 
 export type PortalTenantSummary = { id: string; name: string; room: string };
 
@@ -55,7 +56,7 @@ export async function requestPortalOtp(propertySlug: string, tenantId: string): 
     { body: { propertySlug, tenantId } }
   );
   if (error || !data?.ok || !data?.maskedPhone) {
-    throw new Error(data?.error ?? error?.message ?? "Failed to send a code. Try again.");
+    throw new Error(await edgeFunctionErrorMessage(error, "Failed to send a code. Try again."));
   }
   return { maskedPhone: data.maskedPhone, devCode: data.devCode };
 }
@@ -66,7 +67,7 @@ export async function verifyPortalOtp(propertySlug: string, tenantId: string, co
     { body: { propertySlug, tenantId, code } }
   );
   if (error || !data?.ok || !data?.sessionToken || !data?.expiresAt) {
-    throw new Error(data?.error ?? error?.message ?? "Incorrect code.");
+    throw new Error(await edgeFunctionErrorMessage(error, "Incorrect code."));
   }
   setPortalSessionToken(tenantId, data.sessionToken, data.expiresAt);
 }
