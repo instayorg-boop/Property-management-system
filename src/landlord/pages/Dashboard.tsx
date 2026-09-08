@@ -288,7 +288,7 @@ export default function Dashboard() {
       rawAmount: lencoAvailable,
       propertyId,
       date: `As of ${now.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`,
-      status: lencoConnected ? "Ready to withdraw" : "Connect a bank account to receive this",
+      status: lencoConnected ? "Ready to transfer" : "Connect a bank account to receive this",
       bankAccount: lencoConnected && bankName ? `${bankName}${accountNumber ? ` · •••• ${accountNumber.slice(-4)}` : ""}` : "Not connected",
       schedule: lencoConnected ? "Automatic via Lenco" : "Not set up yet",
     };
@@ -614,9 +614,9 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Upcoming payout */}
+          {/* Online payments balance */}
           <div className="rounded-lg border border-line bg-paper p-5">
-            <SectionLabel>Your next payout</SectionLabel>
+            <SectionLabel>Online payments balance</SectionLabel>
             {!dataReady ? (
               <div className="mt-3 space-y-2">
                 <Skeleton className="h-4 w-2/3" />
@@ -627,7 +627,7 @@ export default function Dashboard() {
             ) : payout ? (
               <>
                 <p className="mt-2 font-display text-base font-semibold text-ink">{payout.status}</p>
-                <p className="mt-1 text-xs text-muted">{payout.amount} will be paid into your bank account.</p>
+                <p className="mt-1 text-xs text-muted">{payout.amount} collected via mobile money, ready to transfer to your bank.</p>
                 <p className="mt-3 text-sm font-medium text-ink">{payout.date}</p>
                 <Button
                   variant="secondary"
@@ -635,7 +635,7 @@ export default function Dashboard() {
                   onClick={() => setPayoutOpen(true)}
                   className="mt-4 block w-full bg-mist text-center hover:bg-line/40"
                 >
-                  See payout details
+                  View balance
                 </Button>
               </>
             ) : (
@@ -644,8 +644,8 @@ export default function Dashboard() {
                   <WalletIcon size={22} weight="duotone" />
                 </span>
                 <div>
-                  <p className="text-xs font-semibold text-ink">No payout scheduled</p>
-                  <p className="mt-0.5 text-xs text-muted">Once you start collecting rent, your next payout will appear here.</p>
+                  <p className="text-xs font-semibold text-ink">Nothing to transfer yet</p>
+                  <p className="mt-0.5 text-xs text-muted">Rent paid online through your payment link will show up here.</p>
                 </div>
               </div>
             )}
