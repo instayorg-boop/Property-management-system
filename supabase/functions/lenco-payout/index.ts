@@ -9,11 +9,14 @@
 // the Lenco call itself fails outright (network error, wrong endpoint, etc.) — lenco-webhook then
 // moves it to "successful"/"failed" once Lenco confirms.
 //
-// STILL PLACEHOLDER on the actual Lenco call: the exact transfer/transaction endpoint for this
-// account hasn't been confirmed against its live API reference the way resolve-bank-account and
-// create-payout-recipient were (both had to be corrected after guessing wrong — see their file
-// comments). Calling LENCO_API_TRANSFER_PATH below with the wrong path will show up clearly as a
-// failed `payouts` row rather than silently doing nothing.
+// Endpoint confirmed against this account's live Lenco API reference (v2.0):
+//   POST https://api.lenco.co/access/v2/transfers/bank-account
+//   body: { accountId, amount, reference, narration?, transferRecipientId }
+//     - accountId: the LENCO ACCOUNT to debit from (your own Lenco wallet, not the recipient) —
+//       fetched from GET /access/v2/accounts below rather than hardcoded, since we don't have a
+//       reliable way to know it ahead of time and this account only has one Lenco account anyway.
+//     - transferRecipientId: payout_recipients.lenco_recipient_id, from create-payout-recipient.
+//     - reference: must be unique, alphanumeric plus -._  — payouts.id (a uuid) satisfies this.
 //
 // Deploy:  supabase functions deploy lenco-payout
 // Invoke:  supabase.functions.invoke("lenco-payout", { body: { propertyId, amount, narration? } })
@@ -114,20 +117,30 @@ Deno.serve(async (req) => {
     });
   }
 
-  // Unconfirmed endpoint — see the file-level comment. Update this path once verified against
-  // this account's live Lenco API reference (dashboard's API section), the same way
-  // resolve-bank-account and create-payout-recipient were confirmed.
-  const LENCO_API_TRANSFER_PATH = "https://api.lenco.co/access/v2/transactions";
-
   try {
-    const lencoResponse = await fetch(LENCO_API_TRANSFER_PATH, {
+    const accountsResponse = await fetch("https://api.lenco.co/access/v2/accounts", {
+      headers: { Authorization: `Bearer ${lencoSecretKey}`, accept: "application/json" },
+    });
+    const accountsJson = await accountsResponse.json();
+    const accountId: string | undefined = accountsJson.data?.[0]?.id;
+    if (!accountsResponse.ok || !accountId) {
+      await supabase.from("payouts").update({ status: "failed", failure_reason: "Couldn't find a Lenco account to pay out from" }).eq("id", payoutRow.id);
+      return new Response(
+        JSON.stringify({ error: "Couldn't find a Lenco account to pay out from", detail: accountsJson }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const lencoResponse = await fetch("https://api.lenco.co/access/v2/transfers/bank-account", {
       method: "POST",
       headers: { Authorization: `Bearer ${lencoSecretKey}`, "Content-Type": "application/json", accept: "application/json" },
       body: JSON.stringify({
-        recipientId: recipient.lenco_recipient_id,
+        accountId,
         amount,
         reference: payoutRow.id,
         narration: payoutRow.narration,
+        transferRecipientId: recipient.lenco_recipient_id,
+        country: "zm",
       }),
     });
     const lencoJson = await lencoResponse.json();
