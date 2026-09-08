@@ -248,9 +248,13 @@ export default function TenantProfile() {
               <div className="flex flex-col items-center text-center">
                 <Avatar name={tenant.name} size={64} />
                 <p className="mt-3 text-base font-semibold text-ink">{tenant.name}</p>
-                <p className="mt-0.5 text-xs text-muted">
-                  {tenant.active ? `Tenant since ${tenant.moveInDate}` : `Moved out ${tenant.moveOutDate ?? ""}`}
-                </p>
+                {tenant.active ? (
+                  <p className="mt-0.5 text-xs text-muted">Tenant since {tenant.moveInDate}</p>
+                ) : (
+                  <span className="mt-1.5 rounded-full bg-red-50 px-2.5 py-0.5 text-[11px] font-semibold text-red-600">
+                    Moved out {tenant.moveOutDate ?? ""}
+                  </span>
+                )}
               </div>
 
               <div className="mt-5 space-y-1 border-t border-line pt-4">
