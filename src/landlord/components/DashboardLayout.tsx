@@ -65,11 +65,11 @@ function Shell() {
   }, [open, setOpen]);
 
   return (
-    <div className={`flex h-screen flex-col overflow-hidden bg-mist p-0 lg:p-3 ${isDark ? "theme-dark" : ""}`}>
-      {/* Sidebar and content live inside one unified card, matching a normal dashboard shell —
-          no separate full-width topbar above them. The rounded/bordered frame is a desktop
-          affordance (mobile has no room to spare for the inset), so it only kicks in at lg. */}
-      <div className="relative flex flex-1 overflow-hidden lg:rounded-2xl lg:border lg:border-line lg:shadow-sm">
+    <div className={`flex h-screen flex-col overflow-hidden ${isDark ? "theme-dark" : ""}`}>
+      {/* Standard full-bleed dashboard shell: sidebar and content sit flush, edge to edge, no
+          outer padding, no rounded/bordered frame around the pair — just plain colour contrast
+          (gray sidebar, white content) doing the separating. */}
+      <div className="relative flex flex-1 overflow-hidden">
         {open && (
           <div
             className="fixed inset-0 z-40 bg-ink/40 lg:hidden"
@@ -79,7 +79,7 @@ function Shell() {
         )}
         <Sidebar ref={drawerRef} />
 
-        <main ref={mainRef} className="flex-1 overflow-y-auto bg-mist">
+        <main ref={mainRef} className="flex-1 overflow-y-auto bg-paper">
           {/* Mobile-only menu trigger, in the normal document flow (not floating) — the sidebar's
               own header (logo + notifications) replaced the old topbar, but small screens still
               need a way to open the off-canvas drawer, and it needs real layout space reserved

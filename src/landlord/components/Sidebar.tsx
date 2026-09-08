@@ -21,6 +21,7 @@ import {
 import { useSidebar } from "../SidebarContext";
 import { useMaintenance } from "../MaintenanceContext";
 import { useTenants } from "../TenantsContext";
+import { useSettings } from "../SettingsContext";
 import NotificationsPanel from "./NotificationsPanel";
 import { signOut as signOutRequest } from "../../lib/auth";
 
@@ -93,10 +94,6 @@ const groups: { label: string; items: NavItem[] }[] = [
   },
 ];
 
-/** Account is its own group at the bottom (not part of the scrollable nav above) so it's always
- * reachable without scrolling, matching the fixed footer pattern of a typical dashboard sidebar. */
-const accountItems: NavItem[] = [{ label: "Account", to: "/settings", icon: "account" }, { label: "Settings", to: "/settings", icon: "settings" }];
-
 /** Message-app-style count badge — shown at the trailing end of the row, not up front by the icon,
  * so it reads like a notification rather than a label. Caps the display at 99+. */
 function AttentionBadge({ count }: { count: number }) {
@@ -121,7 +118,7 @@ function NavRow({ item, onNavigate, attentionCount }: { item: NavItem; onNavigat
         data-tour={`nav-${item.icon}`}
         className={({ isActive }) =>
           `relative flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-            isActive ? "font-semibold text-brand" : "text-muted hover:bg-mist hover:text-ink"
+            isActive ? "font-semibold text-brand" : "text-muted hover:bg-paper hover:text-ink"
           }`
         }
       >
@@ -151,7 +148,7 @@ function NavRow({ item, onNavigate, attentionCount }: { item: NavItem; onNavigat
         type="button"
         onClick={() => setOpen((o) => !o)}
         className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors ${
-          isOnPage ? "font-semibold text-brand" : "text-muted hover:bg-mist hover:text-ink"
+          isOnPage ? "font-semibold text-brand" : "text-muted hover:bg-paper hover:text-ink"
         }`}
       >
         <ItemIcon size={18} weight="duotone" />
@@ -186,17 +183,24 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
   const { open, setOpen } = useSidebar();
   const { reports } = useMaintenance();
   const { tenants } = useTenants();
+  const { propertyName } = useSettings();
   const navigate = useNavigate();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const notificationsRef = useRef<HTMLDivElement>(null);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const accountRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!notificationsOpen) return;
+    if (!notificationsOpen && !accountOpen) return;
     const onClick = (e: MouseEvent) => {
       if (notificationsRef.current && !notificationsRef.current.contains(e.target as Node)) setNotificationsOpen(false);
+      if (accountRef.current && !accountRef.current.contains(e.target as Node)) setAccountOpen(false);
     };
     const onEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setNotificationsOpen(false);
+      if (e.key === "Escape") {
+        setNotificationsOpen(false);
+        setAccountOpen(false);
+      }
     };
     document.addEventListener("mousedown", onClick);
     document.addEventListener("keydown", onEscape);
@@ -204,7 +208,7 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
       document.removeEventListener("mousedown", onClick);
       document.removeEventListener("keydown", onEscape);
     };
-  }, [notificationsOpen]);
+  }, [notificationsOpen, accountOpen]);
 
   // How many things need a look on each nav item — shown as a count badge, not just a dot, so it's
   // clear at a glance how much is waiting rather than just that something is.
@@ -224,7 +228,7 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
       role="dialog"
       aria-modal={open ? true : undefined}
       aria-label="Navigation"
-      className={`fixed inset-y-0 left-0 z-50 flex h-full w-64 max-w-[85vw] shrink-0 flex-col border-r border-line bg-paper transition-transform duration-200 lg:static lg:z-auto lg:h-full lg:w-64 lg:max-w-none lg:translate-x-0 ${
+      className={`fixed inset-y-0 left-0 z-50 flex h-full w-64 max-w-[85vw] shrink-0 flex-col bg-mist transition-transform duration-200 lg:static lg:z-auto lg:h-full lg:w-64 lg:max-w-none lg:translate-x-0 ${
         open ? "translate-x-0" : "-translate-x-full"
       }`}
     >
@@ -243,7 +247,7 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
             type="button"
             aria-label="Notifications"
             onClick={() => setNotificationsOpen((v) => !v)}
-            className="relative flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-ink"
+            className="relative flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-paper hover:text-ink"
           >
             <BellIcon size={17} weight="duotone" />
             <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-brand" />
@@ -252,7 +256,7 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
             type="button"
             onClick={() => setOpen(false)}
             aria-label="Close menu"
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-ink lg:hidden"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-paper hover:text-ink lg:hidden"
           >
             <X size={16} weight="bold" />
           </button>
@@ -281,34 +285,67 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
         ))}
       </nav>
 
-      {/* Footer groups — Account and Other, always reachable without scrolling the nav above. */}
-      <div className="border-t border-line px-3 py-3">
-        <p className="px-3 pb-1.5 text-[11px] font-semibold tracking-wide text-muted/70 uppercase">Account</p>
-        <div className="space-y-0.5">
-          {accountItems.map((item) => (
-            <NavRow key={item.label} item={item} onNavigate={() => setOpen(false)} attentionCount={0} />
-          ))}
-        </div>
+      {/* Compact account trigger — a small icon, not a permanent list of links. Everything that
+          used to be separate footer rows (Settings, Help, Log out) now lives inside the popup
+          this opens, anchored above the trigger since it's at the very bottom of the sidebar. */}
+      <div ref={accountRef} className="relative border-t border-line px-3 py-3">
+        <button
+          type="button"
+          onClick={() => setAccountOpen((v) => !v)}
+          aria-label="Account menu"
+          aria-expanded={accountOpen}
+          className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-paper"
+        >
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-paper text-muted">
+            <UserCircle size={20} weight="fill" />
+          </span>
+          <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">{propertyName}</span>
+        </button>
 
-        <p className="px-3 pt-3 pb-1.5 text-[11px] font-semibold tracking-wide text-muted/70 uppercase">Other</p>
-        <div className="space-y-0.5">
-          <Link
-            to="/help"
-            onClick={() => setOpen(false)}
-            className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-muted transition-colors hover:bg-mist hover:text-ink"
-          >
-            <Lifebuoy size={18} weight="duotone" />
-            Help & Support
-          </Link>
-          <button
-            type="button"
-            onClick={handleSignOut}
-            className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
-          >
-            <SignOut size={18} weight="duotone" />
-            Log out
-          </button>
-        </div>
+        {accountOpen && (
+          <div className="absolute bottom-full left-3 z-10 mb-2 w-56 overflow-hidden rounded-2xl border border-line bg-paper shadow-card">
+            <div className="px-4 pt-3.5 pb-3">
+              <p className="truncate text-sm font-semibold text-ink">{propertyName}</p>
+              <p className="text-xs text-muted">Property account</p>
+            </div>
+            <div className="h-px bg-line" />
+            <div className="p-1.5">
+              <Link
+                to="/settings"
+                onClick={() => {
+                  setAccountOpen(false);
+                  setOpen(false);
+                }}
+                className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist"
+              >
+                <GearSix size={16} weight="duotone" />
+                Settings
+              </Link>
+              <Link
+                to="/help"
+                onClick={() => {
+                  setAccountOpen(false);
+                  setOpen(false);
+                }}
+                className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist"
+              >
+                <Lifebuoy size={16} weight="duotone" />
+                Help & Support
+              </Link>
+            </div>
+            <div className="h-px bg-line" />
+            <div className="p-1.5">
+              <button
+                type="button"
+                onClick={handleSignOut}
+                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+              >
+                <SignOut size={16} weight="duotone" />
+                Log out
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
