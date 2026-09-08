@@ -173,7 +173,6 @@ export default function Settings() {
     landlordPhone, setLandlordPhone,
     paymentMethods, setPaymentMethods,
     properties, addProperty,
-    managementFeeRate, setManagementFeeRate,
     billingPeriod, setBillingPeriod,
     dueDay, setDueDay,
     gracePeriodDays, setGracePeriodDays,
@@ -562,20 +561,6 @@ export default function Settings() {
                       Edit payout details
                     </Button>
                   </Row>
-                  <Row
-                    label="Management fee (%)"
-                    desc="Taken off gross rent before the owner payout statement calculates net to owner."
-                  >
-                    <input
-                      type="number"
-                      min={0}
-                      max={100}
-                      value={Math.round(managementFeeRate * 100)}
-                      onChange={(e) => { setManagementFeeRate(Math.min(100, Math.max(0, Number(e.target.value) || 0)) / 100); flash(); }}
-                      className={fieldCls}
-                    />
-                  </Row>
-
                   <div className="py-5">
                     <p className="text-sm font-medium text-ink">Payment methods</p>
                     <p className="mt-1 max-w-sm text-xs text-muted">Shown to tenants on invoices, in the "How to pay" section.</p>

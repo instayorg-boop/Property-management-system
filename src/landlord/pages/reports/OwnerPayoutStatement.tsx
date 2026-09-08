@@ -3,7 +3,6 @@ import { CaretLeft, CaretRight } from "@phosphor-icons/react";
 import PageHeader from "../../components/PageHeader";
 import { useExpenses } from "../../ExpensesContext";
 import { useCollectedRent } from "../../TenantsContext";
-import { useSettings } from "../../SettingsContext";
 import { ReportCard, currency } from "./shared";
 
 function monthLabel(date: Date) {
@@ -16,7 +15,6 @@ function periodKeyFor(date: Date) {
 
 export default function OwnerPayoutStatement() {
   const { expenses, categoryName } = useExpenses();
-  const { managementFeeRate } = useSettings();
   const liveCollectedRent = useCollectedRent();
 
   const [monthOffset, setMonthOffset] = useState(0);
@@ -34,9 +32,8 @@ export default function OwnerPayoutStatement() {
 
   const currentMonthExpenses = useMemo(() => expenses.filter((e) => e.date.startsWith(periodKey)), [expenses, periodKey]);
 
-  const managementFee = (grossCollected ?? 0) * managementFeeRate;
   const expensesTotal = currentMonthExpenses.reduce((sum, e) => sum + e.amount, 0);
-  const netToOwner = grossCollected === null ? null : grossCollected - managementFee - expensesTotal;
+  const netToOwner = grossCollected === null ? null : grossCollected - expensesTotal;
 
   return (
     <>
@@ -44,7 +41,7 @@ export default function OwnerPayoutStatement() {
       <div className="px-4 sm:px-8 pb-10">
         <ReportCard title="Owner Payout Statement" audience="Property Owner">
           <div className="flex items-center justify-between gap-3">
-            <p className="text-xs text-muted">Gross rent collected minus management fees and logged expenses → net balance due to the landlord.</p>
+            <p className="text-xs text-muted">Gross rent collected minus logged expenses → net balance due to the landlord.</p>
             <div className="flex shrink-0 items-center gap-1 rounded-lg border border-line bg-paper px-1.5 py-1">
               <button
                 type="button"
@@ -79,10 +76,6 @@ export default function OwnerPayoutStatement() {
               <div className="flex items-center justify-between px-4 py-3">
                 <span className="text-sm text-ink">Gross rent collected</span>
                 <span className="text-sm font-medium text-ink">{grossCollected === null ? "—" : currency(grossCollected)}</span>
-              </div>
-              <div className="flex items-center justify-between px-4 py-3">
-                <span className="text-sm text-muted">Less management fee ({Math.round(managementFeeRate * 100)}%)</span>
-                <span className="text-sm text-muted">{grossCollected === null ? "—" : `-${currency(managementFee)}`}</span>
               </div>
               <div className="flex items-center justify-between px-4 py-3">
                 <span className="text-sm text-muted">Less logged expenses ({currentMonthExpenses.length})</span>

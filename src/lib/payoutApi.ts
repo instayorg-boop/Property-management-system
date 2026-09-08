@@ -53,6 +53,23 @@ export async function createPayoutRecipient(params: {
   return data.recipient;
 }
 
+/** What's actually available to withdraw via Lenco — real money that flowed through Lenco
+ * (successful mobile-money collections), minus what's already been paid out or is mid-transfer.
+ * Deliberately NOT the same figure as the Owner Payout Statement's accounting view: no management
+ * fee, no expenses subtracted, and manually-logged/cash payments never count here at all — that
+ * money never touched Lenco, so there's nothing sitting there to withdraw for it. */
+export async function getLencoBalance(propertyId: string): Promise<{ collected: number; paidOut: number; available: number }> {
+  const [{ data: collectedRows, error: collectedError }, { data: paidRows, error: paidError }] = await Promise.all([
+    supabase.from("collections").select("amount").eq("property_id", propertyId).eq("status", "successful"),
+    supabase.from("payouts").select("amount").eq("property_id", propertyId).in("status", ["successful", "processing"]),
+  ]);
+  if (collectedError) throw collectedError;
+  if (paidError) throw paidError;
+  const collected = (collectedRows ?? []).reduce((sum, r) => sum + r.amount, 0);
+  const paidOut = (paidRows ?? []).reduce((sum, r) => sum + r.amount, 0);
+  return { collected, paidOut, available: collected - paidOut };
+}
+
 /** Sends a real transfer to the property's registered payout recipient. The exact Lenco transfer
  * endpoint isn't confirmed yet (see supabase/functions/lenco-payout's file comment) — this can fail
  * with a real error until that's verified, which is why callers must show `err.message`, not assume success. */

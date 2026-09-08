@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import LogPaymentModal from "../components/LogPaymentModal";
@@ -15,7 +15,7 @@ import { useTenants, useCollectedRent, formatCurrency, type Tenant } from "../Te
 import { useMaintenance } from "../MaintenanceContext";
 import { useRoomsView } from "../RoomsContext";
 import { useSettings } from "../SettingsContext";
-import { useExpenses } from "../ExpensesContext";
+import { getLencoBalance } from "../../lib/payoutApi";
 import {
   ArrowRight as ArrowIcon,
   Wrench as WrenchIcon,
@@ -190,8 +190,7 @@ export default function Dashboard() {
   const { tenants, logPayment, moveOutTenant, isReady: tenantsReady } = useTenants();
   const { reports } = useMaintenance();
   const rooms = useRoomsView();
-  const { landlordName, managementFeeRate, lencoConnected, bankName, accountNumber, propertyId, isReady: settingsReady } = useSettings();
-  const { expenses } = useExpenses();
+  const { landlordName, lencoConnected, bankName, accountNumber, propertyId, isReady: settingsReady } = useSettings();
   const totalCollected = useCollectedRent();
   const navigate = useNavigate();
   const dataReady = tenantsReady && settingsReady;
@@ -262,24 +261,38 @@ export default function Dashboard() {
     return items;
   }, [tenants, reports]);
 
-  // Same net-to-owner math as the Owner Payout Statement report: gross rent collected this month,
-  // minus the management fee, minus this month's logged expenses.
+  // What's actually sitting in Lenco, ready to withdraw — real mobile-money collections minus
+  // whatever's already been paid out. Deliberately NOT gross-collected-minus-fee-minus-expenses
+  // (that's the Owner Payout Statement's separate accounting view): a cash payment a landlord logs
+  // manually never touches Lenco, so it has nothing to contribute here, and there's no fee or
+  // expense deduction — this figure is just "how much money can I actually pull out right now."
+  const [lencoAvailable, setLencoAvailable] = useState<number | null>(null);
+  useEffect(() => {
+    if (!propertyId) return;
+    let cancelled = false;
+    getLencoBalance(propertyId)
+      .then(({ available }) => {
+        if (!cancelled) setLencoAvailable(available);
+      })
+      .catch((e) => console.error("Failed to load Lenco balance", e));
+    return () => {
+      cancelled = true;
+    };
+  }, [propertyId]);
+
   const payout = useMemo<UpcomingPayout | null>(() => {
-    if (totalCollected <= 0) return null;
+    if (!lencoAvailable || lencoAvailable <= 0) return null;
     const now = new Date();
-    const periodKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    const expensesTotal = expenses.filter((e) => e.date.startsWith(periodKey)).reduce((sum, e) => sum + e.amount, 0);
-    const netToOwner = totalCollected - totalCollected * managementFeeRate - expensesTotal;
     return {
-      amount: formatCurrency(netToOwner),
-      rawAmount: netToOwner,
+      amount: formatCurrency(lencoAvailable),
+      rawAmount: lencoAvailable,
       propertyId,
       date: `As of ${now.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`,
       status: lencoConnected ? "Ready to withdraw" : "Connect a bank account to receive this",
       bankAccount: lencoConnected && bankName ? `${bankName}${accountNumber ? ` · •••• ${accountNumber.slice(-4)}` : ""}` : "Not connected",
       schedule: lencoConnected ? "Automatic via Lenco" : "Not set up yet",
     };
-  }, [totalCollected, expenses, managementFeeRate, lencoConnected, bankName, accountNumber, propertyId]);
+  }, [lencoAvailable, lencoConnected, bankName, accountNumber, propertyId]);
 
   const [paymentStep, setPaymentStep] = useState<PaymentStep | null>(null);
   const [payingTenant, setPayingTenant] = useState<Tenant | null>(null);
