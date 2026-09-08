@@ -457,33 +457,8 @@ export default function Maintenance() {
       <PageHeader title="Maintenance" />
 
       <div className="space-y-5 px-4 sm:px-8 pb-10">
-        {/* Top actions */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-2 rounded-lg border border-line bg-paper px-3 py-2">
-              <SearchIcon />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search by location or description"
-                className="w-56 bg-transparent text-sm outline-none placeholder:text-muted"
-              />
-            </div>
-            <div className="flex gap-2 overflow-x-auto">
-              {groupFilterOptions.map((o) => (
-                <button
-                  key={o.value}
-                  type="button"
-                  onClick={() => setGroupFilter(o.value)}
-                  className={`shrink-0 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors ${
-                    groupFilter === o.value ? "bg-ink text-paper" : "border border-line text-muted hover:bg-mist"
-                  }`}
-                >
-                  {o.label}
-                </button>
-              ))}
-            </div>
-          </div>
+        {/* Add stands alone on its own row; search + filters sit on the row below it, not beside it. */}
+        <div className="flex items-center justify-end">
           <button
             type="button"
             onClick={() => setAddingRequest(true)}
@@ -491,6 +466,32 @@ export default function Maintenance() {
           >
             + Add maintenance request
           </button>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 rounded-lg border border-line bg-paper px-3 py-2">
+            <SearchIcon />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search by location or description"
+              className="w-56 bg-transparent text-sm outline-none placeholder:text-muted"
+            />
+          </div>
+          <div className="flex gap-2 overflow-x-auto">
+            {groupFilterOptions.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                onClick={() => setGroupFilter(o.value)}
+                className={`shrink-0 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors ${
+                  groupFilter === o.value ? "bg-ink text-paper" : "border border-line text-muted hover:bg-mist"
+                }`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Grouped by status, each in its own collapsible section — collapse a group to focus on
