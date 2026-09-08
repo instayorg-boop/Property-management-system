@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Modal from "./Modal";
+import Button from "./Button";
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -29,13 +30,9 @@ export default function LogPaymentModal({
       title="Log payment"
       description={`${tenantName} · ${room}`}
       footer={
-        <button
-          type="button"
-          onClick={onConfirm}
-          className="w-full rounded-lg bg-brand py-3 text-sm font-medium text-paper transition-transform hover:scale-[1.01]"
-        >
+        <Button variant="primary" onClick={onConfirm} className="w-full py-3">
           Confirm payment
-        </button>
+        </Button>
       }
     >
       <div className="space-y-4">

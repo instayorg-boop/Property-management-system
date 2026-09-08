@@ -9,6 +9,7 @@ import { useTenants, formatCurrency } from "../TenantsContext";
 import { Paperclip, MagnifyingGlass, GearSix, CaretLeft, CaretRight, DownloadSimple, Receipt, Wallet, ChartPieSlice } from "@phosphor-icons/react";
 import { Skeleton, SkeletonRow } from "../components/Skeleton";
 import MetricCard from "../components/MetricCard";
+import Button from "../components/Button";
 
 function PaperclipIcon() {
   return <Paperclip size={14} weight="duotone" />;
@@ -78,17 +79,16 @@ function ManageCategoriesModal({ onClose }: { onClose: () => void }) {
             placeholder="New category name"
             className="flex-1 rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
           />
-          <button
-            type="button"
+          <Button
+            variant="primary"
             onClick={() => {
               if (!newName.trim()) return;
               addCategory(newName.trim());
               setNewName("");
             }}
-            className="rounded-lg bg-brand px-4 text-sm font-medium text-paper"
           >
             Add
-          </button>
+          </Button>
         </div>
       }
     >
@@ -265,33 +265,28 @@ export default function Expenses() {
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              className="gap-1.5"
               onClick={() => downloadCsv(`expenses-${month.replace(" ", "-")}.csv`, filtered, categoryName)}
-              className="flex items-center gap-1.5 rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist"
             >
               <DownloadSimple size={14} weight="bold" />
               Export
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowCategories(true)}
-              className="flex items-center gap-1.5 rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist"
-            >
+            </Button>
+            <Button variant="secondary" className="gap-1.5" onClick={() => setShowCategories(true)}>
               <SettingsIcon />
               Categories
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="primary"
               onClick={() => {
                 setEditing(null);
                 setPrefill(undefined);
                 setShowForm(true);
               }}
-              className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-paper transition-transform hover:scale-[1.02]"
             >
               + Add expense
-            </button>
+            </Button>
           </div>
         </div>
 

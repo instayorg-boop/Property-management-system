@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Phone, NotePencil, Plus, CaretDown, CheckCircle, WarningCircle, PencilSimple } from "@phosphor-icons/react";
 import SlideOver from "./SlideOver";
+import Button from "./Button";
 import { useTenants, formatCurrency, type Tenant } from "../TenantsContext";
 import { useSettings } from "../SettingsContext";
 
@@ -76,20 +77,12 @@ export default function TenantPaymentDrawer({
       }
       footer={
         <div className="grid grid-cols-2 gap-2.5">
-          <button
-            type="button"
-            onClick={onMoveOut}
-            className="rounded-lg border border-red-200 py-3 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
-          >
+          <Button variant="danger" onClick={onMoveOut} className="border-red-200 py-3 hover:bg-red-50">
             Move out
-          </button>
-          <button
-            type="button"
-            onClick={onLogPayment}
-            className="rounded-lg bg-brand py-3 text-sm font-medium text-paper transition-transform hover:scale-[1.01]"
-          >
+          </Button>
+          <Button variant="primary" onClick={onLogPayment} className="py-3">
             Log payment
-          </button>
+          </Button>
         </div>
       }
     >
@@ -121,22 +114,14 @@ export default function TenantPaymentDrawer({
           <Phone size={15} weight="duotone" />
           Call
         </a>
-        <button
-          type="button"
-          onClick={() => setNoteOpen((v) => !v)}
-          className="flex items-center justify-center gap-1.5 rounded-lg border border-line bg-paper py-2.5 text-sm font-medium text-ink shadow-sm transition-colors hover:bg-mist"
-        >
+        <Button variant="secondary" onClick={() => setNoteOpen((v) => !v)} className="bg-paper py-2.5 shadow-sm">
           <NotePencil size={15} weight="duotone" />
           Add note
-        </button>
-        <button
-          type="button"
-          onClick={onLogPayment}
-          className="flex items-center justify-center gap-1.5 rounded-lg bg-brand py-2.5 text-sm font-medium text-paper shadow-sm transition-transform hover:scale-[1.02]"
-        >
+        </Button>
+        <Button variant="primary" onClick={onLogPayment} className="py-2.5 shadow-sm">
           <Plus size={15} weight="duotone" />
           Log payment
-        </button>
+        </Button>
       </div>
 
       {/* Note to self — free text, tucked away until "Add note" is tapped */}

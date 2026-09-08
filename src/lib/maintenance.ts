@@ -11,14 +11,13 @@ export type MaintenanceReport = {
   submittedAt: string;
   status: MaintenanceStatus;
   unread: boolean;
-  hasPhoto: boolean;
-  photoUrl?: string;
+  photoUrls: string[];
   resolvedAt?: string;
 };
 
 type ReportRow = Pick<
   Tables<"maintenance_reports">,
-  "id" | "tenant" | "location" | "description" | "submitted_at" | "status" | "unread" | "photo_url" | "resolved_at"
+  "id" | "tenant" | "location" | "description" | "submitted_at" | "status" | "unread" | "photo_urls" | "resolved_at"
 >;
 
 function toReport(row: ReportRow): MaintenanceReport {
@@ -30,8 +29,7 @@ function toReport(row: ReportRow): MaintenanceReport {
     submittedAt: row.submitted_at,
     status: row.status as MaintenanceStatus,
     unread: row.unread,
-    hasPhoto: !!row.photo_url,
-    photoUrl: row.photo_url ?? undefined,
+    photoUrls: row.photo_urls ?? [],
     resolvedAt: row.resolved_at ?? undefined,
   };
 }
@@ -42,7 +40,7 @@ const REPORT_LIST_LIMIT = 500;
 export async function listReports(propertyId: string): Promise<MaintenanceReport[]> {
   const { data, error } = await supabase
     .from("maintenance_reports")
-    .select("id, tenant, location, description, submitted_at, status, unread, photo_url, resolved_at")
+    .select("id, tenant, location, description, submitted_at, status, unread, photo_urls, resolved_at")
     .eq("property_id", propertyId)
     .order("submitted_at", { ascending: false })
     .limit(REPORT_LIST_LIMIT);
@@ -63,7 +61,7 @@ export async function insertReport(
     description: report.description,
     submitted_at: report.submittedAt,
     status: report.status,
-    photo_url: report.photoUrl ?? null,
+    photo_urls: report.photoUrls,
   });
   if (error) throw error;
 }
@@ -75,7 +73,7 @@ export async function updateReportRow(id: string, patch: Partial<Omit<Maintenanc
   if (patch.resolvedAt !== undefined) row.resolved_at = patch.resolvedAt ?? null;
   if (patch.location !== undefined) row.location = patch.location;
   if (patch.description !== undefined) row.description = patch.description;
-  if (patch.photoUrl !== undefined) row.photo_url = patch.photoUrl ?? null;
+  if (patch.photoUrls !== undefined) row.photo_urls = patch.photoUrls;
   const { error } = await supabase.from("maintenance_reports").update(row).eq("id", id);
   if (error) throw error;
 }

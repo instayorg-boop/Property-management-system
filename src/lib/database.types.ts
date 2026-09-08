@@ -432,6 +432,7 @@ export type Database = {
           id: string
           location: string
           photo_url: string | null
+          photo_urls: string[]
           property_id: string
           resolved_at: string | null
           status: string
@@ -445,6 +446,7 @@ export type Database = {
           id?: string
           location: string
           photo_url?: string | null
+          photo_urls?: string[]
           property_id: string
           resolved_at?: string | null
           status?: string
@@ -458,6 +460,7 @@ export type Database = {
           id?: string
           location?: string
           photo_url?: string | null
+          photo_urls?: string[]
           property_id?: string
           resolved_at?: string | null
           status?: string
@@ -900,6 +903,16 @@ export type Database = {
         Args: {
           p_description: string
           p_photo_url: string
+          p_property_slug: string
+          p_tenant_id: string
+        }
+        Returns: undefined
+      }
+      pay_portal_submit_maintenance_report_v2: {
+        Args: {
+          p_description: string
+          p_location: string
+          p_photo_urls?: string[]
           p_property_slug: string
           p_tenant_id: string
         }

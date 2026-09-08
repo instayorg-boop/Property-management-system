@@ -35,6 +35,7 @@ import {
   type VacantRoom,
 } from "../RoomsContext";
 import { Skeleton } from "../components/Skeleton";
+import Button from "../components/Button";
 
 // ---------- Status vocabulary ----------
 // Every status is expressed three ways — color, a written label, and an icon — so the board is
@@ -348,20 +349,12 @@ function OccupantBlock({
       </div>
       <p className="mt-1 text-xs text-muted">Moved in {occupant.moveInDate}</p>
       <div className="mt-3 flex gap-2">
-        <button
-          type="button"
-          onClick={onViewRecord}
-          className="flex-1 rounded-lg border border-line py-2 text-xs font-medium text-ink transition-colors hover:bg-mist"
-        >
+        <Button variant="secondary" size="sm" onClick={onViewRecord} className="flex-1">
           View full record
-        </button>
-        <button
-          type="button"
-          onClick={onLogPayment}
-          className="flex-1 rounded-lg bg-brand py-2 text-xs font-medium text-paper transition-transform hover:scale-[1.01]"
-        >
+        </Button>
+        <Button variant="primary" size="sm" onClick={onLogPayment} className="flex-1 hover:scale-[1.01]">
           Log payment
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -395,30 +388,18 @@ function RoomDetailDrawer({
       description={`${room.typeConfig.name} · ${room.beds.length} bed${room.beds.length === 1 ? "" : "s"}`}
       footer={
         room.status === "not-ready" ? (
-          <button
-            type="button"
-            onClick={onMarkReady}
-            className="w-full rounded-lg bg-brand py-3 text-sm font-medium text-paper transition-transform hover:scale-[1.01]"
-          >
+          <Button variant="primary" onClick={onMarkReady} className="w-full py-3 hover:scale-[1.01]">
             Mark as ready
-          </button>
+          </Button>
         ) : room.status === "vacant" ? (
           <div className="space-y-2">
             <div className="grid grid-cols-2 gap-2.5">
-              <button
-                type="button"
-                onClick={onMarkNotReady}
-                className="rounded-lg border border-line py-3 text-sm font-medium text-ink transition-colors hover:bg-mist"
-              >
+              <Button variant="secondary" onClick={onMarkNotReady} className="py-3">
                 Take out of service
-              </button>
-              <button
-                type="button"
-                onClick={onAssignTenant}
-                className="rounded-lg bg-brand py-3 text-sm font-medium text-paper transition-transform hover:scale-[1.01]"
-              >
+              </Button>
+              <Button variant="primary" onClick={onAssignTenant} className="py-3 hover:scale-[1.01]">
                 Assign tenant
-              </button>
+              </Button>
             </div>
             <button
               type="button"
@@ -430,13 +411,9 @@ function RoomDetailDrawer({
             </button>
           </div>
         ) : emptyBeds > 0 ? (
-          <button
-            type="button"
-            onClick={onAssignTenant}
-            className="w-full rounded-lg bg-brand py-3 text-sm font-medium text-paper transition-transform hover:scale-[1.01]"
-          >
+          <Button variant="primary" onClick={onAssignTenant} className="w-full py-3 hover:scale-[1.01]">
             Fill empty bed
-          </button>
+          </Button>
         ) : undefined
       }
     >
@@ -510,12 +487,12 @@ function ReassignConfirmModal({
       title="Move this tenant?"
       footer={
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist">
+          <Button variant="secondary" onClick={onClose}>
             Cancel
-          </button>
-          <button type="button" onClick={onConfirm} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-paper">
+          </Button>
+          <Button variant="primary" onClick={onConfirm}>
             Move tenant
-          </button>
+          </Button>
         </div>
       }
     >
@@ -556,17 +533,16 @@ function EditRoomTypeModal({
       description="Beds per room can't be changed here — that would affect rooms already assigned to tenants."
       footer={
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist">
+          <Button variant="secondary" onClick={onClose}>
             Cancel
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            variant="primary"
             onClick={() => canSave && onSave({ name: name.trim(), rent, depositAmount, depositRefundability })}
             disabled={!canSave}
-            className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-paper disabled:opacity-50"
           >
             Save changes
-          </button>
+          </Button>
         </div>
       }
     >
@@ -639,17 +615,17 @@ function ConfirmDeleteRoomTypeModal({
       title="Delete this room type?"
       footer={
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist">
+          <Button variant="secondary" onClick={onClose}>
             Cancel
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            variant="danger"
             onClick={onConfirm}
             disabled={roomCount > 0}
-            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-paper transition-colors hover:bg-red-700 disabled:opacity-50"
+            className="bg-red-600 text-paper hover:bg-red-700"
           >
             Delete
-          </button>
+          </Button>
         </div>
       }
     >
@@ -675,16 +651,12 @@ function ConfirmDeleteRoomModal({ number, onClose, onConfirm }: { number: string
       title={`Delete Room ${number}?`}
       footer={
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist">
+          <Button variant="secondary" onClick={onClose}>
             Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-paper transition-colors hover:bg-red-700"
-          >
+          </Button>
+          <Button variant="danger" onClick={onConfirm} className="bg-red-600 text-paper hover:bg-red-700">
             Delete
-          </button>
+          </Button>
         </div>
       }
     >
@@ -896,13 +868,9 @@ export default function Rooms() {
                 </button>
               ))}
             </div>
-            <button
-              type="button"
-              onClick={() => setAddingType(true)}
-              className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-paper transition-transform hover:scale-[1.02]"
-            >
+            <Button variant="primary" onClick={() => setAddingType(true)} className="hover:scale-[1.02]">
               + Add room type
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -932,13 +900,9 @@ export default function Rooms() {
               <p className="text-sm font-semibold text-ink">No room types yet</p>
               <p className="mt-0.5 text-xs text-muted">Add a room type to set up rent and deposit terms, then start adding rooms.</p>
             </div>
-            <button
-              type="button"
-              onClick={() => setAddingType(true)}
-              className="mt-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-paper transition-transform hover:scale-[1.02]"
-            >
+            <Button variant="primary" onClick={() => setAddingType(true)} className="mt-2 hover:scale-[1.02]">
               + Add room type
-            </button>
+            </Button>
           </div>
         ) : groups.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-line bg-paper py-16 text-center">
@@ -949,16 +913,16 @@ export default function Rooms() {
               <p className="text-sm font-semibold text-ink">No rooms match</p>
               <p className="mt-0.5 text-xs text-muted">Try a different search or status filter.</p>
             </div>
-            <button
-              type="button"
+            <Button
+              variant="secondary"
               onClick={() => {
                 setQuery("");
                 setStatusFilter("all");
               }}
-              className="mt-2 rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist"
+              className="mt-2"
             >
               Clear filters
-            </button>
+            </Button>
           </div>
         ) : (
           <div className="space-y-3">

@@ -16,6 +16,7 @@ import { useSettings } from "../SettingsContext";
 import { useInvoices, type InvoiceStatus } from "../InvoicesContext";
 import InvoicePDF, { type InvoiceDocData } from "./InvoicePDF";
 import Pagination, { DEFAULT_PAGE_SIZE } from "./Pagination";
+import Button from "./Button";
 import {
   slugify,
   calcTenantInvoice,
@@ -275,27 +276,27 @@ export default function GenerateInvoicesOverlay({
 
       {/* Actions — up top, next to the data they act on, not buried below a long table */}
       <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
+        <Button
+          variant="primary"
           onClick={sendAll}
           disabled={busy !== null || rows.length === 0}
-          className="flex items-center gap-1.5 rounded-lg bg-brand px-6 py-2.5 text-sm font-medium text-paper transition-transform hover:scale-[1.02] disabled:opacity-50 disabled:hover:scale-100"
+          className="gap-1.5 px-6 py-2.5"
         >
           <SendIcon size={14} weight="bold" />
           {busy === "send" ? "Sending…" : "Send all"}
-        </button>
+        </Button>
 
         <div className="relative" ref={menuRef}>
-          <button
-            type="button"
+          <Button
+            variant="secondary"
             onClick={() => setDownloadMenuOpen((v) => !v)}
             disabled={busy !== null || rows.length === 0}
-            className="flex items-center gap-1.5 rounded-lg border border-line px-4 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-mist disabled:opacity-50"
+            className="gap-1.5 px-4 py-2.5"
           >
             <DownloadIcon size={14} weight="bold" />
             {busy === "download-pdf" || busy === "download-zip" ? "Preparing…" : "Download all"}
             <CaretDownIcon size={12} weight="bold" />
-          </button>
+          </Button>
           <AnimatePresence>
             {downloadMenuOpen && (
               <motion.div
@@ -326,13 +327,9 @@ export default function GenerateInvoicesOverlay({
           </AnimatePresence>
         </div>
 
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded-lg border border-line px-4 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-mist"
-        >
+        <Button variant="secondary" onClick={onCancel} className="px-4 py-2.5">
           Cancel
-        </button>
+        </Button>
       </div>
 
       {/* Invoice table */}

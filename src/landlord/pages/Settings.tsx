@@ -26,6 +26,7 @@ import {
 } from "@phosphor-icons/react";
 import PageHeader from "../components/PageHeader";
 import ThemeSwitcher from "../components/ThemeSwitcher";
+import Button from "../components/Button";
 import { useSettings, type NotificationPrefs, type PaymentMethod } from "../SettingsContext";
 
 function CopyIcon() {
@@ -462,22 +463,14 @@ export default function Settings() {
               <div className="w-full max-w-md space-y-3">
                 <div className="flex items-center gap-2 rounded-lg border border-line bg-mist px-3 py-2">
                   <span className="flex-1 truncate text-sm text-muted">{paymentLink}</span>
-                  <button
-                    type="button"
-                    onClick={copyLink}
-                    className="flex items-center gap-1.5 rounded-md border border-line bg-paper px-2.5 py-1.5 text-xs font-medium text-ink hover:bg-mist"
-                  >
+                  <Button variant="secondary" size="sm" className="gap-1.5" onClick={copyLink}>
                     <CopyIcon />
                     {linkCopied ? "Copied" : "Copy"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowQr((v) => !v)}
-                    className="flex items-center gap-1.5 rounded-md border border-line bg-paper px-2.5 py-1.5 text-xs font-medium text-ink hover:bg-mist"
-                  >
+                  </Button>
+                  <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => setShowQr((v) => !v)}>
                     <QrIcon />
                     QR code
-                  </button>
+                  </Button>
                 </div>
                 {showQr && (
                   <div className="flex flex-col items-center gap-2 rounded-lg border border-line bg-paper p-5">
@@ -506,12 +499,7 @@ export default function Settings() {
                       </div>
                       <div className="flex items-center gap-3">
                         <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-600">Connected</span>
-                        <button
-                          type="button"
-                          className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist"
-                        >
-                          Manage in Lenco
-                        </button>
+                        <Button variant="secondary">Manage in Lenco</Button>
                       </div>
                     </div>
                   </div>
@@ -527,13 +515,9 @@ export default function Settings() {
                     <span className="text-sm font-medium text-ink">Every {payoutDay}</span>
                   </Row>
                   <Row label="Payout details">
-                    <button
-                      type="button"
-                      onClick={startEditingBank}
-                      className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist"
-                    >
+                    <Button variant="secondary" onClick={startEditingBank}>
                       Edit payout details
-                    </button>
+                    </Button>
                   </Row>
                   <Row
                     label="Management fee (%)"
@@ -652,13 +636,9 @@ export default function Settings() {
                         ))}
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => setPayoutStep(1)}
-                        className="mt-8 rounded-lg bg-brand px-8 py-2.5 text-sm font-medium text-paper transition-transform hover:scale-[1.02]"
-                      >
+                      <Button variant="primary" className="mt-8 px-8 py-2.5" onClick={() => setPayoutStep(1)}>
                         Set up
-                      </button>
+                      </Button>
                     </motion.div>
                   ) : (
                     <motion.div
@@ -716,22 +696,18 @@ export default function Settings() {
                           </div>
                           <div className="mt-5 flex gap-2">
                             {editingBank && (
-                              <button
-                                type="button"
-                                onClick={() => setEditingBank(false)}
-                                className="flex-1 rounded-lg border border-line py-2.5 text-sm font-medium text-ink transition-colors hover:bg-mist"
-                              >
+                              <Button variant="secondary" className="flex-1 py-2.5" onClick={() => setEditingBank(false)}>
                                 Cancel
-                              </button>
+                              </Button>
                             )}
-                            <button
-                              type="button"
+                            <Button
+                              variant="primary"
+                              className="flex-1 py-2.5"
                               disabled={!formBankName.trim() || !formAccountNumber.trim() || !formAccountHolderName.trim()}
                               onClick={() => setPayoutStep(2)}
-                              className="flex-1 rounded-lg bg-brand py-2.5 text-sm font-medium text-paper transition-transform hover:scale-[1.01] disabled:opacity-50 disabled:hover:scale-100"
                             >
                               Continue
-                            </button>
+                            </Button>
                           </div>
                         </>
                       )}
@@ -755,15 +731,12 @@ export default function Settings() {
                             </div>
                           </div>
                           <div className="mt-5 flex gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setPayoutStep(1)}
-                              className="flex-1 rounded-lg border border-line py-2.5 text-sm font-medium text-ink transition-colors hover:bg-mist"
-                            >
+                            <Button variant="secondary" className="flex-1 py-2.5" onClick={() => setPayoutStep(1)}>
                               Back
-                            </button>
-                            <button
-                              type="button"
+                            </Button>
+                            <Button
+                              variant="primary"
+                              className="flex-1 py-2.5"
                               onClick={() => {
                                 setBankName(formBankName.trim());
                                 setAccountNumber(formAccountNumber.trim());
@@ -777,10 +750,9 @@ export default function Settings() {
                                   setPayoutStep(3);
                                 }
                               }}
-                              className="flex-1 rounded-lg bg-brand py-2.5 text-sm font-medium text-paper transition-transform hover:scale-[1.01]"
                             >
                               {editingBank ? "Save changes" : "Confirm & connect"}
-                            </button>
+                            </Button>
                           </div>
                         </>
                       )}
@@ -794,13 +766,9 @@ export default function Settings() {
                           <p className="mt-1.5 text-sm text-muted">
                             All rent collected through your payment link will now be paid out to {formBankName} · •••• {formAccountNumber.slice(-4)}.
                           </p>
-                          <button
-                            type="button"
-                            onClick={() => setPayoutStep(0)}
-                            className="mt-5 rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-paper transition-transform hover:scale-[1.02]"
-                          >
+                          <Button variant="primary" className="mt-5 py-2.5" onClick={() => setPayoutStep(0)}>
                             Done
-                          </button>
+                          </Button>
                         </>
                       )}
                     </motion.div>
@@ -862,9 +830,9 @@ export default function Settings() {
             >
               <div className="flex items-center gap-3">
                 <span className="text-sm font-medium text-ink">{subscriptionPlan || "—"}</span>
-                <button type="button" className="rounded-lg bg-brand px-4 py-2 text-xs font-medium text-paper">
+                <Button variant="primary" size="sm">
                   Upgrade
-                </button>
+                </Button>
               </div>
             </Row>
           )}
@@ -892,13 +860,9 @@ export default function Settings() {
                 <ThemeSwitcher />
               </Row>
               <Row label="Sign out" desc="You'll need to sign in again on this device.">
-                <button
-                  type="button"
-                  onClick={() => navigate("/sign-in")}
-                  className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
-                >
+                <Button variant="danger" onClick={() => navigate("/sign-in")}>
                   Sign out
-                </button>
+                </Button>
               </Row>
             </>
           )}

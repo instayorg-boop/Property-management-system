@@ -60,14 +60,16 @@ export async function logPortalPayment(tenantId: string, amount: number, label?:
 export async function submitPortalMaintenanceReport(
   propertySlug: string,
   tenantId: string,
+  location: string,
   description: string,
-  photoUrl?: string
+  photoUrls: string[] = []
 ): Promise<void> {
-  const { error } = await supabase.rpc("pay_portal_submit_maintenance_report", {
+  const { error } = await supabase.rpc("pay_portal_submit_maintenance_report_v2", {
     p_property_slug: propertySlug,
     p_tenant_id: tenantId,
+    p_location: location,
     p_description: description,
-    p_photo_url: photoUrl ?? "",
+    p_photo_urls: photoUrls,
   });
   if (error) throw error;
 }

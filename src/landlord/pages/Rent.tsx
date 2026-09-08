@@ -16,6 +16,7 @@ import { LinkSimple, MagnifyingGlass, Plus, CaretLeft, CaretRight, Receipt, Dots
 import Pagination, { DEFAULT_PAGE_SIZE } from "../components/Pagination";
 import { Skeleton, SkeletonRow } from "../components/Skeleton";
 import MetricCard from "../components/MetricCard";
+import Button from "../components/Button";
 
 function LinkIcon() {
   return <LinkSimple size={14} weight="bold" />;
@@ -380,14 +381,10 @@ export default function Rent() {
                 </div>
               )}
             </div>
-            <button
-              type="button"
-              onClick={() => setPaymentStep("search")}
-              className="flex items-center gap-1.5 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-paper transition-transform hover:scale-[1.02]"
-            >
+            <Button variant="primary" onClick={() => setPaymentStep("search")} className="hover:scale-[1.02]">
               <PlusIcon />
               Log payment
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -575,17 +572,17 @@ export default function Rent() {
                         Log payment
                       </button>
                     ) : (
-                      <button
-                        type="button"
+                      <Button
+                        variant="secondary"
+                        size="sm"
                         onClick={(e) => {
                           e.stopPropagation();
                           setPayingTenant(t);
                           setPaymentStep("ledger");
                         }}
-                        className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink"
                       >
                         View
-                      </button>
+                      </Button>
                     )}
                   </div>
                 </div>
@@ -674,17 +671,17 @@ export default function Rent() {
                           Log payment
                         </button>
                       ) : (
-                        <button
-                          type="button"
+                        <Button
+                          variant="secondary"
+                          size="sm"
                           onClick={(e) => {
                             e.stopPropagation();
                             setPayingTenant(t);
                             setPaymentStep("ledger");
                           }}
-                          className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink"
                         >
                           View
-                        </button>
+                        </Button>
                       )}
                     </td>
                   </tr>

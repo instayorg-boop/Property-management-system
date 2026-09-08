@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { DeviceMobile, Money, Bank, CaretDown, DoorOpen, CalendarBlank, X, Plus } from "@phosphor-icons/react";
 import SlideOver from "./SlideOver";
 import AddRoomTypeDrawer from "./AddRoomTypeDrawer";
+import Button from "./Button";
 import Select from "./Select";
 import SectionLabel from "./SectionLabel";
 import {
@@ -365,38 +366,21 @@ export default function TenantFormDrawer({
       }
       footer={
         editing ? (
-          <button
-            type="button"
-            onClick={submit}
-            className="w-full rounded-lg bg-brand py-3 text-sm font-medium text-paper transition-transform hover:scale-[1.01]"
-          >
+          <Button variant="primary" onClick={submit} className="w-full py-3">
             Save changes
-          </button>
+          </Button>
         ) : step === "details" ? (
-          <button
-            type="button"
-            onClick={goToPayments}
-            disabled={!selectedRoom}
-            className="w-full rounded-lg bg-brand py-3 text-sm font-medium text-paper transition-transform hover:scale-[1.01] disabled:opacity-50 disabled:hover:scale-100"
-          >
+          <Button variant="primary" onClick={goToPayments} disabled={!selectedRoom} className="w-full py-3">
             Continue
-          </button>
+          </Button>
         ) : (
           <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setStep("details")}
-              className="flex-1 rounded-lg border border-line py-3 text-sm font-medium text-ink transition-colors hover:bg-mist"
-            >
+            <Button variant="secondary" onClick={() => setStep("details")} className="flex-1 py-3">
               Back
-            </button>
-            <button
-              type="button"
-              onClick={finalizeAndCreate}
-              className="flex-1 rounded-lg bg-brand py-3 text-sm font-medium text-paper transition-transform hover:scale-[1.01]"
-            >
+            </Button>
+            <Button variant="primary" onClick={finalizeAndCreate} className="flex-1 py-3">
               Add tenant
-            </button>
+            </Button>
           </div>
         )
       }
@@ -432,13 +416,9 @@ export default function TenantFormDrawer({
                         </span>
                         <p className="text-xs text-muted">No room types set up.</p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setAddingRoomType(true)}
-                        className="shrink-0 rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-mist"
-                      >
+                      <Button variant="secondary" size="sm" onClick={() => setAddingRoomType(true)} className="shrink-0">
                         Add room type
-                      </button>
+                      </Button>
                     </div>
                   ) : (
                     <RoomPicker rooms={vacantRooms} selected={selectedRoom} onSelect={selectRoom} />

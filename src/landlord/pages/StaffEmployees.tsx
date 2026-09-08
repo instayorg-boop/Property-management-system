@@ -7,6 +7,7 @@ import SlideOver from "../components/SlideOver";
 import Select from "../components/Select";
 import { useStaff, type Employee, type PayType, type Gender, type MaritalStatus, type ContractType } from "../StaffContext";
 import { SkeletonRow } from "../components/Skeleton";
+import Button from "../components/Button";
 
 function TpinBadge({ tpin }: { tpin: string | null }) {
   if (tpin) {
@@ -269,14 +270,13 @@ function EmployeeFormModal({
       footer={
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <button
-              type="button"
+            <Button
+              variant="secondary"
               onClick={() => setStep((s) => (s === 1 ? 1 : ((s - 1) as 1 | 2 | 3)))}
               disabled={step === 1}
-              className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist disabled:cursor-not-allowed disabled:opacity-40"
             >
               Back
-            </button>
+            </Button>
             <button
               type="button"
               onClick={onClose}
@@ -288,21 +288,13 @@ function EmployeeFormModal({
             </button>
           </div>
           {step < 3 ? (
-            <button
-              type="button"
-              onClick={() => setStep((s) => (s + 1) as 1 | 2 | 3)}
-              className="rounded-lg bg-brand px-5 py-2 text-sm font-medium text-paper transition-transform hover:scale-[1.01]"
-            >
+            <Button variant="primary" className="px-5" onClick={() => setStep((s) => (s + 1) as 1 | 2 | 3)}>
               Next
-            </button>
+            </Button>
           ) : (
-            <button
-              type="button"
-              onClick={submit}
-              className="rounded-lg bg-brand px-5 py-2 text-sm font-medium text-paper transition-transform hover:scale-[1.01]"
-            >
+            <Button variant="primary" className="px-5" onClick={submit}>
               {editing ? "Save changes" : "Add staff"}
-            </button>
+            </Button>
           )}
         </div>
       }
@@ -457,15 +449,15 @@ function EmployeeFormModal({
             <label className={labelCls}>TPIN</label>
             <div className="flex gap-2">
               <input value={tpin} onChange={(e) => setTpin(e.target.value)} placeholder="1000123456" className={inputCls} />
-              <button
-                type="button"
+              <Button
+                variant="secondary"
+                className="shrink-0 gap-1.5 px-3 text-xs"
                 title="ZRA TPIN verification isn't available yet — this will check the number once it is."
                 disabled
-                className="flex shrink-0 items-center gap-1.5 rounded-lg border border-line px-3 text-xs font-medium text-muted disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <ShieldCheck size={14} weight="duotone" />
                 Verify
-              </button>
+              </Button>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -530,21 +522,17 @@ function EmployeeDetailDrawer({
       footer={
         employee.active ? (
           <div className="flex justify-end gap-2">
-            <button type="button" onClick={onDelete} className="rounded-lg px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50">
+            <Button variant="danger" onClick={onDelete}>
               Delete
-            </button>
-            <button type="button" onClick={onEdit} className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist">
+            </Button>
+            <Button variant="secondary" onClick={onEdit}>
               Edit
-            </button>
+            </Button>
           </div>
         ) : (
-          <button
-            type="button"
-            onClick={onReactivate}
-            className="w-full rounded-lg bg-brand py-3 text-sm font-medium text-paper transition-transform hover:scale-[1.01]"
-          >
+          <Button variant="primary" className="w-full py-3" onClick={onReactivate}>
             Reactivate
-          </button>
+          </Button>
         )
       }
     >
@@ -673,16 +661,12 @@ function ConfirmDeleteModal({
       title="Remove staff member?"
       footer={
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist">
+          <Button variant="secondary" onClick={onClose}>
             Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-paper transition-colors hover:bg-red-700"
-          >
+          </Button>
+          <Button variant="danger" onClick={onConfirm}>
             Delete
-          </button>
+          </Button>
         </div>
       }
     >
@@ -733,16 +717,15 @@ export default function StaffEmployees() {
               Show inactive
             </label>
           </div>
-          <button
-            type="button"
+          <Button
+            variant="primary"
             onClick={() => {
               setEditing(null);
               setShowForm(true);
             }}
-            className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-paper transition-transform hover:scale-[1.02]"
           >
             + Add staff
-          </button>
+          </Button>
         </div>
 
         <div className="overflow-x-auto rounded-lg border border-line">

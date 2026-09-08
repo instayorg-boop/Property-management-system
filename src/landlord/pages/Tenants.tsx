@@ -8,6 +8,7 @@ import { useTenants, formatCurrency } from "../TenantsContext";
 import { MagnifyingGlass, Trash, UsersThree } from "@phosphor-icons/react";
 import Pagination, { DEFAULT_PAGE_SIZE } from "../components/Pagination";
 import { Skeleton, SkeletonRow } from "../components/Skeleton";
+import Button from "../components/Button";
 
 function SearchIcon() {
   return <MagnifyingGlass size={16} weight="bold" />;
@@ -81,21 +82,12 @@ export default function Tenants() {
       <div className="space-y-4 px-4 sm:px-8 pb-10">
         {/* Top actions */}
         <div className="flex items-center justify-end gap-3">
-          <button
-            type="button"
-            disabled
-            title="Coming soon"
-            className="cursor-not-allowed rounded-lg border border-line px-4 py-2 text-sm font-medium text-muted opacity-50"
-          >
+          <Button variant="secondary" disabled title="Coming soon" className="cursor-not-allowed text-muted">
             Export all data
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowAdd(true)}
-            className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-paper transition-transform hover:scale-[1.02]"
-          >
+          </Button>
+          <Button variant="primary" onClick={() => setShowAdd(true)} className="hover:scale-[1.02]">
             + Add tenant
-          </button>
+          </Button>
         </div>
 
         <div className="rounded-lg border border-line bg-paper">
@@ -189,16 +181,16 @@ export default function Tenants() {
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button
-                      type="button"
+                    <Button
+                      variant="secondary"
+                      size="sm"
                       onClick={(e) => {
                         e.stopPropagation();
                         navigate(`/tenants/${t.id}`);
                       }}
-                      className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-mist"
                     >
                       View details
-                    </button>
+                    </Button>
                     <button
                       type="button"
                       aria-label="Delete"
@@ -280,16 +272,16 @@ export default function Tenants() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <button
-                          type="button"
+                        <Button
+                          variant="secondary"
+                          size="sm"
                           onClick={(e) => {
                             e.stopPropagation();
                             navigate(`/tenants/${t.id}`);
                           }}
-                          className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-mist"
                         >
                           View details
-                        </button>
+                        </Button>
                         <button
                           type="button"
                           aria-label="Delete"

@@ -24,6 +24,7 @@ import ConfirmDeleteTenantModal from "../components/ConfirmDeleteTenantModal";
 import ReactivateTenantModal from "../components/ReactivateTenantModal";
 import { useTenants, formatCurrency, relationLabel, type PaymentStatus } from "../TenantsContext";
 import { useMaintenance } from "../MaintenanceContext";
+import Button from "../components/Button";
 
 const statusLabel: Record<PaymentStatus, string> = { paid: "Paid", overdue: "Overdue", unpaid: "Unpaid", partial: "Partial" };
 const paymentStatusStyle: Record<PaymentStatus, string> = {
@@ -168,13 +169,9 @@ export default function TenantProfile() {
             <span className="font-medium text-ink">{tenant.name}</span>
           </div>
           {tenant.active && (
-            <button
-              type="button"
-              onClick={() => setShowLogPayment(true)}
-              className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-paper transition-transform hover:scale-[1.02]"
-            >
+            <Button variant="primary" onClick={() => setShowLogPayment(true)}>
               + Log payment
-            </button>
+            </Button>
           )}
         </div>
 

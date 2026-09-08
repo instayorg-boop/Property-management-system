@@ -6,6 +6,7 @@ import Modal from "../components/Modal";
 import Select from "../components/Select";
 import { useStaff, type ClockEntry } from "../StaffContext";
 import { SkeletonRow } from "../components/Skeleton";
+import Button from "../components/Button";
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -48,13 +49,9 @@ function EntryFormModal({
       onClose={onClose}
       title={editing ? "Edit time entry" : "Add time entry"}
       footer={
-        <button
-          type="button"
-          onClick={submit}
-          className="w-full rounded-lg bg-brand py-3 text-sm font-medium text-paper transition-transform hover:scale-[1.01]"
-        >
+        <Button variant="primary" className="w-full py-3" onClick={submit}>
           {editing ? "Save changes" : "Add entry"}
-        </button>
+        </Button>
       }
     >
       <div className="space-y-4">
@@ -89,12 +86,12 @@ function ConfirmDeleteModal({ onClose, onConfirm }: { onClose: () => void; onCon
       title="Delete time entry?"
       footer={
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist">
+          <Button variant="secondary" onClick={onClose}>
             Cancel
-          </button>
-          <button type="button" onClick={onConfirm} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-paper transition-colors hover:bg-red-700">
+          </Button>
+          <Button variant="danger" onClick={onConfirm}>
             Delete
-          </button>
+          </Button>
         </div>
       }
     >
@@ -136,17 +133,16 @@ export default function StaffClock() {
               className="w-64 bg-transparent text-sm outline-none placeholder:text-muted"
             />
           </div>
-          <button
-            type="button"
+          <Button
+            variant="primary"
             disabled={hourlyEmployees.length === 0}
             onClick={() => {
               setEditing(null);
               setShowForm(true);
             }}
-            className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-paper transition-transform hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-50"
           >
             + Add entry
-          </button>
+          </Button>
         </div>
 
         <p className="text-xs text-muted">

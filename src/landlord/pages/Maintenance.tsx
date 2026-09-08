@@ -3,12 +3,15 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
 import SlideOver from "../components/SlideOver";
-import { Eye, MagnifyingGlass, Paperclip, Wrench, PencilSimple, Trash, CaretDown } from "@phosphor-icons/react";
+import SectionLabel from "../components/SectionLabel";
+import Lightbox from "../components/Lightbox";
+import { Eye, MagnifyingGlass, Paperclip, Wrench, PencilSimple, Trash, CaretDown, X } from "@phosphor-icons/react";
 import { useMaintenance, type MaintenanceReport, type MaintenanceStatus } from "../MaintenanceContext";
 import { useTenants } from "../TenantsContext";
 import Modal from "../components/Modal";
 import { uploadPhoto } from "../../lib/storage";
 import { Skeleton } from "../components/Skeleton";
+import Button from "../components/Button";
 
 function EyeIcon() {
   return <Eye size={14} weight="duotone" />;
@@ -49,6 +52,57 @@ const groupFilterOptions: { value: "all" | MaintenanceStatus; label: string }[] 
   { value: "resolved", label: "Resolved" },
 ];
 
+/** The active filter's own text takes on that status's colour, instead of the same neutral ink
+ * every tab gets — so "Open" selected actually reads red, not just "selected". */
+const groupFilterActiveColor: Record<"all" | MaintenanceStatus, string> = {
+  all: "text-ink",
+  open: "text-red-600",
+  "in-progress": "text-amber-600",
+  resolved: "text-emerald-600",
+};
+
+/** Small square thumbnail + "add another" tile — used for both adding a report (tenant portal
+ * mirrors this pattern separately, kept isolated per docs/BACKEND.md) and editing an existing one. */
+function PhotoPicker({ photoUrls, onChange }: { photoUrls: string[]; onChange: (urls: string[]) => void }) {
+  const addPhoto = (file: File) => {
+    uploadPhoto("maintenance-photos", file)
+      .then((url) => onChange([...photoUrls, url]))
+      .catch((err) => console.error("Failed to upload photo", err));
+  };
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {photoUrls.map((url, i) => (
+        <div key={i} className="group relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-line bg-mist">
+          <img src={url} alt="" className="h-full w-full object-cover" />
+          <button
+            type="button"
+            onClick={() => onChange(photoUrls.filter((_, idx) => idx !== i))}
+            aria-label="Remove photo"
+            className="absolute top-1 right-1 flex h-4.5 w-4.5 items-center justify-center rounded-full bg-ink/70 text-paper opacity-0 transition-opacity group-hover:opacity-100"
+          >
+            <X size={9} weight="bold" />
+          </button>
+        </div>
+      ))}
+      <label className="flex h-16 w-16 shrink-0 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-line text-muted transition-colors hover:bg-mist">
+        <Paperclip size={16} weight="duotone" />
+        <span className="text-[10px] font-medium">Add</span>
+        <input
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) addPhoto(file);
+            e.target.value = "";
+          }}
+        />
+      </label>
+    </div>
+  );
+}
+
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
@@ -61,16 +115,12 @@ function ConfirmDeleteReportModal({ onClose, onConfirm }: { onClose: () => void;
       title="Delete this report?"
       footer={
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist">
+          <Button variant="secondary" onClick={onClose}>
             Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-paper transition-colors hover:bg-red-700"
-          >
+          </Button>
+          <Button variant="danger" onClick={onConfirm} className="bg-red-600 text-paper hover:bg-red-700">
             Delete
-          </button>
+          </Button>
         </div>
       }
     >
@@ -89,7 +139,7 @@ function RequestDrawer({
   request: MaintenanceReport;
   onClose: () => void;
   onSetStatus: (status: MaintenanceStatus) => void;
-  onUpdate: (patch: { location: string; description: string; photoUrl?: string }) => void;
+  onUpdate: (patch: { location: string; description: string; photoUrls: string[] }) => void;
   onDelete: () => void;
 }) {
   const { tenants } = useTenants();
@@ -99,21 +149,22 @@ function RequestDrawer({
   const [isEditing, setIsEditing] = useState(false);
   const [location, setLocation] = useState(request.location);
   const [description, setDescription] = useState(request.description);
-  const [photoUrl, setPhotoUrl] = useState(request.photoUrl);
+  const [photoUrls, setPhotoUrls] = useState(request.photoUrls);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
   const canSave = location.trim().length > 0 && description.trim().length > 0;
 
   const startEditing = () => {
     setLocation(request.location);
     setDescription(request.description);
-    setPhotoUrl(request.photoUrl);
+    setPhotoUrls(request.photoUrls);
     setIsEditing(true);
   };
 
   const saveEdit = () => {
     if (!canSave) return;
-    onUpdate({ location: location.trim(), description: description.trim(), photoUrl });
+    onUpdate({ location: location.trim(), description: description.trim(), photoUrls });
     setIsEditing(false);
   };
 
@@ -153,37 +204,39 @@ function RequestDrawer({
       footer={
         isEditing ? (
           <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setIsEditing(false)}
-              className="flex-1 rounded-lg border border-line py-2.5 text-sm font-medium text-ink transition-colors hover:bg-mist"
-            >
+            <Button variant="secondary" onClick={() => setIsEditing(false)} className="flex-1 py-2.5">
               Cancel
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="primary"
               onClick={saveEdit}
               disabled={!canSave}
-              className="flex-1 rounded-lg bg-brand py-2.5 text-sm font-medium text-paper transition-transform hover:scale-[1.01] disabled:opacity-50 disabled:hover:scale-100"
+              className="flex-1 py-2.5 hover:scale-[1.01] disabled:hover:scale-100"
             >
               Save changes
-            </button>
+            </Button>
           </div>
         ) : (
-          <>
-            <div className="grid grid-cols-3 gap-2">
-              {(["open", "in-progress", "resolved"] as const).map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => onSetStatus(s)}
-                  className={`rounded-lg border py-2.5 text-sm font-medium transition-colors ${
-                    request.status === s ? "border-brand bg-brand-soft text-brand" : "border-line text-muted hover:bg-mist"
-                  }`}
-                >
-                  {statusLabel[s]}
-                </button>
-              ))}
+          <div className="space-y-2">
+            {/* Segmented control, not three separate bordered tiles — the active status slides
+                between options, matching the same pattern used across the rest of this page. */}
+            <div className="inline-flex w-full gap-0.5 rounded-md bg-mist p-1">
+              {(["open", "in-progress", "resolved"] as const).map((s) => {
+                const active = request.status === s;
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => onSetStatus(s)}
+                    className={`relative flex-1 rounded-md py-1.5 text-xs font-medium transition-colors ${
+                      active ? statusHeaderText[s] : "text-muted hover:text-ink"
+                    }`}
+                  >
+                    {active && <span className="absolute inset-0 rounded-md bg-paper shadow-sm" />}
+                    <span className="relative">{statusLabel[s]}</span>
+                  </button>
+                );
+              })}
             </div>
 
             <Link
@@ -195,7 +248,7 @@ function RequestDrawer({
                   categoryId: "maintenance",
                 },
               }}
-              className="mt-2 block w-full rounded-lg border border-line py-2.5 text-center text-sm font-medium text-ink transition-colors hover:bg-mist"
+              className="block w-full rounded-lg border border-line py-2 text-center text-xs font-medium text-ink transition-colors hover:bg-mist"
             >
               Log a repair cost for this →
             </Link>
@@ -203,12 +256,12 @@ function RequestDrawer({
             <button
               type="button"
               onClick={() => setConfirmingDelete(true)}
-              className="mt-2.5 flex w-full items-center justify-center gap-1.5 text-xs font-medium text-red-600 hover:underline"
+              className="flex w-full items-center justify-center gap-1.5 py-1 text-xs font-medium text-red-600 hover:underline"
             >
-              <Trash size={12} weight="bold" />
+              <Trash size={11} weight="bold" />
               Delete report
             </button>
-          </>
+          </div>
         )
       }
     >
@@ -232,34 +285,8 @@ function RequestDrawer({
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted">Photo (optional)</label>
-            {photoUrl ? (
-              <div className="space-y-2">
-                <div className="h-40 overflow-hidden rounded-lg border border-line bg-mist">
-                  <img src={photoUrl} alt="Attached to this request" className="h-full w-full object-cover" />
-                </div>
-                <button type="button" onClick={() => setPhotoUrl(undefined)} className="text-xs font-medium text-red-600 hover:underline">
-                  Remove photo
-                </button>
-              </div>
-            ) : (
-              <label className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-line py-2.5 text-sm font-medium text-muted transition-colors hover:bg-mist">
-                <Paperclip size={14} weight="duotone" />
-                Attach a photo
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    uploadPhoto("maintenance-photos", file)
-                      .then(setPhotoUrl)
-                      .catch((err) => console.error("Failed to upload photo", err));
-                  }}
-                />
-              </label>
-            )}
+            <label className="mb-1.5 block text-xs font-medium text-muted">Photos (optional)</label>
+            <PhotoPicker photoUrls={photoUrls} onChange={setPhotoUrls} />
           </div>
         </div>
       ) : (
@@ -272,20 +299,35 @@ function RequestDrawer({
               <span className="text-xs text-muted">Resolved {formatDate(request.resolvedAt)}</span>
             )}
           </div>
-          <p className="mt-3 rounded-lg bg-mist p-4 text-sm text-ink">{request.description}</p>
 
-          <p className="mt-6 text-sm font-medium text-ink">Photo</p>
-          {request.hasPhoto || request.photoUrl ? (
-            <div className="mt-2 h-48 overflow-hidden rounded-lg border border-line bg-mist">
-              {request.photoUrl ? (
-                <img src={request.photoUrl} alt="Attached to this maintenance request" className="h-full w-full object-cover" />
-              ) : (
-                <div className="flex h-full items-center justify-center text-sm text-muted">Photo attached by tenant</div>
-              )}
+          {/* A note, not a plain filled box — a label above it and a left accent bar give it the
+              shape of an actual annotation rather than just a grey rectangle of text. */}
+          <div className="mt-4">
+            <SectionLabel>Description</SectionLabel>
+            <div className="mt-1.5 rounded-lg border-l-2 border-brand bg-mist py-2.5 pr-4 pl-3.5">
+              <p className="text-sm leading-relaxed text-ink">{request.description}</p>
             </div>
-          ) : (
-            <p className="mt-2 text-xs text-muted">No photo attached to this request.</p>
-          )}
+          </div>
+
+          <div className="mt-5">
+            <SectionLabel>Photo{request.photoUrls.length !== 1 ? "s" : ""}</SectionLabel>
+            {request.photoUrls.length === 0 ? (
+              <p className="mt-1.5 text-xs text-muted">No photos attached to this request.</p>
+            ) : (
+              <div className="mt-1.5 flex flex-wrap gap-2">
+                {request.photoUrls.map((url, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setLightboxIndex(i)}
+                    className="h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-line transition-opacity hover:opacity-80"
+                  >
+                    <img src={url} alt="" className="h-full w-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </>
       )}
 
@@ -300,6 +342,10 @@ function RequestDrawer({
           />
         )}
       </AnimatePresence>
+
+      {lightboxIndex !== null && (
+        <Lightbox photos={request.photoUrls} startIndex={lightboxIndex} onClose={() => setLightboxIndex(null)} />
+      )}
     </SlideOver>
   );
 }
@@ -307,7 +353,7 @@ function RequestDrawer({
 function AddRequestDrawer({ onClose, onSave }: { onClose: () => void; onSave: (request: Omit<MaintenanceReport, "id" | "unread" | "resolvedAt">) => void }) {
   const [location, setLocation] = useState("");
   const [description, setDescription] = useState("");
-  const [photoUrl, setPhotoUrl] = useState<string | undefined>(undefined);
+  const [photoUrls, setPhotoUrls] = useState<string[]>([]);
 
   const canSave = location.trim().length > 0 && description.trim().length > 0;
 
@@ -319,8 +365,7 @@ function AddRequestDrawer({ onClose, onSave }: { onClose: () => void; onSave: (r
       description: description.trim(),
       submittedAt: new Date().toISOString(),
       status: "open",
-      hasPhoto: !!photoUrl,
-      photoUrl,
+      photoUrls,
     });
   };
 
@@ -330,14 +375,14 @@ function AddRequestDrawer({ onClose, onSave }: { onClose: () => void; onSave: (r
       title="Add maintenance request"
       description="Log an issue you noticed yourself — anywhere on the property, not just a tenant's room."
       footer={
-        <button
-          type="button"
+        <Button
+          variant="primary"
           onClick={submit}
           disabled={!canSave}
-          className="w-full rounded-lg bg-brand py-3 text-sm font-medium text-paper transition-transform hover:scale-[1.01] disabled:opacity-50 disabled:hover:scale-100"
+          className="w-full py-3 hover:scale-[1.01] disabled:hover:scale-100"
         >
           Add maintenance request
-        </button>
+        </Button>
       }
     >
       <div className="space-y-4">
@@ -361,34 +406,8 @@ function AddRequestDrawer({ onClose, onSave }: { onClose: () => void; onSave: (r
           />
         </div>
         <div>
-          <label className="mb-1.5 block text-xs font-medium text-muted">Photo (optional)</label>
-          {photoUrl ? (
-            <div className="space-y-2">
-              <div className="h-40 overflow-hidden rounded-lg border border-line bg-mist">
-                <img src={photoUrl} alt="Attached to this request" className="h-full w-full object-cover" />
-              </div>
-              <button type="button" onClick={() => setPhotoUrl(undefined)} className="text-xs font-medium text-red-600 hover:underline">
-                Remove photo
-              </button>
-            </div>
-          ) : (
-            <label className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-line py-2.5 text-sm font-medium text-muted transition-colors hover:bg-mist">
-              <Paperclip size={14} weight="duotone" />
-              Attach a photo
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  uploadPhoto("maintenance-photos", file)
-                    .then(setPhotoUrl)
-                    .catch((err) => console.error("Failed to upload photo", err));
-                }}
-              />
-            </label>
-          )}
+          <label className="mb-1.5 block text-xs font-medium text-muted">Photos (optional)</label>
+          <PhotoPicker photoUrls={photoUrls} onChange={setPhotoUrls} />
         </div>
       </div>
     </SlideOver>
@@ -459,13 +478,9 @@ export default function Maintenance() {
       <div className="space-y-5 px-4 sm:px-8 pb-10">
         {/* Add stands alone on its own row; search + filters sit on the row below it, not beside it. */}
         <div className="flex items-center justify-end">
-          <button
-            type="button"
-            onClick={() => setAddingRequest(true)}
-            className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-paper transition-transform hover:scale-[1.02]"
-          >
+          <Button variant="primary" onClick={() => setAddingRequest(true)} className="hover:scale-[1.02]">
             + Add maintenance request
-          </button>
+          </Button>
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -491,7 +506,7 @@ export default function Maintenance() {
                     type="button"
                     onClick={() => setGroupFilter(o.value)}
                     className={`relative shrink-0 rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors ${
-                      active ? "text-ink" : "text-muted hover:text-ink"
+                      active ? groupFilterActiveColor[o.value] : "text-muted hover:text-ink"
                     }`}
                   >
                     {active && (

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
-import { CaretLeft, Paperclip, CheckCircle } from "@phosphor-icons/react";
+import { CaretLeft, Paperclip, CheckCircle, X } from "@phosphor-icons/react";
 import { getPortalProperty, getPortalTenant, submitPortalMaintenanceReport, type PortalTenant } from "../../lib/payPortal";
 import { uploadPhoto } from "../../lib/storage";
 import PayShell from "./PayShell";
@@ -12,7 +12,7 @@ export default function MaintenanceReport() {
   const [tenant, setTenant] = useState<PortalTenant | null | undefined>(undefined);
 
   const [description, setDescription] = useState("");
-  const [photoUrl, setPhotoUrl] = useState<string | undefined>(undefined);
+  const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [submitted, setSubmitted] = useState(false);
 
   useEffect(() => {
@@ -64,7 +64,7 @@ export default function MaintenanceReport() {
 
   const submit = () => {
     if (!description.trim() || !propertySlug) return;
-    void submitPortalMaintenanceReport(propertySlug, tenant.id, description.trim(), photoUrl).catch((e) =>
+    void submitPortalMaintenanceReport(propertySlug, tenant.id, tenant.room, description.trim(), photoUrls).catch((e) =>
       console.error("Failed to submit report", e)
     );
     setSubmitted(true);
@@ -99,20 +99,24 @@ export default function MaintenanceReport() {
           />
         </div>
         <div>
-          <label className="mb-1.5 block text-xs font-medium text-muted">Photo (optional)</label>
-          {photoUrl ? (
-            <div className="space-y-2">
-              <div className="h-40 overflow-hidden rounded-lg border border-line bg-mist">
-                <img src={photoUrl} alt="Attached to this report" className="h-full w-full object-cover" />
+          <label className="mb-1.5 block text-xs font-medium text-muted">Photos (optional)</label>
+          <div className="flex flex-wrap gap-2">
+            {photoUrls.map((url, i) => (
+              <div key={i} className="group relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-line bg-mist">
+                <img src={url} alt="" className="h-full w-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => setPhotoUrls((prev) => prev.filter((_, idx) => idx !== i))}
+                  aria-label="Remove photo"
+                  className="absolute top-1 right-1 flex h-4.5 w-4.5 items-center justify-center rounded-full bg-ink/70 text-paper opacity-0 transition-opacity group-hover:opacity-100"
+                >
+                  <X size={9} weight="bold" />
+                </button>
               </div>
-              <button type="button" onClick={() => setPhotoUrl(undefined)} className="text-xs font-medium text-red-600 hover:underline">
-                Remove photo
-              </button>
-            </div>
-          ) : (
-            <label className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-line py-2.5 text-sm font-medium text-muted transition-colors hover:bg-mist">
-              <Paperclip size={14} weight="duotone" />
-              Attach a photo
+            ))}
+            <label className="flex h-16 w-16 shrink-0 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-line text-muted transition-colors hover:bg-mist">
+              <Paperclip size={16} weight="duotone" />
+              <span className="text-[10px] font-medium">Add</span>
               <input
                 type="file"
                 accept="image/*"
@@ -121,12 +125,13 @@ export default function MaintenanceReport() {
                   const file = e.target.files?.[0];
                   if (!file) return;
                   uploadPhoto("maintenance-photos", file)
-                    .then(setPhotoUrl)
+                    .then((url) => setPhotoUrls((prev) => [...prev, url]))
                     .catch((err) => console.error("Failed to upload photo", err));
+                  e.target.value = "";
                 }}
               />
             </label>
-          )}
+          </div>
         </div>
       </div>
 

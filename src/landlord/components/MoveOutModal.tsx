@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Modal from "./Modal";
+import Button from "./Button";
 import type { DepositStatus, Tenant } from "../TenantsContext";
 
 function todayISO() {
@@ -29,11 +30,11 @@ export default function MoveOutModal({
       description={`${tenant.name} · ${tenant.room}`}
       footer={
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist">
+          <Button variant="secondary" onClick={onClose}>
             Cancel
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            variant="primary"
             onClick={() => {
               const resolutionNote =
                 note.trim() ||
@@ -44,10 +45,9 @@ export default function MoveOutModal({
                     : "Partially refunded — no reason given.");
               onConfirm({ moveOutDate: new Date(moveOutDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }), depositStatus, depositResolutionNote: resolutionNote });
             }}
-            className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-paper"
           >
             Confirm move out
-          </button>
+          </Button>
         </div>
       }
     >

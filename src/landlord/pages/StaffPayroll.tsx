@@ -23,6 +23,7 @@ import SectionLabel from "../components/SectionLabel";
 import { useExpenses } from "../ExpensesContext";
 import { useSettings } from "../SettingsContext";
 import { Skeleton, SkeletonRow } from "../components/Skeleton";
+import Button from "../components/Button";
 import {
   useStaff,
   currency,
@@ -220,16 +221,12 @@ function ConfirmApproveModal({
       title="Approve & lock payroll?"
       footer={
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist">
+          <Button variant="secondary" onClick={onClose}>
             Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-paper"
-          >
+          </Button>
+          <Button variant="primary" onClick={onConfirm}>
             Approve & lock
-          </button>
+          </Button>
         </div>
       }
     >
@@ -251,13 +248,9 @@ function FilingDrawer({ run, onClose, onSavePrns }: { run: PayrollRun; onClose: 
       title={run.period}
       description="Send to government and pay staff"
       footer={
-        <button
-          type="button"
-          onClick={() => onSavePrns(prns)}
-          className="w-full rounded-lg bg-brand py-3 text-sm font-medium text-paper transition-transform hover:scale-[1.01]"
-        >
+        <Button variant="primary" className="w-full py-3" onClick={() => onSavePrns(prns)}>
           Save PRNs
-        </button>
+        </Button>
       }
     >
       <div className="flex items-center gap-2 text-emerald-600">
@@ -276,15 +269,10 @@ function FilingDrawer({ run, onClose, onSavePrns }: { run: PayrollRun; onClose: 
           { label: "e-NHIMA Schedule (CSV)" },
           { label: "Bank Batch Payment File (CSV/TXT)" },
         ].map((d) => (
-          <button
-            key={d.label}
-            type="button"
-            onClick={() => window.print()}
-            className="flex items-center justify-center gap-2 rounded-lg border border-line px-3 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-mist"
-          >
+          <Button key={d.label} variant="secondary" className="justify-center gap-2 py-2.5" onClick={() => window.print()}>
             <FileText className="h-4 w-4" />
             {d.label}
-          </button>
+          </Button>
         ))}
       </div>
 
@@ -467,14 +455,10 @@ export default function StaffPayroll() {
                   {statusMeta[status].label}
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={mainAction}
-                className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-paper transition-transform hover:scale-[1.02]"
-              >
+              <Button variant="primary" className="gap-2 py-2.5" onClick={mainAction}>
                 {status === "processed" && <Download className="h-4 w-4" />}
                 {mainActionLabel}
-              </button>
+              </Button>
             </div>
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

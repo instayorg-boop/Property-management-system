@@ -18,8 +18,8 @@ type MaintenanceContextValue = {
   setStatus: (id: string, status: MaintenanceStatus) => void;
   markRead: (id: string) => void;
   addReport: (report: Omit<MaintenanceReport, "id" | "unread" | "resolvedAt">) => void;
-  /** Edits the location/description/photo of an existing report — not its status/read state. */
-  updateReport: (id: string, patch: Partial<Pick<MaintenanceReport, "location" | "description" | "photoUrl">>) => void;
+  /** Edits the location/description/photos of an existing report — not its status/read state. */
+  updateReport: (id: string, patch: Partial<Pick<MaintenanceReport, "location" | "description" | "photoUrls">>) => void;
   deleteReport: (id: string) => void;
 };
 
@@ -62,7 +62,7 @@ export function MaintenanceProvider({ children }: { children: ReactNode }) {
     if (propertyId) void insertReport(propertyId, created.id, report).catch((e) => console.error("Failed to save report", e));
   };
 
-  const updateReport = (id: string, patch: Partial<Pick<MaintenanceReport, "location" | "description" | "photoUrl">>) => {
+  const updateReport = (id: string, patch: Partial<Pick<MaintenanceReport, "location" | "description" | "photoUrls">>) => {
     setReports((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
     void updateReportRow(id, patch).catch((e) => console.error("Failed to update report", e));
   };

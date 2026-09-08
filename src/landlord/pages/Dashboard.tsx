@@ -31,6 +31,7 @@ import {
 import MetricCard from "../components/MetricCard";
 import SectionLabel from "../components/SectionLabel";
 import SetupChecklist from "../components/SetupChecklist";
+import Button from "../components/Button";
 
 type QuickAction = "log-payment" | "add-expense" | "add-tenant";
 
@@ -64,17 +65,15 @@ function Greeting({ name, onAction }: { name: string; onAction: (action: QuickAc
       {/* Desktop: full quick-action row */}
       <div className="hidden gap-2 sm:flex">
         {quickActions.map(({ label, action, Icon }, i) => (
-          <button
+          <Button
             key={label}
-            type="button"
+            variant={i === 0 ? "primary" : "secondary"}
+            size="sm"
             onClick={() => onAction(action)}
-            className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-transform hover:scale-[1.02] ${
-              i === 0 ? "bg-brand text-paper" : "border border-line text-ink hover:bg-mist"
-            }`}
           >
-            <Icon size={14} weight="bold" />
+            {i === 0 ? <PlusIcon size={14} weight="bold" /> : <Icon size={14} weight="bold" />}
             {label}
-          </button>
+          </Button>
         ))}
       </div>
 
@@ -599,13 +598,14 @@ export default function Dashboard() {
                 <p className="mt-2 font-display text-base font-semibold text-ink">{payout.status}</p>
                 <p className="mt-1 text-xs text-muted">{payout.amount} will be paid into your bank account.</p>
                 <p className="mt-3 text-sm font-medium text-ink">{payout.date}</p>
-                <button
-                  type="button"
+                <Button
+                  variant="secondary"
+                  size="sm"
                   onClick={() => setPayoutOpen(true)}
-                  className="mt-4 block w-full rounded-lg bg-mist py-2 text-center text-xs font-medium text-ink transition-colors hover:bg-line/40"
+                  className="mt-4 block w-full bg-mist text-center hover:bg-line/40"
                 >
                   See payout details
-                </button>
+                </Button>
               </>
             ) : (
               <div className="flex flex-col items-center justify-center gap-3 py-6 text-center">

@@ -7,6 +7,7 @@ import {
 } from "@phosphor-icons/react";
 import { useRoomsView, roomLabel } from "../../RoomsContext";
 import { useTenants, type PaymentStatus, type Tenant } from "../../TenantsContext";
+import Button from "../../components/Button";
 
 export function DownloadIcon() {
   return <DownloadSimple size={14} weight="bold" />;
@@ -44,14 +45,10 @@ export function ReportCard({
           <p className="font-display text-lg font-semibold tracking-tight text-ink">{title}</p>
           <p className="mt-0.5 text-xs text-muted">For: {audience}</p>
         </div>
-        <button
-          type="button"
-          onClick={() => window.print()}
-          className="flex shrink-0 items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-mist"
-        >
+        <Button variant="secondary" size="sm" onClick={() => window.print()} className="shrink-0 gap-1.5">
           <DownloadIcon />
           Download PDF
-        </button>
+        </Button>
       </div>
       <div className="mt-4">{children}</div>
     </div>

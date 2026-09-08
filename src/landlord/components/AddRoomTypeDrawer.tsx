@@ -1,5 +1,6 @@
 import { useState } from "react";
 import SlideOver from "./SlideOver";
+import Button from "./Button";
 import type { RoomTypeConfig } from "../RoomsContext";
 import type { DepositRefundability } from "../TenantsContext";
 
@@ -27,14 +28,14 @@ export default function AddRoomTypeDrawer({
       title="Add room type"
       description="Set the rent and deposit terms once — every room of this type uses them."
       footer={
-        <button
-          type="button"
+        <Button
+          variant="primary"
           onClick={() => canSave && onSave({ name: name.trim(), capacity, rent, depositAmount, depositRefundability }, roomCount)}
           disabled={!canSave}
-          className="w-full rounded-lg bg-brand py-3 text-sm font-medium text-paper transition-transform hover:scale-[1.01] disabled:opacity-50 disabled:hover:scale-100"
+          className="w-full py-3"
         >
           Add room type
-        </button>
+        </Button>
       }
     >
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

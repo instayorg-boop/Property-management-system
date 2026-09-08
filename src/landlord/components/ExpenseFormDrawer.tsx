@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Paperclip as PaperclipIcon } from "@phosphor-icons/react";
 import SlideOver from "./SlideOver";
 import Modal from "./Modal";
+import Button from "./Button";
 import { useExpenses, type Expense } from "../ExpensesContext";
 
 function todayISO() {
@@ -16,9 +17,9 @@ function ConfirmDeleteExpenseModal({ expense, onClose, onConfirm }: { expense: E
       title="Delete expense?"
       footer={
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist">
+          <Button variant="secondary" onClick={onClose}>
             Cancel
-          </button>
+          </Button>
           <button
             type="button"
             onClick={onConfirm}
@@ -94,21 +95,13 @@ export default function ExpenseFormDrawer({
       footer={
         <div className="flex justify-end gap-2">
           {editing && (
-            <button
-              type="button"
-              onClick={() => setConfirmingDelete(true)}
-              className="rounded-lg px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
-            >
+            <Button variant="danger" onClick={() => setConfirmingDelete(true)} className="border-0 hover:bg-red-50">
               Delete
-            </button>
+            </Button>
           )}
-          <button
-            type="button"
-            onClick={submit}
-            className="rounded-lg bg-brand px-5 py-2 text-sm font-medium text-paper transition-transform hover:scale-[1.01]"
-          >
+          <Button variant="primary" onClick={submit} className="px-5">
             {editing ? "Save changes" : "Add expense"}
-          </button>
+          </Button>
         </div>
       }
     >
@@ -164,13 +157,9 @@ export default function ExpenseFormDrawer({
                 placeholder="e.g. Generator fuel"
                 className="flex-1 rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
               />
-              <button
-                type="button"
-                onClick={confirmNewCategory}
-                className="rounded-lg bg-brand px-4 text-sm font-medium text-paper"
-              >
+              <Button variant="primary" onClick={confirmNewCategory} className="px-4">
                 Add
-              </button>
+              </Button>
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-2">
