@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { useSettings } from "./SettingsContext";
+import { supabase } from "../lib/supabaseClient";
 import {
   listReports,
   insertReport,
@@ -42,6 +43,30 @@ export function MaintenanceProvider({ children }: { children: ReactNode }) {
     })();
     return () => {
       cancelled = true;
+    };
+  }, [propertyId]);
+
+  // Live updates — a tenant submitting a report from the portal (or a status change from another
+  // device/tab) shows up here, and in the Sidebar's unread badge, without a manual refresh.
+  // Refetches the whole list rather than patching the changed row in place: simpler and safe to
+  // reuse the same mapping logic (photo URLs, resolvedAt, etc.) that listReports already has,
+  // and a property's report count is small enough that this is cheap.
+  useEffect(() => {
+    if (!propertyId) return;
+    const channel = supabase
+      .channel(`maintenance_reports:${propertyId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "maintenance_reports", filter: `property_id=eq.${propertyId}` },
+        () => {
+          void listReports(propertyId)
+            .then(setReports)
+            .catch((e) => console.error("Failed to refresh reports after a live update", e));
+        }
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
     };
   }, [propertyId]);
 

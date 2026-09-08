@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useSettings } from "./SettingsContext";
+import { supabase } from "../lib/supabaseClient";
 import {
   listTenants,
   insertTenant,
@@ -70,6 +71,32 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
     // propertyName intentionally excluded: it can change via Settings without needing a full tenant refetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [propertyId]);
+
+  // Live updates — a payment landing via lenco-webhook (or any change from another device/tab)
+  // shows up on the Rent page, Dashboard, and tenant profile without a manual refresh. Refetches
+  // the whole list on any event rather than patching in place, reusing listTenants' existing
+  // mapping logic; cheap enough at the scale of one property's tenant roster.
+  //
+  // ledger_entries has no property_id column to filter by (only tenant_id) — subscribed
+  // unfiltered, but RLS still scopes which rows this session actually receives, so this can't see
+  // another landlord's payments land.
+  useEffect(() => {
+    if (!propertyId) return;
+    const refetch = () => {
+      void listTenants(propertyId, propertyName)
+        .then(setTenants)
+        .catch((e) => console.error("Failed to refresh tenants after a live update", e));
+    };
+    const channel = supabase
+      .channel(`tenants-ledger:${propertyId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "tenants", filter: `property_id=eq.${propertyId}` }, refetch)
+      .on("postgres_changes", { event: "*", schema: "public", table: "ledger_entries" }, refetch)
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [propertyId]);
 
