@@ -12,13 +12,16 @@ export async function getOrCreateSettings(propertyId: string): Promise<SettingsR
   if (error) throw error;
   if (data) return data;
 
+  const { data: userData } = await supabase.auth.getUser();
+  const landlordName = (userData.user?.user_metadata?.full_name as string | undefined)?.trim() ?? "";
+
   const { data: created, error: insertError } = await supabase
     .from("settings")
     .insert({
       property_id: propertyId,
       invoices_on: false,
       collection_target_pct: 90,
-      landlord_name: "",
+      landlord_name: landlordName,
       landlord_phone: "",
       payment_methods: [{ type: "mtn", number: "0977 000 111" }, { type: "cash" }],
       management_fee_rate: 0.1,
