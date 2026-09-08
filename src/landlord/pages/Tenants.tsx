@@ -135,7 +135,7 @@ export default function Tenants() {
                     )}
                     <span className="relative">
                       {s === "active" ? "Active" : "Moved out"}{" "}
-                      <span className={active ? (s === "active" ? "text-emerald-600" : "text-slate-500") : "text-muted"}>
+                      <span className={active ? (s === "active" ? "text-emerald-600" : "text-red-600") : "text-muted"}>
                         {s === "active" ? counts.active : counts.movedOut}
                       </span>
                     </span>
