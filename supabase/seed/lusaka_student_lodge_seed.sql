@@ -399,56 +399,56 @@ begin
     pay_type, contract_type, basic_salary, start_date, gender, date_of_birth, marital_status, dependants,
     address, days_worked, standard_hours_per_day, bank, allowances, deductions, emergency_contact, active)
   values (v_prop, 'Godfrey Mwanza', 'Property caretaker', '0966 552 118', '284416/61/1', '3084416721', 'NH0841627', '1002884416',
-    'monthly', 'permanent', 4800, '2024-03-01', 'Male', '1986-07-14', 'Married', 3,
+    'monthly', 'permanent', 4800, '2024-03-01', 'male', '1986-07-14', 'married', 3,
     'House 214, Kalingalinga, Lusaka', 26, 8,
-    '{"bankName":"Zanaco","accountNumber":"0330014782","accountName":"Godfrey Mwanza"}'::jsonb,
+    '{"bankName":"Zanaco","accountNumber":"0330014782","accountName":"Godfrey Mwanza","branch":"Cairo Road"}'::jsonb,
     '[{"label":"Housing allowance","amount":600},{"label":"Airtime","amount":150}]'::jsonb,
     '[]'::jsonb,
-    '{"name":"Mirriam Mwanza","relation":"Spouse","phone":"0977 118 664"}'::jsonb, true)
+    '{"name":"Mirriam Mwanza","relationship":"Spouse","phone":"0977 118 664"}'::jsonb, true)
   returning id into v_e_caretaker;
 
   insert into public.employees (property_id, name, role, phone, nrc, napsa_number, nhima_number, tpin,
     pay_type, contract_type, basic_salary, start_date, gender, date_of_birth, marital_status, dependants,
     address, days_worked, standard_hours_per_day, bank, allowances, deductions, emergency_contact, active)
   values (v_prop, 'Mathews Zulu', 'Security guard (day shift)', '0977 204 883', '331207/68/1', '3131207884', 'NH1312078', '1003312078',
-    'monthly', 'permanent', 2400, '2024-08-12', 'Male', '1991-02-03', 'Married', 2,
+    'monthly', 'permanent', 2400, '2024-08-12', 'male', '1991-02-03', 'married', 2,
     'Mtendere East, Lusaka', 26, 12,
-    '{"bankName":"FNB","accountNumber":"6244019873","accountName":"Mathews Zulu"}'::jsonb,
+    '{"bankName":"FNB","accountNumber":"6244019873","accountName":"Mathews Zulu","branch":"Manda Hill"}'::jsonb,
     '[{"label":"Night allowance","amount":0}]'::jsonb, '[]'::jsonb,
-    '{"name":"Loveness Zulu","relation":"Spouse","phone":"0966 337 209"}'::jsonb, true)
+    '{"name":"Loveness Zulu","relationship":"Spouse","phone":"0966 337 209"}'::jsonb, true)
   returning id into v_e_guard_day;
 
   insert into public.employees (property_id, name, role, phone, nrc, napsa_number, nhima_number, tpin,
     pay_type, contract_type, basic_salary, start_date, gender, date_of_birth, marital_status, dependants,
     address, days_worked, standard_hours_per_day, bank, allowances, deductions, emergency_contact, active)
   values (v_prop, 'Patrick Banda', 'Security guard (night shift)', '0955 771 026', '402118/74/1', '3402118976', 'NH4021189', '1004021189',
-    'monthly', 'permanent', 2600, '2025-01-06', 'Male', '1994-11-22', 'Single', 1,
+    'monthly', 'permanent', 2600, '2025-01-06', 'male', '1994-11-22', 'single', 1,
     'Chainda, Lusaka', 26, 12,
-    '{"bankName":"Zanaco","accountNumber":"0330117845","accountName":"Patrick Banda"}'::jsonb,
+    '{"bankName":"Zanaco","accountNumber":"0330117845","accountName":"Patrick Banda","branch":"Kabwata"}'::jsonb,
     '[{"label":"Night allowance","amount":400}]'::jsonb, '[]'::jsonb,
-    '{"name":"Rodgers Banda","relation":"Sibling","phone":"0978 226 114"}'::jsonb, true)
+    '{"name":"Rodgers Banda","relationship":"Sibling","phone":"0978 226 114"}'::jsonb, true)
   returning id into v_e_guard_night;
 
   insert into public.employees (property_id, name, role, phone, nrc, napsa_number, nhima_number, tpin,
     pay_type, contract_type, basic_salary, start_date, gender, date_of_birth, marital_status, dependants,
     address, days_worked, standard_hours_per_day, bank, allowances, deductions, emergency_contact, active)
   values (v_prop, 'Agnes Phiri', 'Cleaner', '0966 118 447', '295530/62/1', '3295530118', 'NH2955301', '1002955301',
-    'monthly', 'permanent', 2100, '2024-05-20', 'Female', '1989-09-08', 'Widowed', 4,
+    'monthly', 'permanent', 2100, '2024-05-20', 'female', '1989-09-08', 'widowed', 4,
     'Kalingalinga, Lusaka', 26, 8,
-    '{"bankName":"Zanaco","accountNumber":"0330229106","accountName":"Agnes Phiri"}'::jsonb,
+    '{"bankName":"Zanaco","accountNumber":"0330229106","accountName":"Agnes Phiri","branch":"Cairo Road"}'::jsonb,
     '[{"label":"Transport allowance","amount":300}]'::jsonb, '[]'::jsonb,
-    '{"name":"Chanda Phiri","relation":"Sibling","phone":"0977 449 118"}'::jsonb, true)
+    '{"name":"Chanda Phiri","relationship":"Sibling","phone":"0977 449 118"}'::jsonb, true)
   returning id into v_e_cleaner;
 
   insert into public.employees (property_id, name, role, phone, nrc, napsa_number, nhima_number, tpin,
     pay_type, contract_type, daily_rate, start_date, gender, date_of_birth, marital_status, dependants,
     address, days_worked, standard_hours_per_day, bank, allowances, deductions, emergency_contact, active)
   values (v_prop, 'Kelvin Sakala', 'Handyman (casual)', '0967 553 210', '318824/70/1', '3318824550', 'NH3188245', '1003188245',
-    'daily', 'casual', 280, '2025-04-02', 'Male', '1992-06-17', 'Married', 2,
+    'daily', 'fixed-term', 280, '2025-04-02', 'male', '1992-06-17', 'married', 2,
     'Chelstone, Lusaka', 9, 8,
-    '{"bankName":"","accountNumber":"","accountName":""}'::jsonb,
+    '{"bankName":"","accountNumber":"","accountName":"","branch":""}'::jsonb,
     '[]'::jsonb, '[]'::jsonb,
-    '{"name":"Justine Sakala","relation":"Spouse","phone":"0966 802 337"}'::jsonb, true)
+    '{"name":"Justine Sakala","relationship":"Spouse","phone":"0966 802 337"}'::jsonb, true)
   returning id into v_e_handyman;
 
   -- Clock entries for the last 14 days (guards work 12s, others 8s)
