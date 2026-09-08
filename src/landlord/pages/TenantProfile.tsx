@@ -9,9 +9,6 @@ import {
   CheckCircle,
   WarningCircle,
   CaretDown,
-  Wallet,
-  ShieldCheck,
-  CalendarCheck,
   Wrench,
   Receipt,
   UsersThree,
@@ -19,7 +16,6 @@ import {
 import PageHeader from "../components/PageHeader";
 import Avatar from "../components/Avatar";
 import SectionLabel from "../components/SectionLabel";
-import MetricCard from "../components/MetricCard";
 import { Skeleton, SkeletonRow } from "../components/Skeleton";
 import TenantFormDrawer from "../components/TenantFormDrawer";
 import MoveOutModal from "../components/MoveOutModal";
@@ -89,18 +85,12 @@ function ProfileSkeleton() {
                 <Skeleton className="h-3.5 w-full" />
                 <Skeleton className="h-3.5 w-2/3" />
               </div>
-            </div>
-            {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="rounded-lg border border-line bg-paper p-3.5">
-                <div className="flex items-center gap-3">
-                  <Skeleton className="h-9 w-9 shrink-0 rounded-full" />
-                  <div className="flex-1 space-y-1.5">
-                    <Skeleton className="h-3 w-1/2" />
-                    <Skeleton className="h-4 w-1/3" />
-                  </div>
-                </div>
+              <div className="mt-4 space-y-2.5 border-t border-line pt-4">
+                <Skeleton className="h-3.5 w-full" />
+                <Skeleton className="h-3.5 w-full" />
+                <Skeleton className="h-3.5 w-2/3" />
               </div>
-            ))}
+            </div>
           </div>
           <div className="rounded-lg border border-line bg-paper">
             <div className="flex items-center gap-4 border-b border-line px-4 py-3.5">
@@ -281,30 +271,23 @@ export default function TenantProfile() {
                   }
                 />
               </div>
-            </div>
 
-            <MetricCard
-              compact
-              icon={<Wallet size={16} weight="duotone" />}
-              label="Amount owed"
-              value={formatCurrency(tenant.owedAmount)}
-              caption={tenant.active ? statusLabel[tenant.status] : undefined}
-              tone={tenant.owedAmount === 0 ? "success" : tenant.active ? "danger" : "default"}
-            />
-            <MetricCard
-              compact
-              icon={<ShieldCheck size={16} weight="duotone" />}
-              label="Deposit"
-              value={formatCurrency(tenant.depositAmount)}
-              caption={`${tenant.depositStatus} · ${tenant.depositMethod === "mobile" ? "mobile money" : tenant.depositMethod}`}
-            />
-            <MetricCard
-              compact
-              icon={<CalendarCheck size={16} weight="duotone" />}
-              label="On-time payments"
-              value={`${tenant.onTimeCount}/${tenant.totalMonthsCount || tenant.onTimeCount}`}
-              caption="months paid on time"
-            />
+              <div className="mt-1 space-y-1 border-t border-line pt-4">
+                <InfoRow
+                  label="Amount owed"
+                  value={
+                    <span className={tenant.owedAmount === 0 ? "text-emerald-600" : tenant.active ? "text-red-600" : "text-ink"}>
+                      {formatCurrency(tenant.owedAmount)}
+                    </span>
+                  }
+                />
+                <InfoRow
+                  label="Security deposit"
+                  value={`${formatCurrency(tenant.depositAmount)} · ${tenant.depositStatus}`}
+                />
+                <InfoRow label="On-time payments" value={`${tenant.onTimeCount}/${tenant.totalMonthsCount || tenant.onTimeCount} months`} />
+              </div>
+            </div>
           </div>
 
           {/* Right: tabs — sized purely to its own content (items-start above stops grid row-stretch) */}
@@ -366,19 +349,26 @@ export default function TenantProfile() {
                         {tenant.emergencyContacts.length === 0 ? (
                           <p className="mt-2 text-sm text-muted">None on file.</p>
                         ) : (
-                          <div className="mt-2 space-y-3">
-                            {tenant.emergencyContacts.map((c) => (
-                              <div key={c.id} className="rounded-lg border border-line p-3">
-                                <p className="text-sm font-medium text-ink">
-                                  {c.name} <span className="font-normal text-muted">· {relationLabel(c)}</span>
-                                </p>
-                                <div className="mt-1 space-y-0.5">
-                                  {c.phones.length === 0 && <p className="text-xs text-muted">No phone on file</p>}
-                                  {c.phones.map((p, i) => (
-                                    <p key={i} className="text-xs text-muted">
-                                      {p}
-                                    </p>
-                                  ))}
+                          <div className="mt-1">
+                            {tenant.emergencyContacts.map((c, ci) => (
+                              <div key={c.id} className={ci > 0 ? "mt-3 border-t border-line pt-3" : ""}>
+                                <div className="divide-y divide-line">
+                                  <InfoRow label="Name" value={c.name} />
+                                  <InfoRow label="Relationship" value={relationLabel(c)} />
+                                  <InfoRow
+                                    label={c.phones.length > 1 ? "Mobile numbers" : "Mobile"}
+                                    value={
+                                      c.phones.length === 0 ? (
+                                        "—"
+                                      ) : (
+                                        <div className="space-y-0.5">
+                                          {c.phones.map((p, i) => (
+                                            <p key={i}>{p}</p>
+                                          ))}
+                                        </div>
+                                      )
+                                    }
+                                  />
                                 </div>
                               </div>
                             ))}
