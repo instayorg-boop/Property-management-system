@@ -48,7 +48,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const url = new URL("https://api.lenco.co/access/v1/resolve");
+    const url = new URL("https://api.lenco.co/access/v2/resolve");
     url.searchParams.set("accountNumber", accountNumber);
     url.searchParams.set("bankCode", bankCode);
 

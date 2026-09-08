@@ -83,7 +83,7 @@ Deno.serve(async (req) => {
 
   let lencoRecipientId: string;
   try {
-    const lencoResponse = await fetch("https://api.lenco.co/access/v1/recipients", {
+    const lencoResponse = await fetch("https://api.lenco.co/access/v2/recipients", {
       method: "POST",
       headers: { Authorization: `Bearer ${lencoSecretKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({ type: "bank", accountNumber, bankCode, accountName }),

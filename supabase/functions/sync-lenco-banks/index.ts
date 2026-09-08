@@ -14,7 +14,11 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, handleOptions } from "../_shared/cors.ts";
 
+// Lenco's v2 /banks response uses `id` as the bank code (e.g. "023" for Zanaco) — that's the same
+// value /resolve and /recipients expect back as `bankCode`, so we store it under our own `code`
+// column as-is. `code`/`bankCode` are kept as fallbacks in case Lenco's field naming shifts again.
 type LencoBank = {
+  id?: string;
   code?: string;
   bankCode?: string;
   name?: string;
@@ -37,7 +41,7 @@ Deno.serve(async (req) => {
 
   let lencoJson: { data?: LencoBank[] };
   try {
-    const lencoResponse = await fetch("https://api.lenco.co/access/v1/banks", {
+    const lencoResponse = await fetch("https://api.lenco.co/access/v2/banks", {
       headers: { Authorization: `Bearer ${lencoSecretKey}` },
     });
     lencoJson = await lencoResponse.json();
@@ -56,7 +60,7 @@ Deno.serve(async (req) => {
 
   const banks = (lencoJson.data ?? [])
     .map((b) => ({
-      code: b.code ?? b.bankCode ?? "",
+      code: b.id ?? b.code ?? b.bankCode ?? "",
       name: b.name ?? b.bankName ?? "",
       logo_url: b.logo ?? b.logoUrl ?? null,
     }))
