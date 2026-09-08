@@ -5,7 +5,7 @@ import PageHeader from "../components/PageHeader";
 import TenantFormDrawer from "../components/TenantFormDrawer";
 import ConfirmDeleteTenantModal from "../components/ConfirmDeleteTenantModal";
 import { useTenants, formatCurrency } from "../TenantsContext";
-import { MagnifyingGlass, Trash, UsersThree } from "@phosphor-icons/react";
+import { MagnifyingGlass, Trash, UsersThree, CaretUp, CaretDown } from "@phosphor-icons/react";
 import Pagination, { DEFAULT_PAGE_SIZE } from "../components/Pagination";
 import { Skeleton, SkeletonRow } from "../components/Skeleton";
 
@@ -21,6 +21,41 @@ function TrashIcon() {
  * different state (not just "behind on rent"), and needs to read as such at a glance. */
 const movedOutStyle = "bg-red-50 text-red-600";
 
+type SortKey = "name" | "room" | "moveInDate" | "rent";
+const sortColumns: { key: SortKey; label: string }[] = [
+  { key: "name", label: "Tenant" },
+  { key: "room", label: "Room" },
+  { key: "moveInDate", label: "Move-in date" },
+  { key: "rent", label: "Rent" },
+];
+
+function SortHeader({
+  label,
+  active,
+  direction,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  direction: "asc" | "desc";
+  onClick: () => void;
+}) {
+  return (
+    <th className="px-4 py-3 font-medium uppercase tracking-wide">
+      <button
+        type="button"
+        onClick={onClick}
+        className={`flex items-center gap-1 transition-colors ${active ? "text-ink" : "text-muted hover:text-ink"}`}
+      >
+        {label}
+        <span className={`flex flex-col leading-none ${active ? "opacity-100" : "opacity-30"}`}>
+          <CaretUp size={8} weight="bold" className={direction === "asc" && active ? "text-brand" : ""} />
+          <CaretDown size={8} weight="bold" className={direction === "desc" && active ? "text-brand" : ""} />
+        </span>
+      </button>
+    </th>
+  );
+}
 
 export default function Tenants() {
   const { tenants, isReady, deleteTenant } = useTenants();
@@ -33,17 +68,50 @@ export default function Tenants() {
   const [page, setPage] = useState(1);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [rowsPerPage, setRowsPerPage] = useState(DEFAULT_PAGE_SIZE);
+  const [sortKey, setSortKey] = useState<SortKey>("name");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
   const editing = tenants.find((t) => t.id === editingId) ?? null;
   const deleting = tenants.find((t) => t.id === deletingId) ?? null;
 
+  const toggleSort = (key: SortKey) => {
+    if (key === sortKey) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+    setPage(1);
+  };
+
   const filtered = useMemo(() => {
-    return tenants.filter((t) => {
-      const matchesQuery = t.name.toLowerCase().includes(query.toLowerCase()) || t.room.toLowerCase().includes(query.toLowerCase());
+    const rows = tenants.filter((t) => {
+      const q = query.trim().toLowerCase();
+      const matchesQuery =
+        q.length === 0 ||
+        t.name.toLowerCase().includes(q) ||
+        t.room.toLowerCase().includes(q) ||
+        t.phones.some((p) => p.replace(/\s+/g, "").includes(q.replace(/\s+/g, "")));
       const matchesStatus = statusFilter === "active" ? t.active : !t.active;
       return matchesQuery && matchesStatus;
     });
-  }, [tenants, query, statusFilter]);
+
+    const dir = sortDir === "asc" ? 1 : -1;
+    return rows.sort((a, b) => {
+      switch (sortKey) {
+        case "name":
+          return dir * a.name.localeCompare(b.name);
+        case "room":
+          return dir * a.room.localeCompare(b.room, undefined, { numeric: true });
+        case "rent":
+          return dir * (a.rentAmount - b.rentAmount);
+        case "moveInDate":
+          return dir * (new Date(a.moveInDate).getTime() - new Date(b.moveInDate).getTime());
+        default:
+          return 0;
+      }
+    });
+  }, [tenants, query, statusFilter, sortKey, sortDir]);
 
   // Independent of the search box/tab — the metric row always reflects the whole tenant list.
   const counts = useMemo(
@@ -105,7 +173,7 @@ export default function Tenants() {
                   setQuery(e.target.value);
                   setPage(1);
                 }}
-                placeholder="Search by name or room"
+                placeholder="Search by name, room, or phone"
                 className="w-full bg-transparent text-sm outline-none placeholder:text-muted"
               />
             </div>
@@ -230,12 +298,17 @@ export default function Tenants() {
           {/* Desktop / tablet: table */}
           <div className="hidden overflow-x-auto md:block">
             <table className="w-full text-left text-sm">
-              <thead className="bg-mist text-[11px] text-muted">
+              <thead className="sticky top-0 z-10 bg-mist text-[11px] text-muted">
                 <tr>
-                  <th className="px-4 py-3 font-medium uppercase tracking-wide">Tenant</th>
-                  <th className="px-4 py-3 font-medium uppercase tracking-wide">Room</th>
-                  <th className="px-4 py-3 font-medium uppercase tracking-wide">Move-in date</th>
-                  <th className="px-4 py-3 font-medium uppercase tracking-wide">Rent</th>
+                  {sortColumns.map((col) => (
+                    <SortHeader
+                      key={col.key}
+                      label={col.label}
+                      active={sortKey === col.key}
+                      direction={sortDir}
+                      onClick={() => toggleSort(col.key)}
+                    />
+                  ))}
                   <th className="px-4 py-3 font-medium uppercase tracking-wide">Status</th>
                   <th className="px-4 py-3 font-medium uppercase tracking-wide">Action</th>
                 </tr>
