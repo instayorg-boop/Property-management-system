@@ -468,7 +468,7 @@ export default function Maintenance() {
           </button>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 rounded-lg border border-line bg-paper px-3 py-2">
             <SearchIcon />
             <input
@@ -478,19 +478,34 @@ export default function Maintenance() {
               className="w-56 bg-transparent text-sm outline-none placeholder:text-muted"
             />
           </div>
-          <div className="flex gap-2 overflow-x-auto">
-            {groupFilterOptions.map((o) => (
-              <button
-                key={o.value}
-                type="button"
-                onClick={() => setGroupFilter(o.value)}
-                className={`shrink-0 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors ${
-                  groupFilter === o.value ? "bg-ink text-paper" : "border border-line text-muted hover:bg-mist"
-                }`}
-              >
-                {o.label}
-              </button>
-            ))}
+
+          {/* Segmented control — matches the Tenants page's filter tabs: the active pill slides
+              between options instead of each button carrying its own border/fill. */}
+          <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+            <div className="inline-flex gap-0.5 rounded-md bg-mist p-1">
+              {groupFilterOptions.map((o) => {
+                const active = groupFilter === o.value;
+                return (
+                  <button
+                    key={o.value}
+                    type="button"
+                    onClick={() => setGroupFilter(o.value)}
+                    className={`relative shrink-0 rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                      active ? "text-ink" : "text-muted hover:text-ink"
+                    }`}
+                  >
+                    {active && (
+                      <motion.span
+                        layoutId="maintenance-filter-pill"
+                        transition={{ type: "spring", stiffness: 480, damping: 38 }}
+                        className="absolute inset-0 rounded-md bg-paper shadow-sm"
+                      />
+                    )}
+                    <span className="relative">{o.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 
