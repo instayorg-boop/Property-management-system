@@ -29,12 +29,25 @@ const statusStyle: Record<MaintenanceStatus, string> = {
 /** Groups render in this order regardless of which statuses actually have reports right now. */
 const STATUS_GROUPS: MaintenanceStatus[] = ["open", "in-progress", "resolved"];
 
-/** The little accent bar identifying each group at a glance — same hue family as its status pill. */
-const statusAccent: Record<MaintenanceStatus, string> = {
-  open: "bg-red-500",
-  "in-progress": "bg-amber-500",
-  resolved: "bg-emerald-500",
+/** The whole group header is tinted, not just a thin accent strip — same hue family as the
+ * status pills used elsewhere, just applied to the full row so it actually reads at a glance. */
+const statusHeaderStyle: Record<MaintenanceStatus, string> = {
+  open: "bg-red-50 hover:bg-red-100/70",
+  "in-progress": "bg-amber-50 hover:bg-amber-100/70",
+  resolved: "bg-emerald-50 hover:bg-emerald-100/70",
 };
+const statusHeaderText: Record<MaintenanceStatus, string> = {
+  open: "text-red-700",
+  "in-progress": "text-amber-700",
+  resolved: "text-emerald-700",
+};
+
+const groupFilterOptions: { value: "all" | MaintenanceStatus; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "open", label: "Open" },
+  { value: "in-progress", label: "In progress" },
+  { value: "resolved", label: "Resolved" },
+];
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
@@ -392,6 +405,9 @@ export default function Maintenance() {
   // Every group starts expanded — collapsing is something you do per-visit to focus on one status,
   // not a preference worth persisting (next time you land here, you want to see everything again).
   const [collapsed, setCollapsed] = useState<Set<MaintenanceStatus>>(new Set());
+  // Which group(s) to show at all — "all" shows every section, picking a status hides the rest
+  // entirely rather than just collapsing them.
+  const [groupFilter, setGroupFilter] = useState<"all" | MaintenanceStatus>("all");
 
   const selected = reports.find((r) => r.id === selectedId) ?? null;
 
@@ -408,6 +424,8 @@ export default function Maintenance() {
     for (const r of filtered) map.get(r.status)?.push(r);
     return map;
   }, [filtered]);
+
+  const visibleGroups = groupFilter === "all" ? STATUS_GROUPS : [groupFilter];
 
   const toggleGroup = (status: MaintenanceStatus) => {
     setCollapsed((prev) => {
@@ -441,14 +459,30 @@ export default function Maintenance() {
       <div className="space-y-5 px-4 sm:px-8 pb-10">
         {/* Top actions */}
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 rounded-lg border border-line bg-paper px-3 py-2">
-            <SearchIcon />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search by location or description"
-              className="w-56 bg-transparent text-sm outline-none placeholder:text-muted"
-            />
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2 rounded-lg border border-line bg-paper px-3 py-2">
+              <SearchIcon />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search by location or description"
+                className="w-56 bg-transparent text-sm outline-none placeholder:text-muted"
+              />
+            </div>
+            <div className="flex gap-2 overflow-x-auto">
+              {groupFilterOptions.map((o) => (
+                <button
+                  key={o.value}
+                  type="button"
+                  onClick={() => setGroupFilter(o.value)}
+                  className={`shrink-0 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors ${
+                    groupFilter === o.value ? "bg-ink text-paper" : "border border-line text-muted hover:bg-mist"
+                  }`}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
           </div>
           <button
             type="button"
@@ -486,7 +520,7 @@ export default function Maintenance() {
           </div>
         ) : (
           <div className="space-y-3">
-            {STATUS_GROUPS.map((status) => {
+            {visibleGroups.map((status) => {
               const rows = grouped.get(status) ?? [];
               const isCollapsed = collapsed.has(status);
               return (
@@ -494,12 +528,15 @@ export default function Maintenance() {
                   <button
                     type="button"
                     onClick={() => toggleGroup(status)}
-                    className="flex w-full items-center gap-2.5 px-4 py-3 text-left transition-colors hover:bg-mist"
+                    className={`flex w-full items-center gap-2.5 px-4 py-3 text-left transition-colors ${statusHeaderStyle[status]}`}
                   >
-                    <span className={`h-4 w-1 shrink-0 rounded-full ${statusAccent[status]}`} />
-                    <span className="text-xs font-semibold tracking-wide text-ink uppercase">{statusLabel[status]}</span>
-                    <span className="text-xs text-muted">({rows.length})</span>
-                    <CaretDown size={14} weight="bold" className={`ml-auto text-muted transition-transform ${isCollapsed ? "-rotate-90" : ""}`} />
+                    <span className={`text-xs font-bold tracking-wide uppercase ${statusHeaderText[status]}`}>{statusLabel[status]}</span>
+                    <span className={`text-xs font-medium ${statusHeaderText[status]} opacity-70`}>({rows.length})</span>
+                    <CaretDown
+                      size={14}
+                      weight="bold"
+                      className={`ml-auto transition-transform ${statusHeaderText[status]} ${isCollapsed ? "-rotate-90" : ""}`}
+                    />
                   </button>
 
                   <AnimatePresence initial={false}>
