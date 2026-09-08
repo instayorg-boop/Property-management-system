@@ -408,61 +408,61 @@ export default function Rent() {
           )}
         </div>
 
-        {/* Search + filter tabs */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          {/* Borderless until focused — the field only asserts itself once you're typing in it */}
-          <div className="flex items-center gap-2.5 rounded-md bg-mist px-3.5 py-2.5 transition-colors focus-within:bg-paper focus-within:ring-2 focus-within:ring-brand/25 sm:w-64">
-            <SearchIcon />
-            <input
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setPage(1);
-              }}
-              placeholder="Search tenant or room"
-              className="w-full bg-transparent text-sm outline-none placeholder:text-muted"
-            />
-          </div>
+        {/* Tenant table — search + filter tabs share the same bordered card as the table below,
+            not a separate floating row, matching the Tenants page's toolbar-attached-to-table look. */}
+        <div className="rounded-lg border border-line bg-paper">
+          {/* Toolbar */}
+          <div className="flex flex-col gap-3 border-b border-line p-4 sm:flex-row sm:items-center sm:justify-between">
+            {/* Borderless until focused — the field only asserts itself once you're typing in it */}
+            <div className="flex items-center gap-2.5 rounded-md bg-mist px-3.5 py-2.5 transition-colors focus-within:bg-paper focus-within:ring-2 focus-within:ring-brand/25 sm:w-64">
+              <SearchIcon />
+              <input
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setPage(1);
+                }}
+                placeholder="Search tenant or room"
+                className="w-full bg-transparent text-sm outline-none placeholder:text-muted"
+              />
+            </div>
 
-          {/* Segmented control — the selected pill slides between tabs rather than blinking on/off */}
-          <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-            <div className="inline-flex gap-0.5 rounded-md bg-mist p-1">
-              {filters.map((f) => {
-                const active = filter === f;
-                return (
-                  <button
-                    key={f}
-                    type="button"
-                    onClick={() => {
-                      setFilter(f);
-                      setPage(1);
-                    }}
-                    className={`relative flex shrink-0 items-center gap-1.5 rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors ${
-                      active ? "text-ink" : "text-muted hover:text-ink"
-                    }`}
-                  >
-                    {active && (
-                      <motion.span
-                        layoutId="rent-filter-pill"
-                        transition={{ type: "spring", stiffness: 480, damping: 38 }}
-                        className="absolute inset-0 rounded-md bg-paper shadow-sm"
-                      />
-                    )}
-                    <span className="relative">{f}</span>
-                    {/* Only the active tab's count is coloured — five permanently-coloured counts
-                        sitting in a row read as noise, not information, when nothing's selected. */}
-                    <span className={`relative text-xs font-semibold tabular-nums ${active ? filterCountColor[f] : "text-muted"}`}>
-                      {filterCounts[f]}
-                    </span>
-                  </button>
-                );
-              })}
+            {/* Segmented control — the selected pill slides between tabs rather than blinking on/off */}
+            <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+              <div className="inline-flex gap-0.5 rounded-md bg-mist p-1">
+                {filters.map((f) => {
+                  const active = filter === f;
+                  return (
+                    <button
+                      key={f}
+                      type="button"
+                      onClick={() => {
+                        setFilter(f);
+                        setPage(1);
+                      }}
+                      className={`relative flex shrink-0 items-center gap-1.5 rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                        active ? "text-ink" : "text-muted hover:text-ink"
+                      }`}
+                    >
+                      {active && (
+                        <motion.span
+                          layoutId="rent-filter-pill"
+                          transition={{ type: "spring", stiffness: 480, damping: 38 }}
+                          className="absolute inset-0 rounded-md bg-paper shadow-sm"
+                        />
+                      )}
+                      <span className="relative">{f}</span>
+                      {/* Only the active tab's count is coloured — five permanently-coloured counts
+                          sitting in a row read as noise, not information, when nothing's selected. */}
+                      <span className={`relative text-xs font-semibold tabular-nums ${active ? filterCountColor[f] : "text-muted"}`}>
+                        {filterCounts[f]}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
-        </div>
-
-        {/* Tenant table */}
-        <div className="rounded-lg border border-line">
           {/* Mobile: cards — an HTML table doesn't have room to breathe on a phone screen */}
           <div className="divide-y divide-line md:hidden">
             {!tenantsReady &&
@@ -483,7 +483,7 @@ export default function Rent() {
                     setPayingTenant(t);
                     setPaymentStep("ledger");
                   }}
-                  className="p-4 transition-colors active:bg-mist"
+                  className={`p-4 transition-colors active:bg-mist ${needsAction ? "bg-mist/50" : ""}`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
@@ -579,7 +579,7 @@ export default function Rent() {
                 return (
                   <tr
                     key={t.id}
-                    className="cursor-pointer border-t border-line transition-colors hover:bg-mist"
+                    className={`cursor-pointer border-t border-line transition-colors hover:bg-mist ${needsAction ? "bg-mist/50" : ""}`}
                     onClick={() => {
                       setPayingTenant(t);
                       setPaymentStep("ledger");
