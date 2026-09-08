@@ -343,29 +343,29 @@ begin
   insert into public.expenses (property_id, category_id, name, description, amount, date, source)
   values
     -- current month
-    (v_prop, v_c_power,     'ZESCO prepaid units',            'Three-phase meter, Blocks A and B',                    4250, to_char(current_date, 'YYYY-MM-') || '03', 'manual'),
-    (v_prop, v_c_water,     'LWSC water bill',                 'Monthly account 4471-0092',                            2380, to_char(current_date, 'YYYY-MM-') || '04', 'manual'),
-    (v_prop, v_c_net,       'Liquid Home fibre — 60Mbps',      'Shared Wi-Fi for both blocks',                          1650, to_char(current_date, 'YYYY-MM-') || '02', 'manual'),
-    (v_prop, v_c_clean,     'Cleaning supplies',               'Jik, handwash, mops — Shoprite Manda Hill',              742, to_char(current_date, 'YYYY-MM-') || '06', 'manual'),
-    (v_prop, v_c_repairs,   'Blocked drain — Block B ablution','Plumber call-out and rodding',                           900, to_char(current_date, 'YYYY-MM-') || '08', 'manual'),
-    (v_prop, v_c_refuse,    'Refuse collection — LCC',         'Monthly skip service',                                   450, to_char(current_date, 'YYYY-MM-') || '05', 'manual'),
+    (v_prop, v_c_power,     'ZESCO prepaid units',            'Three-phase meter, Blocks A and B',                    4250, (to_char(current_date, 'YYYY-MM-') || '03')::date, 'manual'),
+    (v_prop, v_c_water,     'LWSC water bill',                 'Monthly account 4471-0092',                            2380, (to_char(current_date, 'YYYY-MM-') || '04')::date, 'manual'),
+    (v_prop, v_c_net,       'Liquid Home fibre — 60Mbps',      'Shared Wi-Fi for both blocks',                          1650, (to_char(current_date, 'YYYY-MM-') || '02')::date, 'manual'),
+    (v_prop, v_c_clean,     'Cleaning supplies',               'Jik, handwash, mops — Shoprite Manda Hill',              742, (to_char(current_date, 'YYYY-MM-') || '06')::date, 'manual'),
+    (v_prop, v_c_repairs,   'Blocked drain — Block B ablution','Plumber call-out and rodding',                           900, (to_char(current_date, 'YYYY-MM-') || '08')::date, 'manual'),
+    (v_prop, v_c_refuse,    'Refuse collection — LCC',         'Monthly skip service',                                   450, (to_char(current_date, 'YYYY-MM-') || '05')::date, 'manual'),
     -- last month
-    (v_prop, v_c_power,     'ZESCO prepaid units',             'Higher usage — cold nights, more heaters',              5120, to_char(current_date - interval '1 month', 'YYYY-MM-') || '03', 'manual'),
-    (v_prop, v_c_water,     'LWSC water bill',                 'Monthly account 4471-0092',                             2210, to_char(current_date - interval '1 month', 'YYYY-MM-') || '04', 'manual'),
-    (v_prop, v_c_net,       'Liquid Home fibre — 60Mbps',      '',                                                      1650, to_char(current_date - interval '1 month', 'YYYY-MM-') || '02', 'manual'),
-    (v_prop, v_c_repairs,   'Borehole pump repair',            'Impeller replaced, technician from Chilenje',           1850, to_char(current_date - interval '1 month', 'YYYY-MM-') || '14', 'manual'),
-    (v_prop, v_c_repairs,   'Repaint Room 18',                 'After move-out — paint, filler, labour',                2300, to_char(current_date - interval '1 month', 'YYYY-MM-') || '22', 'manual'),
-    (v_prop, v_c_security,  'Guard uniforms and torches',      'Two sets plus rechargeable torches',                    1240, to_char(current_date - interval '1 month', 'YYYY-MM-') || '11', 'manual'),
-    (v_prop, v_c_refuse,    'Refuse collection — LCC',         '',                                                       450, to_char(current_date - interval '1 month', 'YYYY-MM-') || '05', 'manual'),
-    (v_prop, v_c_transport, 'Fuel — hardware runs',            'Trips to Kamwala for fittings',                           680, to_char(current_date - interval '1 month', 'YYYY-MM-') || '17', 'manual'),
+    (v_prop, v_c_power,     'ZESCO prepaid units',             'Higher usage — cold nights, more heaters',              5120, (to_char(current_date - interval '1 month', 'YYYY-MM-') || '03')::date, 'manual'),
+    (v_prop, v_c_water,     'LWSC water bill',                 'Monthly account 4471-0092',                             2210, (to_char(current_date - interval '1 month', 'YYYY-MM-') || '04')::date, 'manual'),
+    (v_prop, v_c_net,       'Liquid Home fibre — 60Mbps',      '',                                                      1650, (to_char(current_date - interval '1 month', 'YYYY-MM-') || '02')::date, 'manual'),
+    (v_prop, v_c_repairs,   'Borehole pump repair',            'Impeller replaced, technician from Chilenje',           1850, (to_char(current_date - interval '1 month', 'YYYY-MM-') || '14')::date, 'manual'),
+    (v_prop, v_c_repairs,   'Repaint Room 18',                 'After move-out — paint, filler, labour',                2300, (to_char(current_date - interval '1 month', 'YYYY-MM-') || '22')::date, 'manual'),
+    (v_prop, v_c_security,  'Guard uniforms and torches',      'Two sets plus rechargeable torches',                    1240, (to_char(current_date - interval '1 month', 'YYYY-MM-') || '11')::date, 'manual'),
+    (v_prop, v_c_refuse,    'Refuse collection — LCC',         '',                                                       450, (to_char(current_date - interval '1 month', 'YYYY-MM-') || '05')::date, 'manual'),
+    (v_prop, v_c_transport, 'Fuel — hardware runs',            'Trips to Kamwala for fittings',                           680, (to_char(current_date - interval '1 month', 'YYYY-MM-') || '17')::date, 'manual'),
     -- two months back
-    (v_prop, v_c_power,     'ZESCO prepaid units',             '',                                                      3980, to_char(current_date - interval '2 months', 'YYYY-MM-') || '03', 'manual'),
-    (v_prop, v_c_water,     'LWSC water bill',                 '',                                                      2050, to_char(current_date - interval '2 months', 'YYYY-MM-') || '04', 'manual'),
-    (v_prop, v_c_net,       'Liquid Home fibre — 60Mbps',      '',                                                      1650, to_char(current_date - interval '2 months', 'YYYY-MM-') || '02', 'manual'),
-    (v_prop, v_c_rates,     'Lusaka City Council — lodging levy','Annual licence, paid in two parts',                    3200, to_char(current_date - interval '2 months', 'YYYY-MM-') || '09', 'manual'),
-    (v_prop, v_c_clean,     'Pest control — fumigation',       'Both blocks, quarterly service',                         1500, to_char(current_date - interval '2 months', 'YYYY-MM-') || '19', 'manual'),
-    (v_prop, v_c_repairs,   'Replace geyser element — Room 5', '',                                                        620, to_char(current_date - interval '2 months', 'YYYY-MM-') || '25', 'manual'),
-    (v_prop, v_c_refuse,    'Refuse collection — LCC',         '',                                                        450, to_char(current_date - interval '2 months', 'YYYY-MM-') || '05', 'manual');
+    (v_prop, v_c_power,     'ZESCO prepaid units',             '',                                                      3980, (to_char(current_date - interval '2 months', 'YYYY-MM-') || '03')::date, 'manual'),
+    (v_prop, v_c_water,     'LWSC water bill',                 '',                                                      2050, (to_char(current_date - interval '2 months', 'YYYY-MM-') || '04')::date, 'manual'),
+    (v_prop, v_c_net,       'Liquid Home fibre — 60Mbps',      '',                                                      1650, (to_char(current_date - interval '2 months', 'YYYY-MM-') || '02')::date, 'manual'),
+    (v_prop, v_c_rates,     'Lusaka City Council — lodging levy','Annual licence, paid in two parts',                    3200, (to_char(current_date - interval '2 months', 'YYYY-MM-') || '09')::date, 'manual'),
+    (v_prop, v_c_clean,     'Pest control — fumigation',       'Both blocks, quarterly service',                         1500, (to_char(current_date - interval '2 months', 'YYYY-MM-') || '19')::date, 'manual'),
+    (v_prop, v_c_repairs,   'Replace geyser element — Room 5', '',                                                        620, (to_char(current_date - interval '2 months', 'YYYY-MM-') || '25')::date, 'manual'),
+    (v_prop, v_c_refuse,    'Refuse collection — LCC',         '',                                                        450, (to_char(current_date - interval '2 months', 'YYYY-MM-') || '05')::date, 'manual');
 
   ---------------------------------------------------------------------------
   -- 9. Maintenance reports (as submitted by tenants via the payment portal)
