@@ -1,5 +1,5 @@
-import { forwardRef, useState } from "react";
-import { NavLink, Link, useLocation } from "react-router-dom";
+import { forwardRef, useEffect, useRef, useState } from "react";
+import { NavLink, Link, useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   SquaresFour,
@@ -13,11 +13,16 @@ import {
   GearSix,
   CaretDown,
   Lifebuoy,
+  UserCircle,
+  SignOut,
+  Bell as BellIcon,
   X,
 } from "@phosphor-icons/react";
 import { useSidebar } from "../SidebarContext";
 import { useMaintenance } from "../MaintenanceContext";
 import { useTenants } from "../TenantsContext";
+import NotificationsPanel from "./NotificationsPanel";
+import { signOut as signOutRequest } from "../../lib/auth";
 
 const icons = {
   dashboard: SquaresFour,
@@ -29,6 +34,9 @@ const icons = {
   maintenance: Wrench,
   reports: ChartBar,
   settings: GearSix,
+  account: UserCircle,
+  help: Lifebuoy,
+  logout: SignOut,
 };
 
 type NavChild = { label: string; hash?: string; to?: string };
@@ -83,11 +91,11 @@ const groups: { label: string; items: NavItem[] }[] = [
       },
     ],
   },
-  {
-    label: "Account",
-    items: [{ label: "Settings", to: "/settings", icon: "settings" }],
-  },
 ];
+
+/** Account is its own group at the bottom (not part of the scrollable nav above) so it's always
+ * reachable without scrolling, matching the fixed footer pattern of a typical dashboard sidebar. */
+const accountItems: NavItem[] = [{ label: "Account", to: "/settings", icon: "account" }, { label: "Settings", to: "/settings", icon: "settings" }];
 
 /** Message-app-style count badge — shown at the trailing end of the row, not up front by the icon,
  * so it reads like a notification rather than a label. Caps the display at 99+. */
@@ -113,7 +121,7 @@ function NavRow({ item, onNavigate, attentionCount }: { item: NavItem; onNavigat
         data-tour={`nav-${item.icon}`}
         className={({ isActive }) =>
           `relative flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-            isActive ? "font-semibold text-brand" : "text-muted hover:bg-paper hover:text-ink"
+            isActive ? "font-semibold text-brand" : "text-muted hover:bg-mist hover:text-ink"
           }`
         }
       >
@@ -143,7 +151,7 @@ function NavRow({ item, onNavigate, attentionCount }: { item: NavItem; onNavigat
         type="button"
         onClick={() => setOpen((o) => !o)}
         className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors ${
-          isOnPage ? "font-semibold text-brand" : "text-muted hover:bg-paper hover:text-ink"
+          isOnPage ? "font-semibold text-brand" : "text-muted hover:bg-mist hover:text-ink"
         }`}
       >
         <ItemIcon size={18} weight="duotone" />
@@ -178,6 +186,25 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
   const { open, setOpen } = useSidebar();
   const { reports } = useMaintenance();
   const { tenants } = useTenants();
+  const navigate = useNavigate();
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const notificationsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!notificationsOpen) return;
+    const onClick = (e: MouseEvent) => {
+      if (notificationsRef.current && !notificationsRef.current.contains(e.target as Node)) setNotificationsOpen(false);
+    };
+    const onEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setNotificationsOpen(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onEscape);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onEscape);
+    };
+  }, [notificationsOpen]);
 
   // How many things need a look on each nav item — shown as a count badge, not just a dot, so it's
   // clear at a glance how much is waiting rather than just that something is.
@@ -186,27 +213,58 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
     "/rent": tenants.filter((t) => t.active && (t.status === "overdue" || t.status === "unpaid")).length,
   };
 
+  const handleSignOut = () => {
+    setOpen(false);
+    void signOutRequest().finally(() => navigate("/sign-in"));
+  };
+
   return (
     <div
       ref={ref}
       role="dialog"
       aria-modal={open ? true : undefined}
       aria-label="Navigation"
-      className={`fixed inset-y-0 left-0 z-50 flex h-full w-64 max-w-[85vw] shrink-0 flex-col bg-paper transition-transform duration-200 lg:static lg:z-auto lg:h-full lg:w-62 lg:max-w-none lg:translate-x-0 lg:bg-transparent ${
+      className={`fixed inset-y-0 left-0 z-50 flex h-full w-64 max-w-[85vw] shrink-0 flex-col border-r border-line bg-paper transition-transform duration-200 lg:static lg:z-auto lg:h-full lg:w-64 lg:max-w-none lg:translate-x-0 ${
         open ? "translate-x-0" : "-translate-x-full"
       }`}
     >
-      <div className="flex items-center justify-between border-b border-line px-3 py-3 lg:hidden">
-        <span className="font-display text-sm font-semibold text-ink">Menu</span>
-        <button
-          type="button"
-          onClick={() => setOpen(false)}
-          aria-label="Close menu"
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-ink"
-        >
-          <X size={16} weight="bold" />
-        </button>
+      {/* Header — logo + notifications, replacing the old full-width topbar. Lives inside the
+          sidebar's own card rather than a separate strip across the whole page. */}
+      <div ref={notificationsRef} className="relative flex items-center justify-between px-4 py-4">
+        <Link to="/dashboard" onClick={() => setOpen(false)} className="flex items-center gap-1.5">
+          <div className="flex h-6 w-6 items-center justify-center rounded bg-ink">
+            <span className="font-display text-[11px] font-bold text-paper">I</span>
+          </div>
+          <span className="font-display text-sm font-semibold tracking-tight text-ink">Instay</span>
+        </Link>
+
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            aria-label="Notifications"
+            onClick={() => setNotificationsOpen((v) => !v)}
+            className="relative flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-ink"
+          >
+            <BellIcon size={17} weight="duotone" />
+            <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-brand" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            aria-label="Close menu"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-ink lg:hidden"
+          >
+            <X size={16} weight="bold" />
+          </button>
+        </div>
+
+        {notificationsOpen && (
+          <div className="absolute top-full left-3 z-10 mt-1 max-w-[calc(100vw-1.5rem)]">
+            <NotificationsPanel onClose={() => setNotificationsOpen(false)} />
+          </div>
+        )}
       </div>
+      <div className="border-b border-line" />
 
       <nav className="flex-1 space-y-3 overflow-y-auto px-3 py-4">
         {groups.map((group) => (
@@ -223,15 +281,34 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
         ))}
       </nav>
 
+      {/* Footer groups — Account and Other, always reachable without scrolling the nav above. */}
       <div className="border-t border-line px-3 py-3">
-        <Link
-          to="/help"
-          onClick={() => setOpen(false)}
-          className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-muted transition-colors hover:bg-mist hover:text-ink"
-        >
-          <Lifebuoy size={18} weight="duotone" />
-          Help & Support
-        </Link>
+        <p className="px-3 pb-1.5 text-[11px] font-semibold tracking-wide text-muted/70 uppercase">Account</p>
+        <div className="space-y-0.5">
+          {accountItems.map((item) => (
+            <NavRow key={item.label} item={item} onNavigate={() => setOpen(false)} attentionCount={0} />
+          ))}
+        </div>
+
+        <p className="px-3 pt-3 pb-1.5 text-[11px] font-semibold tracking-wide text-muted/70 uppercase">Other</p>
+        <div className="space-y-0.5">
+          <Link
+            to="/help"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-muted transition-colors hover:bg-mist hover:text-ink"
+          >
+            <Lifebuoy size={18} weight="duotone" />
+            Help & Support
+          </Link>
+          <button
+            type="button"
+            onClick={handleSignOut}
+            className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+          >
+            <SignOut size={18} weight="duotone" />
+            Log out
+          </button>
+        </div>
       </div>
     </div>
   );

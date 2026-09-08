@@ -1,9 +1,10 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 
 /**
- * Shared open/closed state for the mobile sidebar drawer. Lives in its own context because three
- * separate components need to read and write it: Topbar (the hamburger button), Sidebar (the
- * drawer itself + closes on nav), and DashboardLayout (the backdrop overlay + Escape handling).
+ * Shared open/closed state for the mobile sidebar drawer. Lives in its own context because two
+ * separate components need to read and write it: Sidebar (the drawer itself, its own mobile
+ * header's close button, and closing on nav) and DashboardLayout (the mobile menu trigger, the
+ * backdrop overlay, and Escape handling).
  */
 type SidebarContextValue = {
   open: boolean;

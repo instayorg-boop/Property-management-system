@@ -131,7 +131,7 @@ export default function NotificationsPanel({ onClose }: { onClose: () => void })
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.97, y: -6 }}
         transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
-        className="absolute top-14 right-8 z-50 flex max-h-[32rem] w-[26rem] flex-col overflow-hidden rounded-2xl border border-line bg-paper shadow-card"
+        className="flex max-h-[32rem] w-[26rem] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-2xl border border-line bg-paper shadow-card"
       >
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between px-5 pt-4 pb-3">
