@@ -2,10 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useLocation, Link } from "react-router-dom";
 import {
   CaretLeft as CaretLeftIcon,
-  DeviceMobile as DeviceMobileIcon,
-  CreditCard as CreditCardIcon,
   ShieldCheck as ShieldCheckIcon,
-  CaretRight as CaretRightIcon,
   Wrench as WrenchIcon,
 } from "@phosphor-icons/react";
 import { formatCurrency } from "../../landlord/TenantsContext";
@@ -30,8 +27,7 @@ const statusStyle: Record<string, string> = {
 };
 const statusLabel: Record<string, string> = { paid: "Paid", overdue: "Overdue", unpaid: "Unpaid", partial: "Partial" };
 
-type Method = "mobile" | "card";
-type FlowStep = "review" | "method" | "pay" | "processing";
+type FlowStep = "review" | "pay" | "processing";
 const PROVIDERS = ["MTN", "Airtel", "Zamtel"] as const;
 
 /** Zambian mobile network prefixes — lets the mobile-money step skip asking "which network?" when
@@ -55,12 +51,8 @@ export default function TenantBalance() {
   const [ledger, setLedger] = useState<PortalLedgerRow[]>([]);
 
   const [flowStep, setFlowStep] = useState<FlowStep>("review");
-  const [method, setMethod] = useState<Method | null>(null);
   const [phone, setPhone] = useState("");
   const [provider, setProvider] = useState<(typeof PROVIDERS)[number]>("MTN");
-  const [cardNumber, setCardNumber] = useState("");
-  const [cardExpiry, setCardExpiry] = useState("");
-  const [cardCvv, setCardCvv] = useState("");
 
   const [verified, setVerified] = useState(() => (tenantId ? !!getPortalSessionToken(tenantId) : false));
   const [otpMaskedPhone, setOtpMaskedPhone] = useState<string | null>(null);
@@ -221,20 +213,19 @@ export default function TenantBalance() {
   const fullyPaid = tenant.status === "paid";
   const openLedger = ledger.filter((row) => row.status !== "paid");
 
-  const canPay =
-    method === "mobile" ? phone.trim().length >= 9 : cardNumber.replace(/\s/g, "").length >= 12 && cardExpiry.length >= 4 && cardCvv.length >= 3;
+  const canPay = phone.trim().length >= 9;
 
   const submitPayment = () => {
     setFlowStep("processing");
     window.setTimeout(() => {
       void logPortalPayment(tenant.id, amountDue).catch((e) => console.error("Failed to log payment", e));
       navigate(`/pay/${propertySlug}/${tenant.id}/success`, {
-        state: { amount: amountDue, method, provider: method === "mobile" ? provider : "Card" },
+        state: { amount: amountDue, method: "mobile", provider },
       });
     }, 1600);
   };
 
-  const shellStep: PayStep = flowStep === "review" ? "balance" : flowStep === "method" ? "method" : "pay";
+  const shellStep: PayStep = flowStep === "review" ? "balance" : "pay";
 
   return (
     <PayShell propertyName={propertyName} step={shellStep}>
@@ -287,7 +278,7 @@ export default function TenantBalance() {
           {!fullyPaid && (
             <button
               type="button"
-              onClick={() => setFlowStep("method")}
+              onClick={() => setFlowStep("pay")}
               className="mt-6 w-full rounded-lg bg-brand py-3 text-sm font-medium text-paper transition-opacity hover:opacity-90"
             >
               Continue to pay {formatCurrency(amountDue)}
@@ -308,57 +299,9 @@ export default function TenantBalance() {
         </>
       )}
 
-      {flowStep === "method" && (
+      {flowStep === "pay" && (
         <>
           <button type="button" onClick={() => setFlowStep("review")} className="flex items-center gap-1 text-xs font-medium text-muted hover:text-ink">
-            <CaretLeftIcon size={12} weight="duotone" />
-            Back
-          </button>
-
-          <div className="mt-4">
-            <h1 className="font-display text-lg font-semibold tracking-tight text-ink">How would you like to pay?</h1>
-            <p className="mt-1 text-sm text-muted">{formatCurrency(amountDue)} due for {tenant.room}</p>
-          </div>
-
-          <div className="mt-4">
-            <button
-              type="button"
-              onClick={() => {
-                setMethod("mobile");
-                setFlowStep("pay");
-              }}
-              className="group flex w-full items-center gap-3 border-b border-line py-4 text-left"
-            >
-              <DeviceMobileIcon size={18} weight="duotone" className="text-muted" />
-              <div className="flex-1">
-                <p className="text-base text-ink transition-colors group-hover:text-brand">Mobile money</p>
-                <p className="text-xs text-muted">MTN, Airtel or Zamtel</p>
-              </div>
-              <CaretRightIcon size={14} weight="duotone" className="text-muted" />
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setMethod("card");
-                setFlowStep("pay");
-              }}
-              className="group flex w-full items-center gap-3 border-b border-line py-4 text-left"
-            >
-              <CreditCardIcon size={18} weight="duotone" className="text-muted" />
-              <div className="flex-1">
-                <p className="text-base text-ink transition-colors group-hover:text-brand">Debit / credit card</p>
-                <p className="text-xs text-muted">Visa or Mastercard</p>
-              </div>
-              <CaretRightIcon size={14} weight="duotone" className="text-muted" />
-            </button>
-          </div>
-        </>
-      )}
-
-      {flowStep === "pay" && method === "mobile" && (
-        <>
-          <button type="button" onClick={() => setFlowStep("method")} className="flex items-center gap-1 text-xs font-medium text-muted hover:text-ink">
             <CaretLeftIcon size={12} weight="duotone" />
             Back
           </button>
@@ -406,61 +349,10 @@ export default function TenantBalance() {
         </>
       )}
 
-      {flowStep === "pay" && method === "card" && (
-        <>
-          <button type="button" onClick={() => setFlowStep("method")} className="flex items-center gap-1 text-xs font-medium text-muted hover:text-ink">
-            <CaretLeftIcon size={12} weight="duotone" />
-            Back
-          </button>
-
-          <div className="mt-4">
-            <h1 className="font-display text-lg font-semibold tracking-tight text-ink">Pay with card</h1>
-            <p className="mt-1 text-sm text-muted">{formatCurrency(amountDue)} due for {tenant.room}</p>
-          </div>
-
-          <div className="mt-5 space-y-5">
-            <input
-              autoFocus
-              value={cardNumber}
-              onChange={(e) => setCardNumber(e.target.value)}
-              inputMode="numeric"
-              placeholder="Card number"
-              className="w-full border-b border-line bg-transparent pb-3 text-base text-ink outline-none placeholder:text-muted focus:border-brand"
-            />
-            <div className="flex gap-6">
-              <input
-                value={cardExpiry}
-                onChange={(e) => setCardExpiry(e.target.value)}
-                placeholder="MM/YY"
-                className="w-full border-b border-line bg-transparent pb-3 text-base text-ink outline-none placeholder:text-muted focus:border-brand"
-              />
-              <input
-                value={cardCvv}
-                onChange={(e) => setCardCvv(e.target.value)}
-                inputMode="numeric"
-                placeholder="CVV"
-                className="w-full border-b border-line bg-transparent pb-3 text-base text-ink outline-none placeholder:text-muted focus:border-brand"
-              />
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={submitPayment}
-            disabled={!canPay}
-            className="mt-6 w-full rounded-lg bg-brand py-3 text-sm font-medium text-paper transition-opacity hover:opacity-90 disabled:opacity-50"
-          >
-            Pay {formatCurrency(amountDue)}
-          </button>
-        </>
-      )}
-
       {flowStep === "processing" && (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <span className="h-8 w-8 animate-spin rounded-full border-[3px] border-brand-soft border-t-brand" />
-          <p className="mt-4 text-sm font-medium text-ink">
-            {method === "mobile" ? `Check your phone to approve on ${provider}…` : "Processing your card payment…"}
-          </p>
+          <p className="mt-4 text-sm font-medium text-ink">Check your phone to approve on {provider}…</p>
           <p className="mt-1 text-xs text-muted">Don't close this page.</p>
         </div>
       )}
