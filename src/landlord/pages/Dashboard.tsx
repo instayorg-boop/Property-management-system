@@ -190,7 +190,7 @@ export default function Dashboard() {
   const { tenants, logPayment, moveOutTenant, isReady: tenantsReady } = useTenants();
   const { reports } = useMaintenance();
   const rooms = useRoomsView();
-  const { landlordName, managementFeeRate, lencoConnected, bankName, accountNumber, isReady: settingsReady } = useSettings();
+  const { landlordName, managementFeeRate, lencoConnected, bankName, accountNumber, propertyId, isReady: settingsReady } = useSettings();
   const { expenses } = useExpenses();
   const totalCollected = useCollectedRent();
   const navigate = useNavigate();
@@ -272,12 +272,14 @@ export default function Dashboard() {
     const netToOwner = totalCollected - totalCollected * managementFeeRate - expensesTotal;
     return {
       amount: formatCurrency(netToOwner),
+      rawAmount: netToOwner,
+      propertyId,
       date: `As of ${now.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`,
       status: lencoConnected ? "Ready to withdraw" : "Connect a bank account to receive this",
       bankAccount: lencoConnected && bankName ? `${bankName}${accountNumber ? ` · •••• ${accountNumber.slice(-4)}` : ""}` : "Not connected",
       schedule: lencoConnected ? "Automatic via Lenco" : "Not set up yet",
     };
-  }, [totalCollected, expenses, managementFeeRate, lencoConnected, bankName, accountNumber]);
+  }, [totalCollected, expenses, managementFeeRate, lencoConnected, bankName, accountNumber, propertyId]);
 
   const [paymentStep, setPaymentStep] = useState<PaymentStep | null>(null);
   const [payingTenant, setPayingTenant] = useState<Tenant | null>(null);

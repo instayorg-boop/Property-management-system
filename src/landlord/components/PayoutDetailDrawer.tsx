@@ -1,9 +1,14 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import SlideOver from "./SlideOver";
+import Button from "./Button";
 import { useSettings } from "../SettingsContext";
+import { sendPayout } from "../../lib/payoutApi";
 
 export type UpcomingPayout = {
   amount: string;
+  rawAmount: number;
+  propertyId: string | null;
   date: string;
   status: string;
   bankAccount: string;
@@ -19,6 +24,23 @@ export default function PayoutDetailDrawer({
 }) {
   const { lencoConnected } = useSettings();
   const settingsTo = "/settings/online-payments";
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
+
+  const sendNow = async () => {
+    if (!payout.propertyId) return;
+    setSending(true);
+    setSendError(null);
+    try {
+      await sendPayout(payout.propertyId, payout.rawAmount);
+      setSent(true);
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : "Failed to send payout.");
+    } finally {
+      setSending(false);
+    }
+  };
 
   return (
     <SlideOver
@@ -26,13 +48,40 @@ export default function PayoutDetailDrawer({
       title="Payout details"
       description="Your next scheduled transfer to your bank account."
       footer={
-        <Link
-          to={settingsTo}
-          onClick={onClose}
-          className="block w-full rounded-lg bg-brand py-3 text-center text-sm font-medium text-paper transition-transform hover:scale-[1.01]"
-        >
-          Manage payout settings
-        </Link>
+        lencoConnected && payout.propertyId ? (
+          <div className="space-y-2">
+            {sendError && <p className="text-xs text-red-600">{sendError}</p>}
+            {sent ? (
+              <p className="rounded-lg border border-emerald-200 bg-emerald-50 py-2.5 text-center text-sm font-medium text-emerald-700">
+                Payout sent — check history in a moment for the settled status.
+              </p>
+            ) : (
+              <Button
+                variant="primary"
+                className="w-full py-3 hover:scale-[1.01] disabled:hover:scale-100"
+                disabled={sending}
+                onClick={sendNow}
+              >
+                {sending ? "Sending…" : "Send payout now"}
+              </Button>
+            )}
+            <Link
+              to={settingsTo}
+              onClick={onClose}
+              className="block w-full rounded-lg border border-line py-2.5 text-center text-sm font-medium text-ink transition-colors hover:bg-mist"
+            >
+              Manage payout settings
+            </Link>
+          </div>
+        ) : (
+          <Link
+            to={settingsTo}
+            onClick={onClose}
+            className="block w-full rounded-lg bg-brand py-3 text-center text-sm font-medium text-paper transition-transform hover:scale-[1.01]"
+          >
+            Manage payout settings
+          </Link>
+        )
       }
     >
       <div className="space-y-5">

@@ -51,3 +51,16 @@ export async function createPayoutRecipient(params: {
   }
   return data.recipient;
 }
+
+/** Sends a real transfer to the property's registered payout recipient. The exact Lenco transfer
+ * endpoint isn't confirmed yet (see supabase/functions/lenco-payout's file comment) — this can fail
+ * with a real error until that's verified, which is why callers must show `err.message`, not assume success. */
+export async function sendPayout(propertyId: string, amount: number, narration?: string): Promise<{ payoutId: string }> {
+  const { data, error } = await supabase.functions.invoke<{ ok?: boolean; payoutId?: string; error?: string }>("lenco-payout", {
+    body: { propertyId, amount, narration },
+  });
+  if (error || !data?.ok || !data?.payoutId) {
+    throw new Error(data?.error ?? error?.message ?? "Failed to send payout.");
+  }
+  return { payoutId: data.payoutId };
+}

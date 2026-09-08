@@ -579,6 +579,63 @@ export type Database = {
           },
         ]
       }
+      payouts: {
+        Row: {
+          amount: number
+          created_at: string
+          currency: string
+          failure_reason: string | null
+          id: string
+          lenco_transaction_id: string | null
+          narration: string | null
+          payout_recipient_id: string
+          property_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          currency?: string
+          failure_reason?: string | null
+          id?: string
+          lenco_transaction_id?: string | null
+          narration?: string | null
+          payout_recipient_id: string
+          property_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          currency?: string
+          failure_reason?: string | null
+          id?: string
+          lenco_transaction_id?: string | null
+          narration?: string | null
+          payout_recipient_id?: string
+          property_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payouts_payout_recipient_id_fkey"
+            columns: ["payout_recipient_id"]
+            isOneToOne: false
+            referencedRelation: "payout_recipients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payouts_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       properties: {
         Row: {
           address: string | null
