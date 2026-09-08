@@ -80,14 +80,15 @@ function amountPaidThisMonth(t: Tenant) {
 /** Overdue and unpaid are equally urgent — same rank, same red bucket in the summary line. */
 const urgencyRank: Record<PaymentStatus, number> = { overdue: 0, unpaid: 0, partial: 1, paid: 2 };
 
-/** The pill's amount is the tenant's true total owed — carried-over arrears plus accrued late fees,
- * from the same calcTotalOwed used for invoicing — never just this month's shortfall. */
-function statusPillText(t: Tenant, dailyPenaltyRate: number) {
-  if (t.status === "paid") return "Paid";
+/** The short pill just names the state (Paid/Overdue/Unpaid/Partial) — the amount and day count
+ * live in a separate, quieter caption line instead of being crammed into the pill itself, since
+ * "Overdue · 12d — K1,440 owed" all in one small badge is a lot to read on every row of a table. */
+function statusDetail(t: Tenant, dailyPenaltyRate: number): string | null {
+  if (t.status === "paid") return null;
   const totalOwed = calcTotalOwed(t, dailyPenaltyRate);
-  if (t.status === "overdue") return `Overdue${t.daysOverdue ? ` · ${t.daysOverdue}d` : ""} — ${formatCurrency(totalOwed)} owed`;
-  if (t.status === "unpaid") return `Unpaid — ${formatCurrency(totalOwed)} owed`;
-  return `Partial · ${formatCurrency(totalOwed)} left`;
+  if (t.status === "overdue") return `${t.daysOverdue ? `${t.daysOverdue}d · ` : ""}${formatCurrency(totalOwed)} owed`;
+  if (t.status === "unpaid") return `${formatCurrency(totalOwed)} owed`;
+  return `${formatCurrency(totalOwed)} left`;
 }
 
 type PaymentStep = "search" | "ledger" | "confirm";
@@ -448,8 +449,11 @@ export default function Rent() {
                       />
                     )}
                     <span className="relative">{f}</span>
-                    {/* Always colored — the mix reads at a glance without selecting anything */}
-                    <span className={`relative text-xs font-semibold tabular-nums ${filterCountColor[f]}`}>{filterCounts[f]}</span>
+                    {/* Only the active tab's count is coloured — five permanently-coloured counts
+                        sitting in a row read as noise, not information, when nothing's selected. */}
+                    <span className={`relative text-xs font-semibold tabular-nums ${active ? filterCountColor[f] : "text-muted"}`}>
+                      {filterCounts[f]}
+                    </span>
                   </button>
                 );
               })}
@@ -479,16 +483,19 @@ export default function Rent() {
                     setPayingTenant(t);
                     setPaymentStep("ledger");
                   }}
-                  className={`p-4 transition-colors active:bg-mist ${needsAction ? "bg-slate-50" : ""}`}
+                  className="p-4 transition-colors active:bg-mist"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-ink">{t.name}</p>
                       <p className="mt-0.5 text-xs text-muted">{t.room}</p>
                     </div>
-                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[t.status]}`}>
-                      {statusPillText(t, dailyPenaltyRate)}
-                    </span>
+                    <div className="shrink-0 text-right">
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[t.status]}`}>{statusLabel[t.status]}</span>
+                      {statusDetail(t, dailyPenaltyRate) && (
+                        <p className="mt-1 text-[11px] text-muted">{statusDetail(t, dailyPenaltyRate)}</p>
+                      )}
+                    </div>
                   </div>
 
                   <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
@@ -511,7 +518,7 @@ export default function Rent() {
                           setPayingTenant(t);
                           setPaymentStep("confirm");
                         }}
-                        className="rounded-lg bg-brand px-3 py-1.5 text-xs font-medium text-paper"
+                        className="rounded-lg bg-brand-soft px-3 py-1.5 text-xs font-medium text-brand"
                       >
                         Log payment
                       </button>
@@ -572,7 +579,7 @@ export default function Rent() {
                 return (
                   <tr
                     key={t.id}
-                    className={`cursor-pointer border-t border-line transition-colors hover:bg-mist ${needsAction ? "bg-slate-50" : ""}`}
+                    className="cursor-pointer border-t border-line transition-colors hover:bg-mist"
                     onClick={() => {
                       setPayingTenant(t);
                       setPaymentStep("ledger");
@@ -594,9 +601,10 @@ export default function Rent() {
                       {formatCurrency(paidThisMonth)}
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[t.status]}`}>
-                        {statusPillText(t, dailyPenaltyRate)}
-                      </span>
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[t.status]}`}>{statusLabel[t.status]}</span>
+                      {statusDetail(t, dailyPenaltyRate) && (
+                        <p className="mt-1 text-[11px] text-muted">{statusDetail(t, dailyPenaltyRate)}</p>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       {needsAction ? (
@@ -607,7 +615,7 @@ export default function Rent() {
                             setPayingTenant(t);
                             setPaymentStep("confirm");
                           }}
-                          className="rounded-lg bg-brand px-3 py-1.5 text-xs font-medium text-paper"
+                          className="rounded-lg bg-brand-soft px-3 py-1.5 text-xs font-medium text-brand"
                         >
                           Log payment
                         </button>
