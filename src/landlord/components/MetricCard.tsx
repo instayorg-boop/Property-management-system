@@ -15,6 +15,16 @@ const trendStyles: Record<"up" | "down", string> = {
   down: "bg-red-50 text-red-600",
 };
 
+/** The flat layout's value color per tone — matches the emerald/red used for income and expenses
+ * on the dashboard chart, so a green "collected" figure and a red "balance" figure read the same
+ * way everywhere on the page. */
+const toneFlatValue: Record<MetricTone, string> = {
+  default: "text-ink",
+  success: "text-emerald-600",
+  danger: "text-red-700",
+  warning: "text-amber-600",
+};
+
 export default function MetricCard({
   icon,
   label,
@@ -25,6 +35,7 @@ export default function MetricCard({
   tone = "default",
   iconClassName,
   compact,
+  flat,
 }: {
   icon?: ReactNode;
   label: string;
@@ -40,8 +51,29 @@ export default function MetricCard({
   iconClassName?: string;
   /** Lays out icon/label/value in one dense row. Use for a plain count with no trend or insight — the default layout wastes height on those. */
   compact?: boolean;
+  /** No icon, no insight line — just label + trend on top, a big number, and one caption line. The
+   * shortest layout; use for a row of stat cards where the number should carry the weight. */
+  flat?: boolean;
 }) {
   const t = toneStyles[tone];
+
+  if (flat) {
+    return (
+      <div className="rounded-lg border-2 border-gray-100 bg-paper p-4">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-medium text-ink/70">{label}</p>
+          {trend && (
+            <span className={`flex shrink-0 items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${trendStyles[trend.direction]}`}>
+              {trend.direction === "up" ? <TrendUp size={11} weight="bold" /> : <TrendDown size={11} weight="bold" />}
+              {trend.value}
+            </span>
+          )}
+        </div>
+        <p className={`font-display mt-1.5 text-2xl font-semibold tracking-tight ${toneFlatValue[tone]}`}>{value}</p>
+        {caption && <p className="mt-1 text-xs text-muted">{caption}</p>}
+      </div>
+    );
+  }
 
   if (compact) {
     return (
@@ -65,7 +97,7 @@ export default function MetricCard({
   }
 
   return (
-    <div className={`rounded-lg p-4 ${t.card}`}>
+    <div className={`rounded-lg p-4 border-2 ${t.card}`}>
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2">
           {icon && <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${iconClassName ?? t.icon}`}>{icon}</span>}
@@ -79,10 +111,10 @@ export default function MetricCard({
         )}
       </div>
 
-      <p className="mt-3 font-display text-[26px] font-bold tracking-tight text-ink">{value}</p>
+      <p className="font-display mt-1 text-[26px] font-semibold tracking-tight text-ink">{value}</p>
 
       {insight && (
-        <p className="mt-3 flex items-center gap-1 text-xs font-semibold text-ink">
+        <p className="mt-2 flex items-center gap-1 text-xs font-semibold text-ink">
           {insight}
         </p>
       )}

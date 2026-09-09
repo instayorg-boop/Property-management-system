@@ -438,7 +438,7 @@ export default function Rent() {
                 label="Still owed"
                 value={formatCurrency(stats.outstanding)}
                 tone={stats.outstandingSeverity === "none" ? "success" : stats.outstandingSeverity === "moderate" ? "warning" : "danger"}
-                insight={stats.outstandingSeverity === "none" ? "All paid up" : "Needs follow-up"}
+                insight={stats.outstandingSeverity === "none" ? "All paid up" : ""}
                 caption={
                   stats.outstandingSeverity === "none"
                     ? "Every active tenant is paid up"

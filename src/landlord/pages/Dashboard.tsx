@@ -9,9 +9,9 @@ import MoveOutModal from "../components/MoveOutModal";
 import ExpenseFormDrawer from "../components/ExpenseFormDrawer";
 import PayoutDetailDrawer, { type UpcomingPayout } from "../components/PayoutDetailDrawer";
 import Select, { type SelectOption } from "../components/Select";
-import SlideOver from "../components/SlideOver";
 import { Skeleton } from "../components/Skeleton";
 import { useTenants, useCollectedRent, formatCurrency, type Tenant } from "../TenantsContext";
+import { useExpenses } from "../ExpensesContext";
 import { useMaintenance } from "../MaintenanceContext";
 import { useRoomsView } from "../RoomsContext";
 import { useSettings } from "../SettingsContext";
@@ -27,6 +27,7 @@ import {
   ChartBar as ChartBarIcon,
   Wallet as WalletIcon,
   DoorOpen as DoorIcon,
+  Sparkle as SparkleIcon,
 } from "@phosphor-icons/react";
 import MetricCard from "../components/MetricCard";
 import SectionLabel from "../components/SectionLabel";
@@ -119,43 +120,44 @@ function Greeting({ name, onAction }: { name: string; onAction: (action: QuickAc
   );
 }
 
-const toneStyle = {
-  red: { bar: "bg-red-500", badge: "bg-red-50 text-red-600" },
-  amber: { bar: "bg-amber-500", badge: "bg-amber-50 text-amber-600" },
-};
-
-// How many briefing items show inline before the rest move behind "View all" — keeps the card
-// from growing to fit an unbounded list.
-const BRIEFING_VISIBLE_LIMIT = 3;
-
-type BriefingItem = {
-  title: string;
-  subtitle: string;
-  detail: string;
-  tone: "red" | "amber";
+// A category-level nudge in "Today's briefing" — a count and a straight link to the page where
+// the landlord actually resolves it, rather than an itemized list of every tenant/report.
+// A suggestion in the AI briefing panel — plain-language copy generated from real dashboard
+// counts (overdue tenants, unread maintenance reports), each pointing straight at the page where
+// it gets resolved. Not a model call — just the numbers already on this page, phrased as advice.
+type Suggestion = {
+  icon: typeof CashIcon;
+  headline: string;
+  body: string;
+  cta: string;
   to: string;
-  tenantId?: string;
-  reportId?: string;
 };
 
-function BriefingRow({ item }: { item: BriefingItem }) {
-  const state = item.reportId ? { openReportId: item.reportId } : item.tenantId ? { openTenantId: item.tenantId } : undefined;
-  const tone = toneStyle[item.tone];
+function SuggestionCard({ item, index }: { item: Suggestion; index: number }) {
+  const Icon = item.icon;
   return (
-    <Link
-      to={item.to}
-      state={state}
-      className="group flex items-center gap-3 rounded-lg border border-line/70 bg-paper py-2.5 pr-3 pl-2.5 transition-all hover:border-brand/30 hover:shadow-md"
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, delay: 0.15 + index * 0.12, ease: [0.16, 1, 0.3, 1] }}
     >
-      <span className={`h-8 w-1 shrink-0 rounded-full ${tone.bar}`} />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-ink">{item.title}</p>
-        <p className="truncate text-xs text-muted">{item.subtitle}</p>
-      </div>
-      <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-medium whitespace-nowrap ${tone.badge}`}>
-        {item.detail}
-      </span>
-    </Link>
+      <Link
+        to={item.to}
+        className="group flex items-start gap-3 rounded-xl border border-white/60 bg-white/70 p-3.5 backdrop-blur-sm transition-all hover:border-white hover:bg-white hover:shadow-md"
+      >
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-violet-500 to-indigo-600 text-white shadow-sm">
+          <Icon size={15} weight="fill" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-ink">{item.headline}</p>
+          <p className="mt-0.5 text-xs text-muted">{item.body}</p>
+          <span className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-violet-700">
+            {item.cta}
+            <ArrowIcon size={12} weight="bold" className="transition-transform group-hover:translate-x-0.5" />
+          </span>
+        </div>
+      </Link>
+    </motion.div>
   );
 }
 
@@ -188,6 +190,7 @@ type PaymentStep = "search" | "ledger" | "confirm";
 
 export default function Dashboard() {
   const { tenants, logPayment, moveOutTenant, isReady: tenantsReady } = useTenants();
+  const { expenses } = useExpenses();
   const { reports } = useMaintenance();
   const rooms = useRoomsView();
   const { landlordName, lencoConnected, bankName, accountNumber, propertyId, isReady: settingsReady } = useSettings();
@@ -202,13 +205,14 @@ export default function Dashboard() {
 
   const activeTenantCount = useMemo(() => tenants.filter((t) => t.active).length, [tenants]);
 
-  // Last 12 real calendar months, built from ledger entry timestamps across every tenant —
-  // replaces what used to be a hardcoded 12-month series.
+  // Last 12 real calendar months, built from ledger entry timestamps across every tenant plus
+  // logged expenses — one series each, same month buckets, so the chart can show both without
+  // a second fetch or a second set of month math.
   const collections = useMemo(() => {
     const now = new Date();
     const months = Array.from({ length: 12 }, (_, i) => {
       const d = new Date(now.getFullYear(), now.getMonth() - (11 - i), 1);
-      return { key: `${d.getFullYear()}-${d.getMonth()}`, label: d.toLocaleDateString("en-US", { month: "short" }), amount: 0 };
+      return { key: `${d.getFullYear()}-${d.getMonth()}`, label: d.toLocaleDateString("en-US", { month: "short" }), amount: 0, expenses: 0 };
     });
     const byKey = new Map(months.map((m) => [m.key, m]));
     for (const t of tenants) {
@@ -219,8 +223,14 @@ export default function Dashboard() {
         if (bucket) bucket.amount += row.status === "partial" ? (row.paidAmount ?? 0) : row.amount;
       }
     }
-    return months.map(({ label, amount }) => ({ label, amount }));
-  }, [tenants]);
+    for (const e of expenses) {
+      if (!e.date) continue;
+      const created = new Date(e.date);
+      const bucket = byKey.get(`${created.getFullYear()}-${created.getMonth()}`);
+      if (bucket) bucket.expenses += e.amount;
+    }
+    return months.map(({ label, amount, expenses }) => ({ label, amount, expenses }));
+  }, [tenants, expenses]);
 
   // Every ledger entry across every tenant, newest first — replaces a hardcoded "recent payments" list.
   const payments = useMemo(() => {
@@ -245,23 +255,46 @@ export default function Dashboard() {
 
   // Overdue/unpaid tenants and unread maintenance reports, worst first — replaces a hardcoded
   // briefing list. (No "lease ending soon" category: there's no lease-end date in the data model.)
-  const briefing = useMemo<BriefingItem[]>(() => {
-    const items: BriefingItem[] = tenants
-      .filter((t) => t.active && (t.status === "overdue" || t.status === "unpaid"))
-      .sort((a, b) => (b.daysOverdue ?? 0) - (a.daysOverdue ?? 0))
-      .map((t) => ({
-        title: t.name,
-        subtitle: t.room,
-        detail: t.daysOverdue ? `${t.daysOverdue}d overdue` : "Unpaid",
-        tone: "red",
+  const overdueRentCount = useMemo(
+    () => tenants.filter((t) => t.active && (t.status === "overdue" || t.status === "unpaid")).length,
+    [tenants]
+  );
+  const unreadReportCount = useMemo(() => reports.filter((r) => r.unread).length, [reports]);
+  const overdueRentTotal = useMemo(
+    () => tenants.filter((t) => t.active && (t.status === "overdue" || t.status === "unpaid")).reduce((sum, t) => sum + t.owedAmount, 0),
+    [tenants]
+  );
+
+  // Plain-language suggestions built from the same counts shown elsewhere on this page — not a
+  // model call, just the numbers phrased as advice and pointed at where they get resolved.
+  const briefing = useMemo<Suggestion[]>(() => {
+    const items: Suggestion[] = [];
+    if (overdueRentCount > 0) {
+      items.push({
+        icon: CashIcon,
+        headline:
+          overdueRentCount === 1
+            ? `1 tenant is behind on rent, totaling ${formatCurrency(overdueRentTotal)}.`
+            : `${overdueRentCount} tenants are behind on rent, totaling ${formatCurrency(overdueRentTotal)}.`,
+        body: "Start with whoever owes the most — they're the biggest hit to what you collect this month.",
+        cta: "Review overdue rent",
         to: "/rent",
-        tenantId: t.id,
-      }));
-    for (const r of reports.filter((r) => r.unread)) {
-      items.push({ title: r.location, subtitle: "Maintenance request", detail: "Unread", tone: "amber", to: "/maintenance", reportId: r.id });
+      });
+    }
+    if (unreadReportCount > 0) {
+      items.push({
+        icon: WrenchIcon,
+        headline:
+          unreadReportCount === 1
+            ? "1 maintenance request is waiting on you."
+            : `${unreadReportCount} maintenance requests are waiting on you.`,
+        body: "Tenants can see these are still open — worth a quick look before they follow up.",
+        cta: "Open maintenance requests",
+        to: "/maintenance",
+      });
     }
     return items;
-  }, [tenants, reports]);
+  }, [overdueRentCount, overdueRentTotal, unreadReportCount]);
 
   // What's actually sitting in Lenco, ready to withdraw — real mobile-money collections minus
   // whatever's already been paid out. Deliberately NOT gross-collected-minus-fee-minus-expenses
@@ -304,7 +337,7 @@ export default function Dashboard() {
   const [addingExpense, setAddingExpense] = useState(false);
   const [payoutOpen, setPayoutOpen] = useState(false);
   const [collectionRange, setCollectionRange] = useState("6");
-  const [briefingDrawerOpen, setBriefingDrawerOpen] = useState(false);
+  const [activeBar, setActiveBar] = useState<number | null>(null);
 
   // Unread maintenance reports — hide the whole card when empty.
   const unreadMaintenance = useMemo(() => reports.filter((r) => r.unread).slice(0, 5), [reports]);
@@ -330,37 +363,23 @@ export default function Dashboard() {
       <div className="px-4 sm:px-8">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {!dataReady ? (
-            <div className="rounded-lg border border-line bg-paper p-5">
+            <div className="rounded-lg border-2 border-gray-100 bg-paper p-4">
               <Skeleton className="h-3 w-24" />
-              <Skeleton className="mt-3 h-7 w-28" />
+              <Skeleton className="mt-2.5 h-6 w-28" />
               <Skeleton className="mt-2 h-3 w-32" />
             </div>
           ) : (
             <MetricCard
-              label="Total tenants"
-              value={`${activeTenantCount}`}
-              insight={activeTenantCount > 0 ? "Currently housed" : "No tenants yet"}
-              caption={activeTenantCount > 0 ? "Across all your rooms" : "Add a tenant to get started"}
-            />
-          )}
-          {!dataReady ? (
-            <div className="rounded-lg border border-line bg-paper p-5">
-              <Skeleton className="h-3 w-24" />
-              <Skeleton className="mt-3 h-7 w-28" />
-              <Skeleton className="mt-2 h-3 w-32" />
-            </div>
-          ) : (
-            <MetricCard
+              tone="success"
               label="Total collected"
               value={`K${totalCollected.toLocaleString()}`}
-              insight={totalCollected > 0 ? "Trending up this month" : "No payments yet"}
-              caption={totalCollected > 0 ? "Compared to last month" : "Logged payments will show up here"}
+              caption={totalCollected > 0 ? "Collected from active tenants" : "Logged payments will show up here"}
             />
           )}
           {!dataReady ? (
-            <div className="rounded-lg border border-line bg-paper p-5">
+            <div className="rounded-lg border-2 border-gray-100 bg-paper p-4">
               <Skeleton className="h-3 w-28" />
-              <Skeleton className="mt-3 h-7 w-28" />
+              <Skeleton className="mt-2.5 h-6 w-28" />
               <Skeleton className="mt-2 h-3 w-32" />
             </div>
           ) : (
@@ -368,7 +387,6 @@ export default function Dashboard() {
               label="Outstanding balance"
               value={`K${outstanding.total.toLocaleString()}`}
               tone={outstanding.total > 0 ? "danger" : "success"}
-              insight={outstanding.total > 0 ? "Needs your attention" : "Nothing outstanding"}
               caption={
                 outstanding.total > 0
                   ? `${outstanding.count} tenant${outstanding.count === 1 ? "" : "s"} behind on rent`
@@ -377,9 +395,9 @@ export default function Dashboard() {
             />
           )}
           {!dataReady ? (
-            <div className="rounded-lg border border-line bg-paper p-5">
+            <div className="rounded-lg border-2 border-gray-100 bg-paper p-4">
               <Skeleton className="h-3 w-20" />
-              <Skeleton className="mt-3 h-7 w-20" />
+              <Skeleton className="mt-2.5 h-6 w-20" />
               <Skeleton className="mt-2 h-3 w-24" />
             </div>
           ) : roomsOccupied.total > 0 ? (
@@ -387,15 +405,14 @@ export default function Dashboard() {
               label="Rooms occupied"
               value={`${roomsOccupied.occupied} / ${roomsOccupied.total}`}
               tone={roomsOccupied.occupied === roomsOccupied.total ? "success" : "default"}
-              insight={roomsOccupied.occupied === roomsOccupied.total ? "Fully occupied" : "Room to grow"}
               caption={`${roomsOccupied.total - roomsOccupied.occupied} room${roomsOccupied.total - roomsOccupied.occupied === 1 ? "" : "s"} empty`}
             />
           ) : (
-            <div className="rounded-lg border border-line bg-paper p-5">
-              <p className="text-[13px] font-semibold text-ink/70">Rooms occupied</p>
-              <div className="mt-3 flex items-center gap-2.5">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-mist text-muted">
-                  <DoorIcon size={16} weight="duotone" />
+            <div className="rounded-lg border-2 border-gray-100 bg-paper p-4">
+              <p className="text-sm text-muted">Rooms occupied</p>
+              <div className="mt-2.5 flex items-center gap-2.5">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-mist text-muted">
+                  <DoorIcon size={14} weight="duotone" />
                 </span>
                 <div>
                   <p className="text-sm font-medium text-ink">No rooms yet</p>
@@ -403,6 +420,20 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>
+          )}
+          {!dataReady ? (
+            <div className="rounded-lg border-2 border-gray-100 bg-paper p-4">
+              <Skeleton className="h-3 w-24" />
+              <Skeleton className="mt-2.5 h-6 w-28" />
+              <Skeleton className="mt-2 h-3 w-32" />
+            </div>
+          ) : (
+            <MetricCard
+              flat
+              label="Total tenants"
+              value={`${activeTenantCount}`}
+              caption={activeTenantCount > 0 ? "Across all your rooms" : "Add a tenant to get started"}
+            />
           )}
         </div>
       </div>
@@ -412,10 +443,22 @@ export default function Dashboard() {
         <div className="space-y-4 lg:col-span-2">
           {dataReady && <SetupChecklist />}
 
-          {/* Collections chart */}
+          {/* Rent income vs expenses chart */}
           <div className="rounded-lg border-2 border-gray-100 bg-paper p-5">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-ink">Collections</p>
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm font-medium text-ink">Rent income vs expenses</p>
+                <span className="mt-1.5 flex items-center gap-3 text-[11px] text-muted">
+                  <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                    Income
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-red-700" />
+                    Expenses
+                  </span>
+                </span>
+              </div>
               <Select
                 value={collectionRange}
                 onChange={setCollectionRange}
@@ -436,14 +479,14 @@ export default function Dashboard() {
                   <ChartBarIcon size={22} weight="duotone" />
                 </span>
                 <div>
-                  <p className="text-xs font-semibold text-ink">No collections yet</p>
+                  <p className="text-xs font-semibold text-ink">No income yet</p>
                   <p className="mt-0.5 text-xs text-muted">Logged payments will show up here month by month.</p>
                 </div>
               </div>
             ) : (() => {
               const visibleCollections = collections.slice(-Number(collectionRange));
-              const maxAmount = Math.max(...visibleCollections.map((m) => m.amount));
-              const chartMax = Math.ceil(maxAmount / 50000) * 50000;
+              const maxAmount = Math.max(...visibleCollections.map((m) => Math.max(m.amount, m.expenses)));
+              const chartMax = Math.max(Math.ceil(maxAmount / 50000) * 50000, 50000);
               const ticks = [4, 3, 2, 1, 0].map((i) => Math.round((chartMax / 4) * i));
               return (
                 <div className="mt-6 flex h-48 gap-3">
@@ -464,33 +507,64 @@ export default function Dashboard() {
                     </div>
 
                     <AnimatePresence mode="popLayout" initial={false}>
-                      {visibleCollections.map((m, i) => (
-                        <motion.div
-                          key={`${collectionRange}-${m.label}`}
-                          layout
-                          initial={{ opacity: 0, y: 12 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: 12 }}
-                          transition={{ duration: 0.25, delay: i * 0.04 }}
-                          className="relative flex h-full flex-1 flex-col items-center justify-end gap-2"
-                        >
-                          <motion.span
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            transition={{ delay: i * 0.04 + 0.35, duration: 0.2 }}
-                            className="text-[11px] font-medium text-ink"
-                          >
-                            K{(m.amount / 1000).toFixed(0)}k
-                          </motion.span>
+                      {visibleCollections.map((m, i) => {
+                        // Expense tracking only reliably covers the current month right now — showing
+                        // an "expenses" bar on past months would imply a history we don't actually have.
+                        const isCurrentMonth = i === visibleCollections.length - 1;
+                        const isActive = activeBar === i;
+                        return (
                           <motion.div
-                            initial={{ height: 0 }}
-                            animate={{ height: `${(m.amount / chartMax) * 100}%` }}
-                            transition={{ duration: 0.5, delay: i * 0.04, ease: [0.16, 1, 0.3, 1] }}
-                            className={`w-full rounded-md ${i === visibleCollections.length - 1 ? "bg-brand" : "bg-ink/15"}`}
-                          />
-                          <span className="absolute -bottom-6 text-[11px] text-muted">{m.label}</span>
-                        </motion.div>
-                      ))}
+                            key={`${collectionRange}-${m.label}`}
+                            layout
+                            initial={{ opacity: 0, y: 12 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 12 }}
+                            transition={{ duration: 0.25, delay: i * 0.04 }}
+                            className="relative flex h-full flex-1 flex-col items-center justify-end gap-2"
+                          >
+                            <AnimatePresence>
+                              {isActive && (
+                                <motion.div
+                                  initial={{ opacity: 0, y: 4, scale: 0.95 }}
+                                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                                  exit={{ opacity: 0, y: 4, scale: 0.95 }}
+                                  transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
+                                  style={{ bottom: `calc(${(Math.max(m.amount, m.expenses) / chartMax) * 100}% + 8px)` }}
+                                  className="absolute z-10 -translate-x-0 whitespace-nowrap rounded-md bg-ink px-2.5 py-1.5 text-center shadow-lg"
+                                >
+                                  <p className="text-[11px] font-semibold text-paper">K{m.amount.toLocaleString()} income</p>
+                                  {isCurrentMonth && <p className="text-[11px] text-paper/70">K{m.expenses.toLocaleString()} expenses</p>}
+                                  <div className="absolute -bottom-1 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 bg-ink" />
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+
+                            <button
+                              type="button"
+                              onClick={() => setActiveBar(isActive ? null : i)}
+                              className="flex h-full w-full items-end justify-center gap-1"
+                            >
+                              <motion.div
+                                initial={{ height: 0 }}
+                                animate={{ height: `${(m.amount / chartMax) * 100}%` }}
+                                transition={{ duration: 0.5, delay: i * 0.04, ease: [0.16, 1, 0.3, 1] }}
+                                className={`rounded-t-full transition-opacity ${isCurrentMonth ? "w-2.5 bg-emerald-500" : `w-4 ${i % 2 === 0 ? "bg-emerald-500" : "bg-emerald-500/45"}`} ${
+                                  isActive ? "opacity-100" : "opacity-90 hover:opacity-100"
+                                }`}
+                              />
+                              {isCurrentMonth && (
+                                <motion.div
+                                  initial={{ height: 0 }}
+                                  animate={{ height: `${(m.expenses / chartMax) * 100}%` }}
+                                  transition={{ duration: 0.5, delay: i * 0.04 + 0.05, ease: [0.16, 1, 0.3, 1] }}
+                                  className={`w-2.5 rounded-t-full bg-red-700 transition-opacity ${isActive ? "opacity-100" : "opacity-90 hover:opacity-100"}`}
+                                />
+                              )}
+                            </button>
+                            <span className="absolute -bottom-6 text-[11px] text-muted">{m.label}</span>
+                          </motion.div>
+                        );
+                      })}
                     </AnimatePresence>
                   </div>
                 </div>
@@ -585,50 +659,65 @@ export default function Dashboard() {
 
         {/* Right column */}
         <div className="space-y-4">
-          {/* Today's briefing — priority, so it stays at the top of this column */}
-          <div className="relative overflow-hidden rounded-lg border border-brand/20 bg-linear-to-br from-brand-soft via-brand-soft/70 to-paper p-5 ">
+          {/* AI briefing — priority, so it stays at the top of this column. Plain-language
+              suggestions built from real dashboard counts, framed as an assistant talking. */}
+          <div className="relative overflow-hidden rounded-2xl bg-linear-to-br from-[#241a4d] via-[#2d2166] to-[#1a1440] p-5 shadow-[0_8px_30px_-8px_rgba(76,29,149,0.5)]">
+            {/* Ambient glow blobs — the panel's "AI" atmosphere */}
+            <div className="pointer-events-none absolute -top-16 -right-10 h-48 w-48 rounded-full bg-violet-500/30 blur-3xl" />
+            <div className="pointer-events-none absolute -bottom-20 -left-10 h-48 w-48 rounded-full bg-indigo-500/20 blur-3xl" />
 
             <div className="relative">
-              <span className="inline-flex items-center rounded-full bg-brand px-2.5 py-1 text-[11px] font-semibold text-paper">
-                Today&apos;s briefing
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white/90 ring-1 ring-white/15">
+                <motion.span
+                  animate={{ opacity: [0.5, 1, 0.5], scale: [0.9, 1.05, 0.9] }}
+                  transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+                  className="flex"
+                >
+                  <SparkleIcon size={12} weight="fill" className="text-violet-300" />
+                </motion.span>
+                AI suggestions
               </span>
+
               {!dataReady ? (
                 <div className="mt-4 space-y-2">
-                  <Skeleton className="h-4 w-3/4" />
-                  <Skeleton className="h-9 w-full rounded-lg" />
-                  <Skeleton className="h-9 w-full rounded-lg" />
+                  <motion.div
+                    animate={{ opacity: [0.5, 0.9, 0.5] }}
+                    transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
+                    className="h-4 w-3/4 rounded bg-white/15"
+                  />
+                  <motion.div
+                    animate={{ opacity: [0.5, 0.9, 0.5] }}
+                    transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut", delay: 0.15 }}
+                    className="mt-3 h-14 w-full rounded-xl bg-white/10"
+                  />
+                  <motion.div
+                    animate={{ opacity: [0.5, 0.9, 0.5] }}
+                    transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut", delay: 0.3 }}
+                    className="h-14 w-full rounded-xl bg-white/10"
+                  />
                 </div>
               ) : briefing.length === 0 ? (
                 <>
-                  <p className="mt-3 font-display text-lg font-semibold tracking-tight text-ink">
-                    Nothing needs your attention
+                  <p className="mt-3 font-display text-lg font-semibold tracking-tight text-white">
+                    Everything looks on track.
                   </p>
-                  <p className="mt-1 text-xs text-muted">Overdue rent, unread maintenance requests, and leases ending soon will show up here.</p>
+                  <p className="mt-1 text-xs text-white/60">No overdue rent or unread maintenance requests right now — I'll flag it here the moment something needs you.</p>
                 </>
               ) : (
                 <>
-                  <p className="mt-3 font-display text-lg font-semibold tracking-tight text-ink">
-                    {briefing.length} thing{briefing.length === 1 ? "" : "s"} need{briefing.length === 1 ? "s" : ""} your attention
+                  <p className="mt-3 font-display text-lg font-semibold tracking-tight text-white">
+                    Here's what I'd tackle first.
                   </p>
-                  <p className="mt-1 text-xs text-muted">Overdue rent, an unread maintenance request, and a lease ending soon.</p>
+                  <p className="mt-1 text-xs text-white/60">Based on what's happening across your property right now.</p>
                 </>
               )}
 
-              <div className="mt-4 space-y-2">
-                {briefing.slice(0, BRIEFING_VISIBLE_LIMIT).map((item) => (
-                  <BriefingRow key={item.tenantId ?? item.reportId} item={item} />
-                ))}
-              </div>
-
-              {briefing.length > BRIEFING_VISIBLE_LIMIT && (
-                <button
-                  type="button"
-                  onClick={() => setBriefingDrawerOpen(true)}
-                  className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-medium text-brand hover:bg-paper/60"
-                >
-                  View all {briefing.length}
-                  <ArrowIcon size={14} weight="bold" />
-                </button>
+              {briefing.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  {briefing.map((item, i) => (
+                    <SuggestionCard key={item.to} item={item} index={i} />
+                  ))}
+                </div>
               )}
             </div>
           </div>
@@ -781,19 +870,6 @@ export default function Dashboard() {
         {addingTenant && <TenantFormDrawer editing={null} onClose={() => setAddingTenant(false)} />}
         {addingExpense && <ExpenseFormDrawer editing={null} onClose={() => setAddingExpense(false)} />}
         {payoutOpen && payout && <PayoutDetailDrawer payout={payout} onClose={() => setPayoutOpen(false)} />}
-        {briefingDrawerOpen && (
-          <SlideOver
-            onClose={() => setBriefingDrawerOpen(false)}
-            title="Today's briefing"
-            description={`${briefing.length} thing${briefing.length === 1 ? "" : "s"} need${briefing.length === 1 ? "s" : ""} your attention`}
-          >
-            <div className="space-y-2">
-              {briefing.map((item) => (
-                <BriefingRow key={item.tenantId ?? item.reportId} item={item} />
-              ))}
-            </div>
-          </SlideOver>
-        )}
       </AnimatePresence>
     </>
   );

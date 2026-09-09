@@ -5,7 +5,7 @@ import PageHeader from "../components/PageHeader";
 import SlideOver from "../components/SlideOver";
 import SectionLabel from "../components/SectionLabel";
 import Lightbox from "../components/Lightbox";
-import { Eye, MagnifyingGlass, Paperclip, Wrench, PencilSimple, Trash, CaretDown, X } from "@phosphor-icons/react";
+import { Eye, MagnifyingGlass, Paperclip, Wrench, PencilSimple, Trash, CaretDown, X, Image, CheckCircle } from "@phosphor-icons/react";
 import { useMaintenance, type MaintenanceReport, type MaintenanceStatus } from "../MaintenanceContext";
 import { useTenants } from "../TenantsContext";
 import Modal from "../components/Modal";
@@ -603,15 +603,30 @@ export default function Maintenance() {
                                 >
                                   <div className="min-w-0">
                                     <div className="flex items-center gap-1.5">
-                                      {r.unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />}
+                                      {r.unread ? (
+                                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />
+                                      ) : (
+                                        <CheckCircle size={12} weight="fill" className="shrink-0 text-muted/50" />
+                                      )}
                                       <p className="truncate text-sm font-medium text-ink">{r.location}</p>
                                     </div>
-                                    <p className="mt-0.5 truncate text-xs text-muted">{r.description}</p>
-                                    <p className="mt-1.5 text-[11px] text-muted">
-                                      {r.tenant} · {formatDate(r.submittedAt)}
-                                    </p>
+                                    <p className="mt-0.5 line-clamp-2 text-xs text-muted">{r.description}</p>
+                                    <div className="mt-1.5 flex items-center gap-2">
+                                      <p className="text-[11px] text-muted">
+                                        {r.tenant} · {formatDate(r.submittedAt)}
+                                      </p>
+                                      {r.photoUrls.length > 0 && (
+                                        <span className="flex items-center gap-1 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600">
+                                          <Image size={10} weight="duotone" />
+                                          {r.photoUrls.length > 1 ? `${r.photoUrls.length} photos` : "Photo"}
+                                        </span>
+                                      )}
+                                    </div>
                                   </div>
-                                  <EyeIcon />
+                                  <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-muted">
+                                    <EyeIcon />
+                                    View
+                                  </span>
                                 </button>
                               ))}
                             </div>
@@ -620,15 +635,17 @@ export default function Maintenance() {
                             <div className="hidden overflow-x-auto md:block">
                               <table className="w-full table-fixed text-left text-sm">
                                 <colgroup>
-                                  <col className="w-40" />
-                                  <col className="w-32" />
+                                  <col className="w-36" />
+                                  <col className="w-24" />
+                                  <col className="w-28" />
                                   <col />
                                   <col className="w-32" />
-                                  <col className="w-16" />
+                                  <col className="w-24" />
                                 </colgroup>
                                 <thead className="bg-mist text-xs text-muted">
                                   <tr>
                                     <th className="px-3 py-2 font-medium">Location</th>
+                                    <th className="px-3 py-2 font-medium">Photos</th>
                                     <th className="px-3 py-2 font-medium">Reported by</th>
                                     <th className="px-3 py-2 font-medium">Description</th>
                                     <th className="px-3 py-2 font-medium">Date</th>
@@ -642,20 +659,32 @@ export default function Maintenance() {
                                       onClick={() => openRequest(r)}
                                       className="cursor-pointer border-t border-line transition-colors hover:bg-mist"
                                     >
-                                      <td className="px-3 py-2.5">
+                                      <td className="px-3 py-2.5 align-top">
                                         <div className="flex items-center gap-1.5">
-                                          {r.unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />}
+                                          {r.unread ? (
+                                            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />
+                                          ) : (
+                                            <CheckCircle size={12} weight="fill" className="shrink-0 text-muted/50" />
+                                          )}
                                           <span className="truncate font-medium text-ink">{r.location}</span>
                                         </div>
                                       </td>
-                                      <td className="truncate px-3 py-2.5 text-ink">{r.tenant}</td>
-                                      <td className="truncate px-3 py-2.5 text-muted" title={r.description}>
-                                        {r.description}
+                                      <td className="px-3 py-2.5 align-top">
+                                        {r.photoUrls.length > 0 && (
+                                          <span className="flex w-fit items-center gap-1 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600">
+                                            <Image size={10} weight="duotone" />
+                                            {r.photoUrls.length > 1 ? `${r.photoUrls.length} photos` : "Photo"}
+                                          </span>
+                                        )}
                                       </td>
-                                      <td className="px-3 py-2.5 text-muted">
+                                      <td className="truncate px-3 py-2.5 align-top text-ink">{r.tenant}</td>
+                                      <td className="px-3 py-2.5 align-top text-muted">
+                                        <p className="line-clamp-2 whitespace-normal">{r.description}</p>
+                                      </td>
+                                      <td className="px-3 py-2.5 align-top text-muted">
                                         <span className="whitespace-nowrap">{formatDate(r.submittedAt)}</span>
                                       </td>
-                                      <td className="px-3 py-2.5 text-right">
+                                      <td className="px-3 py-2.5 text-right align-top">
                                         <button
                                           type="button"
                                           onClick={(e) => {
@@ -663,9 +692,10 @@ export default function Maintenance() {
                                             openRequest(r);
                                           }}
                                           aria-label={`View maintenance request for ${r.location}`}
-                                          className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-line text-muted transition-colors hover:bg-paper hover:text-ink"
+                                          className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-xs font-medium text-muted transition-colors hover:bg-paper hover:text-ink"
                                         >
                                           <EyeIcon />
+                                          View
                                         </button>
                                       </td>
                                     </tr>
