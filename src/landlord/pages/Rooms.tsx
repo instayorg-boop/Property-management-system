@@ -135,7 +135,7 @@ function RoomCard({ room, onSelect }: { room: RoomView; onSelect: () => void }) 
     <button
       type="button"
       onClick={onSelect}
-      className={`flex min-h-24 flex-col rounded-lg border p-3 text-left transition-colors ${statusMeta[room.status].card}`}
+      className={`flex min-h-24 flex-col rounded-xl border p-3 text-left transition-colors ${statusMeta[room.status].card}`}
     >
       <div className="flex items-start justify-between gap-1.5">
         <div>
@@ -228,34 +228,46 @@ function RoomGroup({
   const vacant = rooms.filter((r) => r.status === "vacant").length;
 
   return (
-    <div className="overflow-hidden rounded-lg border border-line bg-paper">
-      <div className="flex w-full items-center justify-between gap-3 px-4 py-3">
-        <button type="button" onClick={onToggle} className="flex flex-1 items-center gap-2.5 text-left">
-          <CaretDown size={14} weight="duotone" className={`text-muted transition-transform ${open ? "" : "-rotate-90"}`} />
-          <span className="font-display text-sm font-semibold text-ink">{type.name}</span>
-          <span className="text-xs text-muted">
-            {rooms.length} room{rooms.length === 1 ? "" : "s"} · {formatCurrency(type.rent)}/mo
+    <div className="overflow-hidden rounded-xl border border-line bg-paper">
+      <div className={`flex w-full items-center justify-between gap-3 px-4 py-3.5 transition-colors ${open ? "bg-mist/60" : ""}`}>
+        <button type="button" onClick={onToggle} className="flex flex-1 items-center gap-3 text-left">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand">
+            <Bed size={17} weight="duotone" />
           </span>
+          <div className="min-w-0">
+            <span className="block truncate font-display text-sm font-semibold text-ink">{type.name}</span>
+            <span className="text-xs text-muted">
+              {rooms.length} room{rooms.length === 1 ? "" : "s"} · {formatCurrency(type.rent)}/mo
+            </span>
+          </div>
         </button>
-        <span className="hidden text-xs text-muted sm:inline">
+        <span className="hidden shrink-0 text-xs text-muted sm:inline">
           {occupied} occupied · {vacant} vacant
         </span>
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1.5">
           <button
             type="button"
             onClick={onEdit}
             aria-label={`Edit ${type.name}`}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-ink"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-ink"
           >
-            <PencilSimple size={13} weight="duotone" />
+            <PencilSimple size={16} weight="duotone" />
           </button>
           <button
             type="button"
             onClick={onDelete}
             aria-label={`Delete ${type.name}`}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-red-50 hover:text-red-600"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-red-50 hover:text-red-600"
           >
-            <Trash size={13} weight="duotone" />
+            <Trash size={16} weight="duotone" />
+          </button>
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-label={open ? "Collapse" : "Expand"}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-ink"
+          >
+            <CaretDown size={17} weight="duotone" className={`transition-transform ${open ? "" : "-rotate-90"}`} />
           </button>
         </div>
       </div>
