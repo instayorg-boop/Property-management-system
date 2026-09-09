@@ -137,8 +137,11 @@ function RoomCard({ room, onSelect }: { room: RoomView; onSelect: () => void }) 
       onClick={onSelect}
       className={`flex min-h-24 flex-col rounded-lg border p-3 text-left transition-colors ${statusMeta[room.status].card}`}
     >
-      <div className="flex items-center justify-between gap-1.5">
-        <span className="font-display text-sm font-bold tracking-tight text-ink">{room.number}</span>
+      <div className="flex items-start justify-between gap-1.5">
+        <div>
+          <p className="text-[9px] font-medium tracking-wide text-muted uppercase">Room</p>
+          <span className="font-display text-sm font-bold tracking-tight text-ink">{room.number}</span>
+        </div>
         <StatusPill status={room.status} />
       </div>
 
@@ -149,7 +152,7 @@ function RoomCard({ room, onSelect }: { room: RoomView; onSelect: () => void }) 
           // bed reads clearly instead of disappearing as a faint outline.
           <div className="flex items-center gap-1">
             {room.beds.map((bed, i) => (
-              <Bed key={i} size={15} weight="fill" className={bed ? "text-teal-600" : "text-slate-300"} />
+              <Bed key={i} size={15} weight="duotone" className={bed ? "text-teal-600" : "text-slate-300"} />
             ))}
           </div>
         ) : occupants.length > 0 ? (
@@ -228,7 +231,7 @@ function RoomGroup({
     <div className="overflow-hidden rounded-lg border border-line bg-paper">
       <div className="flex w-full items-center justify-between gap-3 px-4 py-3">
         <button type="button" onClick={onToggle} className="flex flex-1 items-center gap-2.5 text-left">
-          <CaretDown size={14} weight="bold" className={`text-muted transition-transform ${open ? "" : "-rotate-90"}`} />
+          <CaretDown size={14} weight="duotone" className={`text-muted transition-transform ${open ? "" : "-rotate-90"}`} />
           <span className="font-display text-sm font-semibold text-ink">{type.name}</span>
           <span className="text-xs text-muted">
             {rooms.length} room{rooms.length === 1 ? "" : "s"} · {formatCurrency(type.rent)}/mo
@@ -387,7 +390,7 @@ function RoomDetailDrawer({
               onClick={onDeleteRoom}
               className="flex w-full items-center justify-center gap-1.5 py-1.5 text-xs font-medium text-red-600 hover:underline"
             >
-              <Trash size={12} weight="bold" />
+              <Trash size={12} weight="duotone" />
               Delete this room
             </button>
           </div>
@@ -794,7 +797,7 @@ export default function Rooms() {
         {/* Toolbar — search, status filters (which double as the legend), view toggle */}
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-2 rounded-lg border border-line bg-paper px-3 py-2">
-            <MagnifyingGlass size={16} weight="bold" className="text-muted" />
+            <MagnifyingGlass size={16} weight="duotone" className="text-muted" />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
