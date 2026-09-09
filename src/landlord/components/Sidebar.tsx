@@ -24,7 +24,6 @@ import { useTenants } from "../TenantsContext";
 import { useSettings } from "../SettingsContext";
 import NotificationsPanel from "./NotificationsPanel";
 import { signOut as signOutRequest } from "../../lib/auth";
-import { SyncStatusBadge } from "./SyncStatus";
 
 const icons = {
   dashboard: SquaresFour,
@@ -291,10 +290,6 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
           </div>
         ))}
       </nav>
-
-      <div className="border-t border-line px-4 py-2.5">
-        <SyncStatusBadge />
-      </div>
 
       {/* Compact account trigger — a small icon, not a permanent list of links. Everything that
           used to be separate footer rows (Settings, Help, Log out) now lives inside the popup

@@ -15,6 +15,7 @@ import { InvoicesProvider } from "../InvoicesContext";
 import { SidebarProvider, useSidebar } from "../SidebarContext";
 import ProductTour from "./ProductTour";
 import SyncToast from "./SyncToast";
+import { SyncStatusBadge } from "./SyncStatus";
 
 const FOCUSABLE_SELECTOR = 'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
 
@@ -115,6 +116,7 @@ function Shell() {
       </div>
       <ProductTour />
       <SyncToast />
+      <SyncStatusBadge />
     </div>
   );
 }
