@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Phone, NotePencil, Plus, CaretDown, CheckCircle, WarningCircle, PencilSimple } from "@phosphor-icons/react";
+import { Phone, CaretDown, CheckCircle, WarningCircle, PencilSimple } from "@phosphor-icons/react";
 import SlideOver from "./SlideOver";
 import Button from "./Button";
 import { useTenants, formatCurrency, type Tenant } from "../TenantsContext";
@@ -56,8 +56,11 @@ export default function TenantPaymentDrawer({
   const { dueDay } = useSettings();
   const [historyFilter, setHistoryFilter] = useState<(typeof historyFilters)[number]>("All");
   const [historyExpanded, setHistoryExpanded] = useState(false);
-  const [noteOpen, setNoteOpen] = useState(!!tenant.notes);
   const [note, setNote] = useState(tenant.notes);
+  const noteDirty = note !== tenant.notes;
+  const saveNote = () => {
+    if (noteDirty) updateTenant(tenant.id, { notes: note });
+  };
 
   const filteredLedger = tenant.ledger.filter((row) => historyFilter === "All" || ledgerStatusLabel[row.status ?? "paid"] === historyFilter);
   const visibleLedger = historyExpanded ? filteredLedger : filteredLedger.slice(0, HISTORY_PAGE_SIZE);
@@ -113,45 +116,21 @@ export default function TenantPaymentDrawer({
         </span>
       </div>
 
-      {/* Quick actions — one tap, no leaving this screen */}
-      <div className="mt-3 grid grid-cols-3 gap-2">
-        <a
-          href={`tel:${tenant.phones[0] ?? ""}`}
-          className="flex items-center justify-center gap-1.5 rounded-lg border border-line bg-paper py-2.5 text-sm font-medium text-ink shadow-sm transition-colors hover:bg-mist"
-        >
-          <Phone size={15} weight="duotone" />
-          Call
-        </a>
-        <Button variant="secondary" onClick={() => setNoteOpen((v) => !v)} className="bg-paper py-2.5 shadow-sm">
-          <NotePencil size={15} weight="duotone" />
-          Add note
-        </Button>
-        <Button variant="primary" onClick={onLogPayment} className="py-2.5 shadow-sm">
-          <Plus size={15} weight="duotone" />
-          Log payment
-        </Button>
-      </div>
-
-      {/* Note to self — free text, tucked away until "Add note" is tapped */}
-      {noteOpen && (
-        <div className="mt-3">
-          <p className="mb-1.5 text-xs font-medium text-muted">Note to self</p>
-          <textarea
-            autoFocus
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            onBlur={() => {
-              if (note !== tenant.notes) updateTenant(tenant.id, { notes: note });
-            }}
-            rows={3}
-            placeholder="e.g. usually pays on the 3rd, prefers mobile money"
-            className="w-full resize-none rounded-lg border border-line px-3 py-2.5 text-sm text-ink outline-none placeholder:text-muted focus:border-brand"
-          />
+      {/* Who this is and how to reach them — the actual number, not just a "Call" button, so it's
+          readable even if you're not calling from this device right now. */}
+      {tenant.phones.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          {tenant.phones.map((phone) => (
+            <a key={phone} href={`tel:${phone}`} className="flex items-center gap-1.5 text-sm font-medium text-ink hover:text-brand">
+              <Phone size={14} weight="duotone" className="text-muted" />
+              {phone}
+            </a>
+          ))}
         </div>
       )}
 
       {/* Facts — the numbers a landlord glances at */}
-      <div className="mt-5 flex items-start justify-between gap-3">
+      <div className="mt-4 flex items-start justify-between gap-3 border-t border-line pt-4">
         <div>
           <p className="text-xs text-muted">Monthly rent</p>
           <p className="mt-0.5 text-sm font-semibold text-ink">{formatCurrency(tenant.rentAmount)}</p>
@@ -166,6 +145,24 @@ export default function TenantPaymentDrawer({
             {tenant.onTimeCount} of {tenant.totalMonthsCount || tenant.onTimeCount} months
           </p>
         </div>
+      </div>
+
+      {/* Notes — always visible, not tucked behind a toggle. Explicit Save button rather than
+          save-on-blur, which was unclear about whether anything had actually been saved. */}
+      <div className="mt-4">
+        <p className="mb-1.5 text-xs font-medium text-muted">Note to self</p>
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          rows={2}
+          placeholder="e.g. called 5 Sept, said they'd pay by Friday"
+          className="w-full resize-none rounded-lg border border-line px-3 py-2.5 text-sm text-ink outline-none placeholder:text-muted focus:border-brand"
+        />
+        {noteDirty && (
+          <button type="button" onClick={saveNote} className="mt-1.5 text-xs font-medium text-brand hover:underline">
+            Save note
+          </button>
+        )}
       </div>
 
       {/* Payment history — hairlines only */}
