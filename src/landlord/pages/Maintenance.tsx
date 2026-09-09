@@ -247,7 +247,7 @@ function RequestDrawer({
             </div>
 
             <Link
-              to="/expenses"
+              to="/accounting"
               state={{
                 expensePrefill: {
                   name: `Repair — ${request.location}`,

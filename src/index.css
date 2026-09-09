@@ -15,6 +15,17 @@
   --color-danger: #dc2626;
 
   --shadow-card: 0 1px 2px rgba(30, 58, 138, 0.06), 0 6px 20px -8px rgba(30, 58, 138, 0.16);
+
+  /* Validated categorical chart palette (light) — fixed hue order, never cycled/reassigned per
+     filter. Slot 1/8 (blue/red) double as the Accounting page's income/expense identity. */
+  --chart-series-1: #2a78d6;
+  --chart-series-2: #eb6834;
+  --chart-series-3: #1baf7a;
+  --chart-series-4: #eda100;
+  --chart-series-5: #e87ba4;
+  --chart-series-6: #008300;
+  --chart-series-7: #4a3aa7;
+  --chart-series-8: #e34948;
 }
 
 html {
@@ -63,6 +74,16 @@ body {
   --color-line: #3a3a3d;
   --color-muted: #9a9a9f;
   --color-brand-soft: rgba(30, 58, 138, 0.22);
+
+  /* Same 8 hues, stepped for the dark surface (#18181b) per the dataviz skill's dark-mode ramps. */
+  --chart-series-1: #3987e5;
+  --chart-series-2: #d95926;
+  --chart-series-3: #199e70;
+  --chart-series-4: #c98500;
+  --chart-series-5: #d55181;
+  --chart-series-6: #008300;
+  --chart-series-7: #9085e9;
+  --chart-series-8: #e66767;
 }
 
 /* Tactile "raised" SaaS button — subtle surface gradient + inset highlight + a distinct lower
@@ -144,4 +165,41 @@ body {
   box-shadow:
     inset 0 1px 2px rgba(0, 0, 0, 0.25),
     0 1px 0 rgba(0, 0, 0, 0.15);
+}
+
+/* Scrollable list with no visible scrollbar track (still scrolls via wheel/touch/keyboard). */
+.scrollbar-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Step-to-step transition for the payment portal — a short, small settle rather than a hard cut. */
+@keyframes pay-step-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.pay-step {
+  animation: pay-step-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Apple-style 12-blade activity indicator. */
+@keyframes spinner-fade {
+  0%, 39%, 100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+.spinner-blade {
+  animation: spinner-fade 1s linear infinite;
 }

@@ -31,7 +31,7 @@ import Tenants from "./landlord/pages/Tenants";
 import TenantProfile from "./landlord/pages/TenantProfile";
 import Rooms from "./landlord/pages/Rooms";
 import Maintenance from "./landlord/pages/Maintenance";
-import Expenses from "./landlord/pages/Expenses";
+import Accounting from "./landlord/pages/Accounting";
 import StaffEmployees from "./landlord/pages/StaffEmployees";
 import StaffPayroll from "./landlord/pages/StaffPayroll";
 import StaffClock from "./landlord/pages/StaffClock";
@@ -81,7 +81,8 @@ export default function App() {
             <Route path="/tenants/:id" element={<TenantProfile />} />
             <Route path="/rooms" element={<Rooms />} />
             <Route path="/maintenance" element={<Maintenance />} />
-            <Route path="/expenses" element={<Expenses />} />
+            <Route path="/accounting" element={<Accounting />} />
+            <Route path="/expenses" element={<Navigate to="/accounting" replace />} />
             <Route path="/staff" element={<Navigate to="/staff/employees" replace />} />
             <Route path="/staff/employees" element={<StaffEmployees />} />
             <Route path="/staff/payroll" element={<StaffPayroll />} />

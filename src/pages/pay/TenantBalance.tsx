@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useLocation, Link } from "react-router-dom";
-import {
-  CaretLeft as CaretLeftIcon,
-  ShieldCheck as ShieldCheckIcon,
-  Wrench as WrenchIcon,
-} from "@phosphor-icons/react";
+import { ShieldCheck as ShieldCheckIcon, Wrench as WrenchIcon } from "@phosphor-icons/react";
 import { formatCurrency } from "../../landlord/TenantsContext";
+import BackArrow from "./BackArrow";
+import Spinner from "./Spinner";
+import Skeleton from "./Skeleton";
 import {
   getPortalProperty,
   getPortalTenant,
@@ -22,14 +21,19 @@ import PayShell, { type PayStep } from "./PayShell";
 
 const statusStyle: Record<string, string> = {
   paid: "bg-emerald-50 text-emerald-600",
-  overdue: "bg-red-50 text-red-600",
+  overdue: "bg-[#fce4e9] text-[#ea2261]",
   unpaid: "bg-slate-100 text-slate-600",
-  partial: "bg-amber-50 text-amber-600",
+  partial: "bg-[#faf1e2] text-[#9b6829]",
 };
 const statusLabel: Record<string, string> = { paid: "Paid", overdue: "Overdue", unpaid: "Unpaid", partial: "Partial" };
 
 type FlowStep = "review" | "pay" | "processing";
 const PROVIDERS = ["MTN", "Airtel", "Zamtel"] as const;
+const PROVIDER_ICON: Record<(typeof PROVIDERS)[number], string> = {
+  MTN: "https://cdn.brandfetch.io/idtdXB-ogi/w/400/h/400/theme/dark/icon.jpeg?c=1dxbfHSJFAPEGdCLU4o5B",
+  Airtel: "https://cdn.brandfetch.io/idvMDbAci6/w/400/h/400/theme/dark/icon.jpeg?c=1dxbfHSJFAPEGdCLU4o5B",
+  Zamtel: "https://cdn.brandfetch.io/id8xS_vcc_/w/150/h/150/theme/dark/logo.png?c=1dxbfHSJFAPEGdCLU4o5B",
+};
 
 /** Zambian mobile network prefixes — lets the mobile-money step skip asking "which network?" when
  * we already know the tenant's phone (from the number they just verified via OTP). Falls back to
@@ -137,26 +141,26 @@ export default function TenantBalance() {
         <button
           type="button"
           onClick={() => navigate(`/pay/${propertySlug}`)}
-          className="flex items-center gap-1 text-xs font-medium text-muted hover:text-ink"
+          className="flex items-center gap-1 text-xs font-medium text-[#64748d] hover:text-[#0d253d]"
         >
-          <CaretLeftIcon size={12} weight="duotone" />
+          <BackArrow className="h-4 w-4" />
           Not you?
         </button>
 
         <div className="mt-4 flex items-center gap-2">
-          <ShieldCheckIcon size={20} weight="duotone" className="text-brand" />
-          <h1 className="font-display text-2xl font-semibold tracking-tight text-ink">
+          <ShieldCheckIcon size={20} weight="duotone" className="text-[#533afd]" />
+          <h1 className="font-display text-2xl font-semibold tracking-tight text-[#0d253d]">
             {claimedName ? `Verify it's ${claimedName.split(" ")[0]}` : "Verify it's you"}
           </h1>
         </div>
-        <p className="mt-1 text-sm text-muted">For your privacy, we need to confirm your phone number first.</p>
+        <p className="mt-1 text-sm text-[#64748d]">For your privacy, we need to confirm your phone number first.</p>
 
-        {otpSending && !otpMaskedPhone && <p className="mt-6 text-sm text-muted">Sending a code…</p>}
+        {otpSending && !otpMaskedPhone && <p className="mt-6 text-sm text-[#64748d]">Sending a code…</p>}
 
         {otpSendError && (
           <div className="mt-6 space-y-2">
-            <p className="text-sm text-red-600">{otpSendError}</p>
-            <button type="button" onClick={sendOtp} className="text-sm font-medium text-brand hover:underline">
+            <p className="text-sm text-[#ea2261]">{otpSendError}</p>
+            <button type="button" onClick={sendOtp} className="text-sm font-medium text-[#533afd] hover:underline">
               Try again
             </button>
           </div>
@@ -164,11 +168,11 @@ export default function TenantBalance() {
 
         {otpMaskedPhone && (
           <>
-            <p className="mt-6 text-sm text-ink">
+            <p className="mt-6 text-sm text-[#0d253d]">
               We sent a 6-digit code to the number on file, ending in <span className="font-medium">{otpMaskedPhone}</span>.
             </p>
             {otpDevCode && (
-              <p className="mt-1 text-xs text-amber-600">
+              <p className="mt-1 text-xs text-[#9b6829]">
                 Dev mode — SMS isn't connected yet, your code is <span className="font-mono font-semibold">{otpDevCode}</span>.
               </p>
             )}
@@ -184,20 +188,26 @@ export default function TenantBalance() {
                 onKeyDown={(e) => e.key === "Enter" && submitOtp()}
                 inputMode="numeric"
                 placeholder="000000"
-                className="w-full border-b border-line bg-transparent pb-3 text-center text-2xl font-semibold tracking-[0.3em] text-ink outline-none focus:border-brand"
+                className="w-full border-b border-[#a8c3de] bg-transparent pb-3 text-center text-2xl font-semibold tracking-[0.3em] text-[#0d253d] outline-none focus:border-[#533afd]"
               />
-              {otpVerifyError && <p className="mt-2 text-xs text-red-600">{otpVerifyError}</p>}
+              {otpVerifyError && <p className="mt-2 text-xs text-[#ea2261]">{otpVerifyError}</p>}
             </div>
 
             <button
               type="button"
               onClick={submitOtp}
               disabled={otpCode.length !== 6 || otpVerifying}
-              className="mt-5 w-full rounded-lg bg-brand py-3 text-sm font-medium text-paper transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="mt-5 flex w-full items-center justify-center gap-2 rounded-full bg-[#533afd] py-3 text-sm font-medium text-white transition-colors hover:bg-[#4434d4] active:bg-[#2e2b8c] disabled:opacity-50"
             >
-              {otpVerifying ? "Verifying…" : "Verify"}
+              {otpVerifying && <Spinner size={14} color="#fff" />}
+              {otpVerifying ? "Verifying" : "Verify"}
             </button>
-            <button type="button" onClick={sendOtp} disabled={otpSending} className="mt-3 text-xs font-medium text-muted hover:text-ink">
+            <button
+              type="button"
+              onClick={sendOtp}
+              disabled={otpSending}
+              className="mt-3 text-xs font-medium text-[#64748d] hover:text-[#0d253d]"
+            >
               Didn't get it? Send another code
             </button>
           </>
@@ -206,7 +216,28 @@ export default function TenantBalance() {
     );
   }
 
-  if (tenant === undefined) return <PayShell propertyName={propertyName}>{null}</PayShell>;
+  if (tenant === undefined) {
+    return (
+      <PayShell propertyName={propertyName} step="balance">
+        <div className="mt-4 flex items-baseline justify-between">
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-3 w-20" />
+          </div>
+          <Skeleton className="h-6 w-16 rounded-full" />
+        </div>
+        <div className="mt-6 space-y-2 border-y border-[#e3e8ee] py-6 text-center">
+          <Skeleton className="mx-auto h-3 w-20" />
+          <Skeleton className="mx-auto h-9 w-36" />
+        </div>
+        <div className="mt-4 space-y-3">
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-full" />
+        </div>
+        <Skeleton className="mt-6 h-11 w-full rounded-full" />
+      </PayShell>
+    );
+  }
 
   if (!tenant) {
     return (
@@ -293,20 +324,20 @@ export default function TenantBalance() {
   return (
     <PayShell propertyName={propertyName} step={shellStep}>
       {flowStep === "review" && (
-        <>
+        <div className="pay-step">
           <button
             type="button"
             onClick={() => navigate(`/pay/${propertySlug}`)}
-            className="flex items-center gap-1 text-xs font-medium text-muted hover:text-ink"
+            className="flex items-center gap-1 text-xs font-medium text-[#64748d] hover:text-[#0d253d]"
           >
-            <CaretLeftIcon size={12} weight="duotone" />
+            <BackArrow className="h-4 w-4" />
             Not you?
           </button>
 
           <div className="mt-4 flex items-baseline justify-between">
             <div>
-              <p className="font-display text-lg font-semibold tracking-tight text-ink">{tenant.name}</p>
-              <p className="text-xs text-muted">
+              <p className="font-display text-lg font-semibold tracking-tight text-[#0d253d]">{tenant.name}</p>
+              <p className="text-xs text-[#64748d]">
                 {tenant.room} · {tenant.roomType}
               </p>
             </div>
@@ -315,22 +346,22 @@ export default function TenantBalance() {
             </span>
           </div>
 
-          <div className="mt-6 border-y border-line py-6 text-center">
-            <p className="text-xs text-muted">{fullyPaid ? "You're all paid up" : "Amount due"}</p>
-            <p className="mt-1 font-display text-4xl font-semibold tracking-tight text-ink">
+          <div className="mt-6 border-y border-[#e3e8ee] py-6 text-center">
+            <p className="text-xs text-[#64748d]">{fullyPaid ? "You're all paid up" : "Amount due"}</p>
+            <p className="mt-1 font-display text-4xl font-semibold tracking-tight text-[#0d253d]">
               {fullyPaid ? formatCurrency(tenant.rentAmount) : formatCurrency(amountDue)}
             </p>
             {tenant.status === "overdue" && tenant.daysOverdue ? (
-              <p className="mt-1 text-xs font-medium text-red-600">{tenant.daysOverdue} days overdue</p>
+              <p className="mt-1 text-xs font-medium text-[#ea2261]">{tenant.daysOverdue} days overdue</p>
             ) : null}
           </div>
 
           {!fullyPaid && openLedger.length > 0 && (
             <div className="mt-4">
               {openLedger.map((row, i) => (
-                <div key={i} className="flex items-baseline justify-between border-b border-line py-2.5 text-sm">
-                  <span className="text-muted">{row.label}</span>
-                  <span className="font-medium text-ink">
+                <div key={i} className="flex items-baseline justify-between border-b border-[#e3e8ee] py-2.5 text-sm">
+                  <span className="text-[#64748d]">{row.label}</span>
+                  <span className="font-medium text-[#0d253d]">
                     {formatCurrency(row.paidAmount ? row.amount - row.paidAmount : row.amount)}
                   </span>
                 </div>
@@ -342,7 +373,7 @@ export default function TenantBalance() {
             <button
               type="button"
               onClick={() => setFlowStep("pay")}
-              className="mt-6 w-full rounded-lg bg-brand py-3 text-sm font-medium text-paper transition-opacity hover:opacity-90"
+              className="mt-6 w-full rounded-full bg-[#533afd] py-3 text-sm font-medium text-white transition-colors hover:bg-[#4434d4] active:bg-[#2e2b8c]"
             >
               Continue to pay {formatCurrency(amountDue)}
             </button>
@@ -353,37 +384,44 @@ export default function TenantBalance() {
           {fullyPaid && (
             <Link
               to={`/pay/${propertySlug}/${tenant.id}/report`}
-              className="mt-6 flex items-center justify-center gap-1.5 text-sm text-muted hover:text-ink"
+              className="mt-6 flex items-center justify-center gap-1.5 text-sm text-[#64748d] hover:text-[#0d253d]"
             >
               <WrenchIcon size={14} weight="duotone" />
               Report a maintenance issue
             </Link>
           )}
-        </>
+        </div>
       )}
 
       {flowStep === "pay" && (
-        <>
-          <button type="button" onClick={() => setFlowStep("review")} className="flex items-center gap-1 text-xs font-medium text-muted hover:text-ink">
-            <CaretLeftIcon size={12} weight="duotone" />
+        <div className="pay-step">
+          <button
+            type="button"
+            onClick={() => setFlowStep("review")}
+            className="flex items-center gap-1 text-xs font-medium text-[#64748d] hover:text-[#0d253d]"
+          >
+            <BackArrow className="h-4 w-4" />
             Back
           </button>
 
           <div className="mt-4">
-            <h1 className="font-display text-lg font-semibold tracking-tight text-ink">Pay with mobile money</h1>
-            <p className="mt-1 text-sm text-muted">{formatCurrency(amountDue)} due for {tenant.room}</p>
+            <h1 className="font-display text-lg font-semibold tracking-tight text-[#0d253d]">Pay with mobile money</h1>
+            <p className="mt-1 text-sm text-[#64748d]">
+              {formatCurrency(amountDue)} due for {tenant.room}
+            </p>
           </div>
 
-          <div className="mt-5 flex gap-6 border-b border-line">
+          <div className="mt-5 flex gap-6 border-b border-[#e3e8ee]">
             {PROVIDERS.map((p) => (
               <button
                 key={p}
                 type="button"
                 onClick={() => setProvider(p)}
-                className={`border-b-2 pb-2.5 text-sm font-medium transition-colors ${
-                  provider === p ? "border-brand text-ink" : "border-transparent text-muted hover:text-ink"
+                className={`flex items-center gap-1.5 border-b-2 pb-2.5 text-sm font-medium transition-colors ${
+                  provider === p ? "border-[#533afd] text-[#0d253d]" : "border-transparent text-[#64748d] hover:text-[#0d253d]"
                 }`}
               >
+                <img src={PROVIDER_ICON[p]} alt="" className="h-4 w-4 rounded-full object-cover" />
                 {p}
               </button>
             ))}
@@ -396,42 +434,42 @@ export default function TenantBalance() {
               onChange={(e) => setPhone(e.target.value)}
               inputMode="tel"
               placeholder="Phone number"
-              className="w-full border-b border-line bg-transparent pb-3 text-base text-ink outline-none placeholder:text-muted focus:border-brand"
+              className="w-full border-b border-[#a8c3de] bg-transparent pb-3 text-base text-[#0d253d] outline-none placeholder:text-[#64748d] focus:border-[#533afd]"
             />
-            <p className="mt-2 text-xs text-muted">You'll get a prompt on this number to approve the payment.</p>
+            <p className="mt-2 text-xs text-[#64748d]">You'll get a prompt on this number to approve the payment.</p>
           </div>
 
-          {paymentError && <p className="mt-3 text-sm text-red-600">{paymentError}</p>}
+          {paymentError && <p className="mt-3 text-sm text-[#ea2261]">{paymentError}</p>}
 
           <button
             type="button"
             onClick={submitPayment}
             disabled={!canPay}
-            className="mt-6 w-full rounded-lg bg-brand py-3 text-sm font-medium text-paper transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="mt-6 w-full rounded-full bg-[#533afd] py-3 text-sm font-medium text-white transition-colors hover:bg-[#4434d4] active:bg-[#2e2b8c] disabled:opacity-50"
           >
             Pay {formatCurrency(amountDue)}
           </button>
-        </>
+        </div>
       )}
 
       {flowStep === "processing" && !stillWaiting && (
-        <div className="flex flex-col items-center justify-center py-12 text-center">
-          <span className="h-8 w-8 animate-spin rounded-full border-[3px] border-brand-soft border-t-brand" />
-          <p className="mt-4 text-sm font-medium text-ink">Check your phone to approve on {provider}…</p>
-          <p className="mt-1 text-xs text-muted">Don't close this page.</p>
+        <div className="pay-step flex flex-col items-center justify-center py-12 text-center">
+          <Spinner size={28} color="#533afd" />
+          <p className="mt-4 text-sm font-medium text-[#0d253d]">Check your phone to approve on {provider}…</p>
+          <p className="mt-1 text-xs text-[#64748d]">Don't close this page.</p>
         </div>
       )}
 
       {flowStep === "processing" && stillWaiting && (
-        <div className="flex flex-col items-center justify-center py-12 text-center">
-          <p className="text-sm font-medium text-ink">Still waiting on approval</p>
-          <p className="mt-1 max-w-xs text-xs text-muted">
+        <div className="pay-step flex flex-col items-center justify-center py-12 text-center">
+          <p className="text-sm font-medium text-[#0d253d]">Still waiting on approval</p>
+          <p className="mt-1 max-w-xs text-xs text-[#64748d]">
             This is taking longer than usual. Approve the prompt on your phone whenever you're ready — your balance
             will update automatically once it goes through.
           </p>
           <Link
             to={`/pay/${propertySlug}/${tenant.id}`}
-            className="mt-5 rounded-lg border border-line px-4 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-mist"
+            className="mt-5 rounded-full border border-[#e3e8ee] px-4 py-2.5 text-sm font-medium text-[#0d253d] transition-colors hover:bg-[#f6f9fc]"
           >
             View my balance
           </Link>

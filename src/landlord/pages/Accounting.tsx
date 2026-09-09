@@ -3,13 +3,39 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
 import PageHeader from "../components/PageHeader";
 import Modal from "../components/Modal";
+import Select, { type SelectOption } from "../components/Select";
 import ExpenseFormDrawer from "../components/ExpenseFormDrawer";
 import { useExpenses, type Expense } from "../ExpensesContext";
 import { useTenants, formatCurrency } from "../TenantsContext";
-import { Paperclip, MagnifyingGlass, GearSix, CaretLeft, CaretRight, DownloadSimple, Receipt, Wallet, ChartPieSlice } from "@phosphor-icons/react";
+import {
+  Paperclip,
+  MagnifyingGlass,
+  GearSix,
+  CaretLeft,
+  CaretRight,
+  DownloadSimple,
+  Receipt,
+  Wallet,
+  ChartPieSlice,
+  TrendDown,
+} from "@phosphor-icons/react";
 import { Skeleton, SkeletonRow } from "../components/Skeleton";
 import MetricCard from "../components/MetricCard";
 import Button from "../components/Button";
+
+// Fixed categorical order — see src/index.css (--chart-series-1..8), validated for adjacent-pair
+// CVD separation. The cash-flow chart (2 series) and the category donut (up to 8) each draw from
+// this same fixed sequence independently — reusing a slot across unrelated charts is fine; what
+// matters is never reordering it within one chart.
+const CHART_SERIES = Array.from({ length: 8 }, (_, i) => `var(--chart-series-${i + 1})`);
+const INCOME_COLOR = CHART_SERIES[0];
+const EXPENSE_COLOR = CHART_SERIES[7];
+const CATEGORY_COLORS = CHART_SERIES;
+
+const cashFlowRangeOptions: SelectOption[] = [
+  { value: "6", label: "Last 6 months" },
+  { value: "12", label: "Last 12 months" },
+];
 
 function PaperclipIcon() {
   return <Paperclip size={14} weight="duotone" />;
@@ -151,11 +177,154 @@ function ManageCategoriesModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-export default function Expenses() {
+type CashFlowMonth = { label: string; income: number; expense: number };
+
+/** Grouped income/expense bars, last N months. Two series → always-on legend (rendered by the
+ * caller, above the chart) and a per-bar hover tooltip, per the dataviz skill's interaction step. */
+function CashFlowChart({ months }: { months: CashFlowMonth[] }) {
+  const [hovered, setHovered] = useState<{ index: number; series: "income" | "expense" } | null>(null);
+
+  if (months.every((m) => m.income === 0 && m.expense === 0)) {
+    return (
+      <div className="mt-6 flex h-48 flex-col items-center justify-center gap-3 text-center">
+        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
+          <ChartPieSlice size={22} weight="duotone" />
+        </span>
+        <div>
+          <p className="text-xs font-semibold text-ink">No activity yet</p>
+          <p className="mt-0.5 text-xs text-muted">Rent collected and logged expenses will show up here month by month.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const maxAmount = Math.max(...months.flatMap((m) => [m.income, m.expense]), 1);
+  const chartMax = Math.ceil(maxAmount / 50000) * 50000 || maxAmount;
+  const ticks = [4, 3, 2, 1, 0].map((i) => Math.round((chartMax / 4) * i));
+  const hoveredMonth = hovered ? months[hovered.index] : null;
+
+  return (
+    <div className="relative mt-6 flex h-48 gap-3">
+      {hoveredMonth && (
+        <div className="absolute -top-1 right-0 z-10 rounded-lg border border-line bg-paper px-3 py-2 text-xs shadow-card">
+          <p className="font-medium text-ink">{hoveredMonth.label}</p>
+          <p className="mt-1 flex items-center gap-1.5 text-muted">
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: INCOME_COLOR }} />
+            Income {formatK(hoveredMonth.income)}
+          </p>
+          <p className="flex items-center gap-1.5 text-muted">
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: EXPENSE_COLOR }} />
+            Expenses {formatK(hoveredMonth.expense)}
+          </p>
+        </div>
+      )}
+
+      <div className="flex h-40 flex-col justify-between pb-6 text-right text-[11px] text-muted">
+        {ticks.map((t) => (
+          <span key={t}>K{(t / 1000).toFixed(0)}k</span>
+        ))}
+      </div>
+
+      <div className="relative flex h-40 flex-1 items-end gap-1 border-l border-line pl-3">
+        <div className="pointer-events-none absolute inset-0 left-3 flex flex-col justify-between">
+          {ticks.map((t) => (
+            <div key={t} className="border-t border-line/60" />
+          ))}
+        </div>
+
+        {months.map((m, i) => (
+          <div key={`${m.label}-${i}`} className="flex h-full flex-1 flex-col items-center justify-end gap-1.5">
+            <div className="flex h-full w-full items-end justify-center gap-0.75">
+              <div
+                role="img"
+                aria-label={`${m.label} income ${formatK(m.income)}`}
+                onMouseEnter={() => setHovered({ index: i, series: "income" })}
+                onMouseLeave={() => setHovered(null)}
+                className="w-2.5 rounded-t transition-opacity"
+                style={{
+                  height: `${Math.max(2, (m.income / chartMax) * 100)}%`,
+                  background: INCOME_COLOR,
+                  opacity: hovered && hovered.index === i && hovered.series !== "income" ? 0.5 : 1,
+                }}
+              />
+              <div
+                role="img"
+                aria-label={`${m.label} expenses ${formatK(m.expense)}`}
+                onMouseEnter={() => setHovered({ index: i, series: "expense" })}
+                onMouseLeave={() => setHovered(null)}
+                className="w-2.5 rounded-t transition-opacity"
+                style={{
+                  height: `${Math.max(2, (m.expense / chartMax) * 100)}%`,
+                  background: EXPENSE_COLOR,
+                  opacity: hovered && hovered.index === i && hovered.series !== "expense" ? 0.5 : 1,
+                }}
+              />
+            </div>
+            <span className="text-[11px] text-muted">{m.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Expense-by-category donut — a CSS conic-gradient ring (no chart library needed) plus a legend
+ * that carries the actual identity (color is never the only cue: name + amount are always text). */
+function ExpenseDonut({ slices, total }: { slices: { name: string; total: number; color: string }[]; total: number }) {
+  if (slices.length === 0 || total === 0) {
+    return (
+      <div className="mt-6 flex flex-col items-center justify-center gap-3 py-6 text-center">
+        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
+          <ChartPieSlice size={22} weight="duotone" />
+        </span>
+        <p className="text-xs text-muted">No expenses logged this month.</p>
+      </div>
+    );
+  }
+
+  let cursor = 0;
+  const stops = slices.map((s) => {
+    const start = cursor;
+    const pct = (s.total / total) * 100;
+    cursor += pct;
+    return `${s.color} ${start}% ${cursor}%`;
+  });
+
+  return (
+    <div className="mt-4">
+      <div
+        className="relative mx-auto h-36 w-36 rounded-full"
+        style={{ background: `conic-gradient(${stops.join(", ")})` }}
+        role="img"
+        aria-label={`Expense breakdown: ${slices.map((s) => `${s.name} ${formatK(s.total)}`).join(", ")}`}
+      >
+        <div className="absolute inset-3.5 flex flex-col items-center justify-center rounded-full bg-paper text-center">
+          <p className="text-[10px] text-muted">Total</p>
+          <p className="text-sm font-semibold text-ink">{formatK(total)}</p>
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-1.5">
+        {slices.map((s) => (
+          <div key={s.name} className="flex items-center gap-2 text-xs">
+            <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: s.color }} />
+            <span className="min-w-0 flex-1 truncate text-ink">{s.name}</span>
+            <span className="shrink-0 text-muted">{Math.round((s.total / total) * 100)}%</span>
+            <span className="shrink-0 font-medium text-ink">{formatK(s.total)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default function Accounting() {
   const { expenses, categories, categoryName, isReady } = useExpenses();
   const { tenants } = useTenants();
   const location = useLocation();
   const navigate = useNavigate();
+
+  const [cashFlowRange, setCashFlowRange] = useState("6");
 
   const [monthOffset, setMonthOffset] = useState(0);
   const monthDate = useMemo(() => {
@@ -227,11 +396,143 @@ export default function Expenses() {
       }, 0);
   }, [tenants, monthOffset]);
 
+  // Rent owed right now by active tenants who are behind — "Pending payments" on the stat row.
+  const pending = useMemo(() => {
+    const behind = tenants.filter((t) => t.active && (t.status === "overdue" || t.status === "unpaid" || t.status === "partial"));
+    return { total: behind.reduce((sum, t) => sum + t.owedAmount, 0), count: behind.length };
+  }, [tenants]);
+
+  const netProfit = rentCollected === null ? null : rentCollected - total;
+
+  // Real income (from ledger entries, same as Dashboard's collections chart) vs logged expenses,
+  // last 12 real calendar months — the "Cash flow" chart.
+  const cashFlowSeries = useMemo(() => {
+    const now = new Date();
+    const months = Array.from({ length: 12 }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - (11 - i), 1);
+      return { key: `${d.getFullYear()}-${d.getMonth()}`, label: d.toLocaleDateString("en-US", { month: "short" }), income: 0, expense: 0 };
+    });
+    const byKey = new Map(months.map((m) => [m.key, m]));
+    for (const t of tenants) {
+      for (const row of t.ledger) {
+        if (!row.createdAt || (row.status !== "paid" && row.status !== "partial")) continue;
+        const created = new Date(row.createdAt);
+        const bucket = byKey.get(`${created.getFullYear()}-${created.getMonth()}`);
+        if (bucket) bucket.income += row.status === "partial" ? (row.paidAmount ?? 0) : row.amount;
+      }
+    }
+    for (const e of expenses) {
+      const created = new Date(e.date);
+      const bucket = byKey.get(`${created.getFullYear()}-${created.getMonth()}`);
+      if (bucket) bucket.expense += e.amount;
+    }
+    return months;
+  }, [tenants, expenses]);
+
+  // Expense breakdown donut for the selected month — same categories as the filter chips below,
+  // just visualized. Caps at the palette's 8 slots; anything past that folds into "Other" rather
+  // than inventing a 9th hue.
+  const donutSlices = useMemo(() => {
+    const sorted = [...byCategory].filter((c) => c.total > 0).sort((a, b) => b.total - a.total);
+    const head = sorted.slice(0, 7);
+    const rest = sorted.slice(7);
+    const otherTotal = rest.reduce((sum, c) => sum + c.total, 0);
+    const slices = head.map((c) => ({ name: c.category.name, total: c.total }));
+    if (otherTotal > 0) slices.push({ name: "Other", total: otherTotal });
+    return slices.map((s, i) => ({ ...s, color: CATEGORY_COLORS[i % CATEGORY_COLORS.length] }));
+  }, [byCategory]);
+
   return (
     <>
-      <PageHeader title="Expenses" />
+      <PageHeader title="Accounting" />
 
       <div className="space-y-5 px-4 sm:px-8 pb-10">
+        {/* At-a-glance summary — the numbers an owner checks first, for the selected month */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {!isReady ? (
+            Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="rounded-lg border border-line bg-paper p-3.5">
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="mt-2 h-6 w-24" />
+              </div>
+            ))
+          ) : (
+            <>
+              <MetricCard
+                compact
+                icon={<Wallet size={14} weight="fill" />}
+                label="Total income"
+                value={rentCollected === null ? "—" : formatCurrency(rentCollected)}
+                caption={monthOffset === 0 ? "Collected so far this month" : "Only tracked for the current month"}
+              />
+              <MetricCard
+                compact
+                icon={<Receipt size={14} weight="fill" />}
+                label="Total expenses"
+                value={formatK(total)}
+                caption={`${monthExpenses.length} expense${monthExpenses.length === 1 ? "" : "s"} in ${month}`}
+              />
+              <MetricCard
+                compact
+                icon={<ChartPieSlice size={14} weight="fill" />}
+                label="Net profit"
+                value={netProfit === null ? "—" : formatCurrency(netProfit)}
+                tone={netProfit === null ? "default" : netProfit >= 0 ? "success" : "danger"}
+                caption="Income minus expenses"
+              />
+              <MetricCard
+                compact
+                icon={<TrendDown size={14} weight="fill" />}
+                label="Pending payments"
+                value={formatCurrency(pending.total)}
+                tone={pending.count > 0 ? "warning" : "default"}
+                caption={pending.count > 0 ? `${pending.count} tenant${pending.count === 1 ? "" : "s"} behind` : "Nothing outstanding"}
+              />
+            </>
+          )}
+        </div>
+
+        {/* Cash flow + expense breakdown */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="rounded-lg border border-line bg-paper p-5 lg:col-span-2">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-ink">Cash flow</p>
+              <Select value={cashFlowRange} onChange={setCashFlowRange} options={cashFlowRangeOptions} className="py-1.5 text-xs" />
+            </div>
+            <div className="mt-2 flex items-center gap-4 text-xs text-muted">
+              <span className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full" style={{ background: INCOME_COLOR }} />
+                Income
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full" style={{ background: EXPENSE_COLOR }} />
+                Expenses
+              </span>
+            </div>
+            {!isReady ? (
+              <div className="mt-6 flex h-48 items-end gap-3 border-l border-line pl-3">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="w-full" style={{ height: `${30 + ((i * 17) % 60)}%` }} />
+                ))}
+              </div>
+            ) : (
+              <CashFlowChart months={cashFlowSeries.slice(-Number(cashFlowRange))} />
+            )}
+          </div>
+
+          <div className="rounded-lg border border-line bg-paper p-5">
+            <p className="text-sm font-medium text-ink">Expense breakdown</p>
+            <p className="text-xs text-muted">{month}</p>
+            {!isReady ? (
+              <div className="mt-6 flex justify-center">
+                <Skeleton className="h-36 w-36 rounded-full" />
+              </div>
+            ) : (
+              <ExpenseDonut slices={donutSlices} total={total} />
+            )}
+          </div>
+        </div>
+
         {/* Month switcher + primary actions */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-1 rounded-lg border border-line bg-paper px-1.5 py-1">
@@ -288,55 +589,6 @@ export default function Expenses() {
               + Add expense
             </Button>
           </div>
-        </div>
-
-        {/* At-a-glance summary — the numbers an owner checks first */}
-        <div className={`grid grid-cols-1 gap-4 ${rentCollected !== null ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
-          {!isReady ? (
-            <>
-              <div className="rounded-lg border border-line bg-paper p-3.5">
-                <Skeleton className="h-3 w-16" />
-                <Skeleton className="mt-2 h-6 w-20" />
-              </div>
-              <div className="rounded-lg border border-line bg-paper p-3.5">
-                <Skeleton className="h-3 w-20" />
-                <Skeleton className="mt-2 h-6 w-20" />
-              </div>
-              <div className="rounded-lg border border-line bg-paper p-3.5">
-                <Skeleton className="h-3 w-16" />
-                <Skeleton className="mt-2 h-6 w-20" />
-              </div>
-            </>
-          ) : (
-            <>
-              <MetricCard
-                compact
-                icon={<Receipt size={14} weight="fill" />}
-                label="Total spent"
-                value={formatK(total)}
-                caption={`${monthExpenses.length} expense${monthExpenses.length === 1 ? "" : "s"} in ${month}`}
-              />
-              {rentCollected !== null && (
-                <>
-                  <MetricCard
-                    compact
-                    icon={<Wallet size={14} weight="fill" />}
-                    label="Rent collected"
-                    value={formatCurrency(rentCollected)}
-                    caption="Collected so far this month"
-                  />
-                  <MetricCard
-                    compact
-                    icon={<ChartPieSlice size={14} weight="fill" />}
-                    label="Net to owner"
-                    value={formatCurrency(rentCollected - total)}
-                    tone={rentCollected - total >= 0 ? "success" : "danger"}
-                    caption="Rent collected minus expenses"
-                  />
-                </>
-              )}
-            </>
-          )}
         </div>
 
         {/* Search + category filter */}

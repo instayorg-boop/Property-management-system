@@ -200,6 +200,8 @@ export default function Dashboard() {
     [rooms]
   );
 
+  const activeTenantCount = useMemo(() => tenants.filter((t) => t.active).length, [tenants]);
+
   // Last 12 real calendar months, built from ledger entry timestamps across every tenant —
   // replaces what used to be a hardcoded 12-month series.
   const collections = useMemo(() => {
@@ -323,78 +325,95 @@ export default function Dashboard() {
     <>
       <Greeting name={landlordName} onAction={handleAction} />
 
-      <div className="grid grid-cols-1 gap-4 px-4 sm:px-8 pb-10 lg:grid-cols-3">
+      {/* Stat cards — their own full-width row, not sharing space with any other panel. Card
+          chrome renders immediately; only the figures inside shimmer while loading. */}
+      <div className="px-4 sm:px-8">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {!dataReady ? (
+            <div className="rounded-lg border border-line bg-paper p-5">
+              <Skeleton className="h-3 w-24" />
+              <Skeleton className="mt-3 h-7 w-28" />
+              <Skeleton className="mt-2 h-3 w-32" />
+            </div>
+          ) : (
+            <MetricCard
+              label="Total tenants"
+              value={`${activeTenantCount}`}
+              insight={activeTenantCount > 0 ? "Currently housed" : "No tenants yet"}
+              caption={activeTenantCount > 0 ? "Across all your rooms" : "Add a tenant to get started"}
+            />
+          )}
+          {!dataReady ? (
+            <div className="rounded-lg border border-line bg-paper p-5">
+              <Skeleton className="h-3 w-24" />
+              <Skeleton className="mt-3 h-7 w-28" />
+              <Skeleton className="mt-2 h-3 w-32" />
+            </div>
+          ) : (
+            <MetricCard
+              label="Total collected"
+              value={`K${totalCollected.toLocaleString()}`}
+              insight={totalCollected > 0 ? "Trending up this month" : "No payments yet"}
+              caption={totalCollected > 0 ? "Compared to last month" : "Logged payments will show up here"}
+            />
+          )}
+          {!dataReady ? (
+            <div className="rounded-lg border border-line bg-paper p-5">
+              <Skeleton className="h-3 w-28" />
+              <Skeleton className="mt-3 h-7 w-28" />
+              <Skeleton className="mt-2 h-3 w-32" />
+            </div>
+          ) : (
+            <MetricCard
+              label="Outstanding balance"
+              value={`K${outstanding.total.toLocaleString()}`}
+              tone={outstanding.total > 0 ? "danger" : "success"}
+              insight={outstanding.total > 0 ? "Needs your attention" : "Nothing outstanding"}
+              caption={
+                outstanding.total > 0
+                  ? `${outstanding.count} tenant${outstanding.count === 1 ? "" : "s"} behind on rent`
+                  : "Every active tenant is paid up"
+              }
+            />
+          )}
+          {!dataReady ? (
+            <div className="rounded-lg border border-line bg-paper p-5">
+              <Skeleton className="h-3 w-20" />
+              <Skeleton className="mt-3 h-7 w-20" />
+              <Skeleton className="mt-2 h-3 w-24" />
+            </div>
+          ) : roomsOccupied.total > 0 ? (
+            <MetricCard
+              label="Rooms occupied"
+              value={`${roomsOccupied.occupied} / ${roomsOccupied.total}`}
+              tone={roomsOccupied.occupied === roomsOccupied.total ? "success" : "default"}
+              insight={roomsOccupied.occupied === roomsOccupied.total ? "Fully occupied" : "Room to grow"}
+              caption={`${roomsOccupied.total - roomsOccupied.occupied} room${roomsOccupied.total - roomsOccupied.occupied === 1 ? "" : "s"} empty`}
+            />
+          ) : (
+            <div className="rounded-lg border border-line bg-paper p-5">
+              <p className="text-[13px] font-semibold text-ink/70">Rooms occupied</p>
+              <div className="mt-3 flex items-center gap-2.5">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-mist text-muted">
+                  <DoorIcon size={16} weight="duotone" />
+                </span>
+                <div>
+                  <p className="text-sm font-medium text-ink">No rooms yet</p>
+                  <p className="text-[11px] text-muted">Add a room to get started</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-4 px-4 sm:px-8 pb-10 lg:grid-cols-3">
         {/* Left / main column */}
         <div className="space-y-4 lg:col-span-2">
           {dataReady && <SetupChecklist />}
 
-          {/* Stat cards — card chrome renders immediately; only the figures inside shimmer while loading. */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            {!dataReady ? (
-              <div className="rounded-lg border border-line bg-paper p-5">
-                <Skeleton className="h-3 w-24" />
-                <Skeleton className="mt-3 h-7 w-28" />
-                <Skeleton className="mt-2 h-3 w-32" />
-              </div>
-            ) : (
-              <MetricCard
-                label="Total collected"
-                value={`K${totalCollected.toLocaleString()}`}
-                insight={totalCollected > 0 ? "Trending up this month" : "No payments yet"}
-                caption={totalCollected > 0 ? "Compared to last month" : "Logged payments will show up here"}
-              />
-            )}
-            {!dataReady ? (
-              <div className="rounded-lg border border-line bg-paper p-5">
-                <Skeleton className="h-3 w-28" />
-                <Skeleton className="mt-3 h-7 w-28" />
-                <Skeleton className="mt-2 h-3 w-32" />
-              </div>
-            ) : (
-              <MetricCard
-                label="Outstanding balance"
-                value={`K${outstanding.total.toLocaleString()}`}
-                tone={outstanding.total > 0 ? "danger" : "success"}
-                insight={outstanding.total > 0 ? "Needs your attention" : "Nothing outstanding"}
-                caption={
-                  outstanding.total > 0
-                    ? `${outstanding.count} tenant${outstanding.count === 1 ? "" : "s"} behind on rent`
-                    : "Every active tenant is paid up"
-                }
-              />
-            )}
-            {!dataReady ? (
-              <div className="rounded-lg border border-line bg-paper p-5">
-                <Skeleton className="h-3 w-20" />
-                <Skeleton className="mt-3 h-7 w-20" />
-                <Skeleton className="mt-2 h-3 w-24" />
-              </div>
-            ) : roomsOccupied.total > 0 ? (
-              <MetricCard
-                label="Rooms occupied"
-                value={`${roomsOccupied.occupied} / ${roomsOccupied.total}`}
-                tone={roomsOccupied.occupied === roomsOccupied.total ? "success" : "default"}
-                insight={roomsOccupied.occupied === roomsOccupied.total ? "Fully occupied" : "Room to grow"}
-                caption={`${roomsOccupied.total - roomsOccupied.occupied} room${roomsOccupied.total - roomsOccupied.occupied === 1 ? "" : "s"} empty`}
-              />
-            ) : (
-              <div className="rounded-lg border border-line bg-paper p-5">
-                <p className="text-[13px] font-semibold text-ink/70">Rooms occupied</p>
-                <div className="mt-3 flex items-center gap-2.5">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-mist text-muted">
-                    <DoorIcon size={16} weight="duotone" />
-                  </span>
-                  <div>
-                    <p className="text-sm font-medium text-ink">No rooms yet</p>
-                    <p className="text-[11px] text-muted">Add a room to get started</p>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
           {/* Collections chart */}
-          <div className="rounded-lg border border-line bg-paper p-5">
+          <div className="rounded-lg border-2 border-gray-100 bg-paper p-5">
             <div className="flex items-center justify-between">
               <p className="text-sm font-medium text-ink">Collections</p>
               <Select
@@ -566,7 +585,7 @@ export default function Dashboard() {
 
         {/* Right column */}
         <div className="space-y-4">
-          {/* Today's briefing */}
+          {/* Today's briefing — priority, so it stays at the top of this column */}
           <div className="relative overflow-hidden rounded-lg border border-brand/20 bg-linear-to-br from-brand-soft via-brand-soft/70 to-paper p-5 ">
 
             <div className="relative">
@@ -706,6 +725,7 @@ export default function Dashboard() {
               </div>
             )}
           </div>
+
         </div>
       </div>
 
