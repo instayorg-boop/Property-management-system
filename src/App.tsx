@@ -32,14 +32,18 @@ import TenantProfile from "./landlord/pages/TenantProfile";
 import Rooms from "./landlord/pages/Rooms";
 import Maintenance from "./landlord/pages/Maintenance";
 import Accounting from "./landlord/pages/Accounting";
-import StaffEmployees from "./landlord/pages/StaffEmployees";
-import StaffPayroll from "./landlord/pages/StaffPayroll";
-import StaffClock from "./landlord/pages/StaffClock";
-import BedRentRoll from "./landlord/pages/reports/BedRentRoll";
+// MVP: staff/payroll is out of scope for now — commented out, not deleted, so it's a quick
+// re-enable later. Matching nav entries are commented out in Sidebar.tsx.
+// import StaffEmployees from "./landlord/pages/StaffEmployees";
+// import StaffPayroll from "./landlord/pages/StaffPayroll";
+// import StaffClock from "./landlord/pages/StaffClock";
+// MVP: keeping only Income vs expenses, Overdue rent (Arrears/Delinquency), and Occupancy rate —
+// the rest are commented out, not deleted. Matching nav entries are commented out in Sidebar.tsx.
+// import BedRentRoll from "./landlord/pages/reports/BedRentRoll";
 import ArrearsDelinquency from "./landlord/pages/reports/ArrearsDelinquency";
-import OwnerPayoutStatement from "./landlord/pages/reports/OwnerPayoutStatement";
+// import OwnerPayoutStatement from "./landlord/pages/reports/OwnerPayoutStatement";
 import IncomeExpenses from "./landlord/pages/reports/IncomeExpenses";
-import PayrollSummary from "./landlord/pages/reports/PayrollSummary";
+// import PayrollSummary from "./landlord/pages/reports/PayrollSummary";
 import OccupancyRate from "./landlord/pages/reports/OccupancyRate";
 import Settings from "./landlord/pages/Settings";
 
@@ -83,16 +87,17 @@ export default function App() {
             <Route path="/maintenance" element={<Maintenance />} />
             <Route path="/accounting" element={<Accounting />} />
             <Route path="/expenses" element={<Navigate to="/accounting" replace />} />
-            <Route path="/staff" element={<Navigate to="/staff/employees" replace />} />
-            <Route path="/staff/employees" element={<StaffEmployees />} />
-            <Route path="/staff/payroll" element={<StaffPayroll />} />
-            <Route path="/staff/clock" element={<StaffClock />} />
-            <Route path="/reports" element={<Navigate to="/reports/bed-rent-roll" replace />} />
-            <Route path="/reports/bed-rent-roll" element={<BedRentRoll />} />
+            {/* MVP: staff/payroll — see the note by the imports above. */}
+            {/* <Route path="/staff" element={<Navigate to="/staff/employees" replace />} /> */}
+            {/* <Route path="/staff/employees" element={<StaffEmployees />} /> */}
+            {/* <Route path="/staff/payroll" element={<StaffPayroll />} /> */}
+            {/* <Route path="/staff/clock" element={<StaffClock />} /> */}
+            <Route path="/reports" element={<Navigate to="/reports/income-expenses" replace />} />
+            {/* <Route path="/reports/bed-rent-roll" element={<BedRentRoll />} /> */}
             <Route path="/reports/arrears-delinquency" element={<ArrearsDelinquency />} />
-            <Route path="/reports/owner-payout-statement" element={<OwnerPayoutStatement />} />
+            {/* <Route path="/reports/owner-payout-statement" element={<OwnerPayoutStatement />} /> */}
             <Route path="/reports/income-expenses" element={<IncomeExpenses />} />
-            <Route path="/reports/payroll-summary" element={<PayrollSummary />} />
+            {/* <Route path="/reports/payroll-summary" element={<PayrollSummary />} /> */}
             <Route path="/reports/occupancy-rate" element={<OccupancyRate />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/settings/:section" element={<Settings />} />

@@ -257,7 +257,7 @@ function RequestDrawer({
               }}
               className="block w-full rounded-lg border border-line py-2 text-center text-xs font-medium text-ink transition-colors hover:border-ink hover:bg-mist"
             >
-              Log a repair cost for this → opens the Expenses page
+              Log a repair cost for this - opens the Expenses page
             </Link>
 
             <button
@@ -380,7 +380,7 @@ function AddRequestDrawer({ onClose, onSave }: { onClose: () => void; onSave: (r
     <SlideOver
       onClose={onClose}
       title="Add maintenance request"
-      description="Log an issue you noticed yourself — anywhere on the property, not just a tenant's room."
+      description="Log an issue noticed anywhere on the property."
       footer={
         <Button
           variant="primary"
@@ -562,7 +562,7 @@ export default function Maintenance() {
               const rows = grouped.get(status) ?? [];
               const isCollapsed = collapsed.has(status);
               return (
-                <div key={status} className="overflow-hidden rounded-lg border border-line bg-paper">
+                <div key={status} className="overflow-hidden rounded-lg border-2 border-gray-100 bg-paper">
                   <button
                     type="button"
                     onClick={() => toggleGroup(status)}

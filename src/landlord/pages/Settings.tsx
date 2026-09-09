@@ -14,7 +14,7 @@ import {
   BellRinging as BellRingingIcon,
   LinkSimple as LinkSimpleIcon,
   Bank as BankIcon,
-  Scales as ScalesIcon,
+  // Scales as ScalesIcon, // MVP: was Statutory's tab icon — see the note by `tabs` above.
   Bell as BellIcon,
   Gift as GiftIcon,
   UserCircle as UserCircleIcon,
@@ -82,7 +82,9 @@ function Row({ label, desc, children }: { label: string; desc?: string; children
 
 const fieldCls = "w-full max-w-xs rounded-lg border border-line bg-paper px-3 py-2 text-sm outline-none focus:border-brand";
 
-const tabs = ["Property", "Billing & invoicing", "Reminders", "Payment link", "Online payments", "Statutory", "Notifications", "Subscription", "Account"] as const;
+// MVP: "Statutory" (NAPSA/payroll figures) is commented out along with staff/payroll everywhere
+// else — see the note in Sidebar.tsx. Re-add it to this tuple to bring the tab back.
+const tabs = ["Property", "Billing & invoicing", "Reminders", "Payment link", "Online payments", "Notifications", "Subscription", "Account"] as const;
 type Tab = (typeof tabs)[number];
 
 const tabSlug: Record<Tab, string> = {
@@ -91,7 +93,6 @@ const tabSlug: Record<Tab, string> = {
   Reminders: "reminders",
   "Payment link": "payment-link",
   "Online payments": "online-payments",
-  Statutory: "statutory",
   Notifications: "notifications",
   Subscription: "subscription",
   Account: "account",
@@ -103,7 +104,6 @@ const tabIcon: Record<Tab, PhosphorIcon> = {
   Reminders: BellRingingIcon,
   "Payment link": LinkSimpleIcon,
   "Online payments": BankIcon,
-  Statutory: ScalesIcon,
   Notifications: BellIcon,
   Subscription: GiftIcon,
   Account: UserCircleIcon,
@@ -126,7 +126,6 @@ const tabDescription: Record<Tab, string> = {
   Reminders: "When tenants and their guardians get reminded about upcoming or overdue rent.",
   "Payment link": "The link and QR code tenants use to pay their rent online.",
   "Online payments": "Connect a bank account so rent paid online lands there automatically.",
-  Statutory: "NAPSA and minimum wage figures used to calculate payroll correctly.",
   Notifications: "Which events send you a push notification or email.",
   Subscription: "Your current plan, billing, and upgrade options.",
   Account: "Your login email, password, and app appearance.",
@@ -164,7 +163,7 @@ export default function Settings() {
   }, [tab, location.hash]);
 
   const {
-    invoicesOn, setInvoicesOn,
+    // invoicesOn, setInvoicesOn, // MVP: invoicing toggle is commented out — see the note above.
     collectionTargetPct, setCollectionTargetPct,
     propertyName, setPropertyName,
     propertyAddress, setPropertyAddress,
@@ -189,8 +188,8 @@ export default function Settings() {
     payoutDay,
     accountEmail, setAccountEmail,
     subscriptionPlan, subscriptionRenewsAt,
-    napsaInsurableEarningsCeiling, setNapsaInsurableEarningsCeiling,
-    minimumWageReference, setMinimumWageReference,
+    // napsaInsurableEarningsCeiling, setNapsaInsurableEarningsCeiling, // MVP: Statutory tab is commented out.
+    // minimumWageReference, setMinimumWageReference,
   } = useSettings();
 
   const [linkCopied, setLinkCopied] = useState(false);
@@ -438,12 +437,13 @@ export default function Settings() {
                   className={fieldCls}
                 />
               </Row>
-              <Row
+              {/* MVP: invoicing is out of scope for now. */}
+              {/* <Row
                 label="Generate invoices"
                 desc="Lets you pre-fill and send invoices for every tenant from the Rent page, including carried-over balances."
               >
                 <Toggle checked={invoicesOn} onChange={(v) => { setInvoicesOn(v); flash(); }} />
-              </Row>
+              </Row> */}
               <Row
                 label="Collection rate target (%)"
                 desc="The goal shown against your monthly collection rate on the Rent page. Lower this during slow seasons so the trend isn't always red."
@@ -851,7 +851,9 @@ export default function Settings() {
             </>
           )}
 
-          {tab === "Statutory" && (
+          {/* MVP: Statutory (NAPSA/payroll figures) — commented out along with staff/payroll.
+              Re-add "Statutory" to the `tabs` tuple above to bring this back. */}
+          {/* {tab === "Statutory" && (
             <>
               <p className="pt-5 text-xs text-muted">
                 Government-published figures that change periodically — keep these current so payroll stays accurate without a code change.
@@ -879,7 +881,7 @@ export default function Settings() {
                 />
               </Row>
             </>
-          )}
+          )} */}
 
           {tab === "Notifications" && (
             <>

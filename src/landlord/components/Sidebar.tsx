@@ -62,16 +62,18 @@ const groups: { label: string; items: NavItem[] }[] = [
       { label: "Rooms", to: "/rooms", icon: "rooms" },
       { label: "Maintenance requests", to: "/maintenance", icon: "maintenance" },
       { label: "Accounting", to: "/accounting", icon: "accounting" },
-      {
-        label: "Staff",
-        to: "/staff",
-        icon: "staff",
-        children: [
-          { label: "Employees", to: "/staff/employees" },
-          { label: "Payroll", to: "/staff/payroll" },
-          { label: "Clock in / out", to: "/staff/clock" },
-        ],
-      },
+      // Staff/payroll — out of scope for the MVP. Re-enable by uncommenting this nav item plus
+      // the matching routes in App.tsx (search "MVP: staff/payroll").
+      // {
+      //   label: "Staff",
+      //   to: "/staff",
+      //   icon: "staff",
+      //   children: [
+      //     { label: "Employees", to: "/staff/employees" },
+      //     { label: "Payroll", to: "/staff/payroll" },
+      //     { label: "Clock in / out", to: "/staff/clock" },
+      //   ],
+      // },
     ],
   },
   {
@@ -82,11 +84,14 @@ const groups: { label: string; items: NavItem[] }[] = [
         to: "/reports",
         icon: "reports",
         children: [
-          { label: "Room rent roll", to: "/reports/bed-rent-roll" },
+          // MVP: keeping only Income vs expenses, Overdue rent, and Occupancy rate — the three
+          // reports that actually matter day to day. The rest are commented out, not deleted.
+          // { label: "Room rent roll", to: "/reports/bed-rent-roll" },
           { label: "Overdue rent", to: "/reports/arrears-delinquency" },
-          { label: "Payout statement", to: "/reports/owner-payout-statement" },
+          // { label: "Payout statement", to: "/reports/owner-payout-statement" },
           { label: "Income vs expenses", to: "/reports/income-expenses" },
-          { label: "Payroll summary", to: "/reports/payroll-summary" },
+          // MVP: staff/payroll — see the note by the Staff nav item above.
+          // { label: "Payroll summary", to: "/reports/payroll-summary" },
           { label: "Occupancy rate", to: "/reports/occupancy-rate" },
         ],
       },

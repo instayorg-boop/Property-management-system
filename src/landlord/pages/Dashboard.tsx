@@ -143,11 +143,9 @@ function SuggestionCard({ item, index }: { item: Suggestion; index: number }) {
     >
       <Link
         to={item.to}
-        className="group flex items-start gap-3 rounded-xl border border-white/60 bg-white/70 p-3.5 backdrop-blur-sm transition-all hover:border-white hover:bg-white hover:shadow-md"
+        className="group flex items-start  border rounded-lg  p-3.5 backdrop-blur-sm transition-all hover:border-white bg-white hover:shadow-md"
       >
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-violet-500 to-indigo-600 text-white shadow-sm">
-          <Icon size={15} weight="fill" />
-        </span>
+        
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-ink">{item.headline}</p>
           <p className="mt-0.5 text-xs text-muted">{item.body}</p>
@@ -363,7 +361,7 @@ export default function Dashboard() {
       <div className="px-4 sm:px-8">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {!dataReady ? (
-            <div className="rounded-lg border-2 border-gray-100 bg-paper p-4">
+            <div className="rounded-lg border border-line bg-paper p-4">
               <Skeleton className="h-3 w-24" />
               <Skeleton className="mt-2.5 h-6 w-28" />
               <Skeleton className="mt-2 h-3 w-32" />
@@ -377,7 +375,7 @@ export default function Dashboard() {
             />
           )}
           {!dataReady ? (
-            <div className="rounded-lg border-2 border-gray-100 bg-paper p-4">
+            <div className="rounded-lg border border-line bg-paper p-4">
               <Skeleton className="h-3 w-28" />
               <Skeleton className="mt-2.5 h-6 w-28" />
               <Skeleton className="mt-2 h-3 w-32" />
@@ -395,7 +393,7 @@ export default function Dashboard() {
             />
           )}
           {!dataReady ? (
-            <div className="rounded-lg border-2 border-gray-100 bg-paper p-4">
+            <div className="rounded-lg border border-line bg-paper p-4">
               <Skeleton className="h-3 w-20" />
               <Skeleton className="mt-2.5 h-6 w-20" />
               <Skeleton className="mt-2 h-3 w-24" />
@@ -408,7 +406,7 @@ export default function Dashboard() {
               caption={`${roomsOccupied.total - roomsOccupied.occupied} room${roomsOccupied.total - roomsOccupied.occupied === 1 ? "" : "s"} empty`}
             />
           ) : (
-            <div className="rounded-lg border-2 border-gray-100 bg-paper p-4">
+            <div className="rounded-lg border border-line bg-paper p-4">
               <p className="text-sm text-muted">Rooms occupied</p>
               <div className="mt-2.5 flex items-center gap-2.5">
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-mist text-muted">
@@ -422,7 +420,7 @@ export default function Dashboard() {
             </div>
           )}
           {!dataReady ? (
-            <div className="rounded-lg border-2 border-gray-100 bg-paper p-4">
+            <div className="rounded-lg border border-line bg-paper p-4">
               <Skeleton className="h-3 w-24" />
               <Skeleton className="mt-2.5 h-6 w-28" />
               <Skeleton className="mt-2 h-3 w-32" />
@@ -660,7 +658,7 @@ export default function Dashboard() {
         <div className="space-y-4">
           {/* AI briefing — priority, so it stays at the top of this column. Plain-language
               suggestions built from real dashboard counts, framed as an assistant talking. */}
-          <div className="relative overflow-hidden rounded-2xl bg-linear-to-br from-[#241a4d] via-[#2d2166] to-[#1a1440] p-5 shadow-[0_8px_30px_-8px_rgba(76,29,149,0.5)]">
+          <div className="relative overflow-hidden rounded-lg bg-linear-to-br from-[#241a4d] via-[#2d2166] to-[#1a1440] p-5 shadow-[0_8px_30px_-8px_rgba(76,29,149,0.5)]">
             {/* Ambient glow blobs — the panel's "AI" atmosphere */}
             <div className="pointer-events-none absolute -top-16 -right-10 h-48 w-48 rounded-full bg-violet-500/30 blur-3xl" />
             <div className="pointer-events-none absolute -bottom-20 -left-10 h-48 w-48 rounded-full bg-indigo-500/20 blur-3xl" />

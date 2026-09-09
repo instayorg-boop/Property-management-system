@@ -3,11 +3,13 @@ import { TrendUp, TrendDown } from "@phosphor-icons/react";
 
 export type MetricTone = "default" | "success" | "danger" | "warning";
 
-const toneStyles: Record<MetricTone, { card: string; icon: string; label: string }> = {
-  default: { card: "border border-line bg-paper", icon: "bg-brand-soft text-brand", label: "text-ink/70" },
-  success: { card: "border border-emerald-100 bg-emerald-50/60", icon: "bg-emerald-100 text-emerald-600", label: "text-emerald-700/80" },
-  danger: { card: "border border-red-100 bg-red-50/60", icon: "bg-red-100 text-red-600", label: "text-red-700/80" },
-  warning: { card: "border border-amber-100 bg-amber-50/60", icon: "bg-amber-100 text-amber-600", label: "text-amber-700/80" },
+// Every card is now a plain 1px-bordered bg-paper surface, whatever the tone — only the value
+// text (via toneFlatValue below) and this icon chip carry any color, never the card background.
+const toneStyles: Record<MetricTone, { icon: string }> = {
+  default: { icon: "bg-brand-soft text-brand" },
+  success: { icon: "bg-emerald-100 text-emerald-600" },
+  danger: { icon: "bg-red-100 text-red-600" },
+  warning: { icon: "bg-amber-100 text-amber-600" },
 };
 
 const trendStyles: Record<"up" | "down", string> = {
@@ -59,7 +61,7 @@ export default function MetricCard({
 
   if (flat) {
     return (
-      <div className="rounded-lg border-2 border-gray-100 bg-paper p-4">
+      <div className="rounded-lg border border-line bg-paper p-4">
         <div className="flex items-center justify-between gap-2">
           <p className="text-sm font-medium text-ink/70">{label}</p>
           {trend && (
@@ -77,12 +79,12 @@ export default function MetricCard({
 
   if (compact) {
     return (
-      <div className={`rounded-lg p-3.5 ${t.card}`}>
+      <div className="rounded-lg border border-line bg-paper p-3.5">
         <div className="flex items-center gap-3">
           {icon && <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${iconClassName ?? t.icon}`}>{icon}</span>}
           <div className="min-w-0 flex-1">
-            <p className={`text-xs font-semibold ${t.label}`}>{label}</p>
-            <p className="font-display text-xl font-bold tracking-tight text-ink">{value}</p>
+            <p className="text-xs font-semibold text-ink/70">{label}</p>
+            <p className={`font-display text-xl font-bold tracking-tight ${toneFlatValue[tone]}`}>{value}</p>
           </div>
           {trend && (
             <span className={`flex shrink-0 items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${trendStyles[trend.direction]}`}>
@@ -97,11 +99,11 @@ export default function MetricCard({
   }
 
   return (
-    <div className={`rounded-lg p-4 border-2 ${t.card}`}>
+    <div className="rounded-lg border border-line bg-paper p-4">
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2">
           {icon && <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${iconClassName ?? t.icon}`}>{icon}</span>}
-          <p className={`text-[13px] font-semibold ${t.label}`}>{label}</p>
+          <p className="text-[13px] font-semibold text-ink/70">{label}</p>
         </div>
         {trend && (
           <span className={`flex shrink-0 items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${trendStyles[trend.direction]}`}>
@@ -111,7 +113,7 @@ export default function MetricCard({
         )}
       </div>
 
-      <p className="font-display mt-1 text-[26px] font-semibold tracking-tight text-ink">{value}</p>
+      <p className={`font-display mt-1 text-[26px] font-semibold tracking-tight ${toneFlatValue[tone]}`}>{value}</p>
 
       {insight && (
         <p className="mt-2 flex items-center gap-1 text-xs font-semibold text-ink">
