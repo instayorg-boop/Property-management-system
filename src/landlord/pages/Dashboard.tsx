@@ -429,7 +429,6 @@ export default function Dashboard() {
             </div>
           ) : (
             <MetricCard
-              flat
               label="Total tenants"
               value={`${activeTenantCount}`}
               caption={activeTenantCount > 0 ? "Across all your rooms" : "Add a tenant to get started"}

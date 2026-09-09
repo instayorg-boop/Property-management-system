@@ -636,18 +636,18 @@ export default function Maintenance() {
                               <table className="w-full table-fixed text-left text-sm">
                                 <colgroup>
                                   <col className="w-36" />
-                                  <col className="w-24" />
                                   <col className="w-28" />
                                   <col />
+                                  <col className="w-24" />
                                   <col className="w-32" />
                                   <col className="w-24" />
                                 </colgroup>
                                 <thead className="bg-mist text-xs text-muted">
                                   <tr>
                                     <th className="px-3 py-2 font-medium">Location</th>
-                                    <th className="px-3 py-2 font-medium">Photos</th>
                                     <th className="px-3 py-2 font-medium">Reported by</th>
                                     <th className="px-3 py-2 font-medium">Description</th>
+                                    <th className="px-3 py-2 font-medium">Photos</th>
                                     <th className="px-3 py-2 font-medium">Date</th>
                                     <th className="px-3 py-2 font-medium"></th>
                                   </tr>
@@ -669,17 +669,19 @@ export default function Maintenance() {
                                           <span className="truncate font-medium text-ink">{r.location}</span>
                                         </div>
                                       </td>
+                                      <td className="truncate px-3 py-2.5 align-top text-ink">{r.tenant}</td>
+                                      <td className="px-3 py-2.5 align-top text-muted">
+                                        <p className="line-clamp-2 whitespace-normal">{r.description}</p>
+                                      </td>
                                       <td className="px-3 py-2.5 align-top">
-                                        {r.photoUrls.length > 0 && (
+                                        {r.photoUrls.length > 0 ? (
                                           <span className="flex w-fit items-center gap-1 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600">
                                             <Image size={10} weight="duotone" />
                                             {r.photoUrls.length > 1 ? `${r.photoUrls.length} photos` : "Photo"}
                                           </span>
+                                        ) : (
+                                          <span className="text-xs text-muted/60">None</span>
                                         )}
-                                      </td>
-                                      <td className="truncate px-3 py-2.5 align-top text-ink">{r.tenant}</td>
-                                      <td className="px-3 py-2.5 align-top text-muted">
-                                        <p className="line-clamp-2 whitespace-normal">{r.description}</p>
                                       </td>
                                       <td className="px-3 py-2.5 align-top text-muted">
                                         <span className="whitespace-nowrap">{formatDate(r.submittedAt)}</span>
