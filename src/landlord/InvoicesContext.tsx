@@ -1,8 +1,11 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useSettings } from "./SettingsContext";
 import { listInvoices, insertInvoice, getMaxInvoiceSequence, type Invoice, type InvoiceStatus } from "../lib/invoices";
+import { readCachedView, writeCachedView } from "../lib/offline/cachedView";
 
 export type { Invoice, InvoiceStatus };
+
+const INVOICES_VIEW_KEY = "invoices";
 
 type InvoicesContextValue = {
   invoices: Invoice[];
@@ -28,16 +31,32 @@ export function InvoicesProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!propertyId) return;
     let cancelled = false;
+
+    readCachedView<Invoice>(INVOICES_VIEW_KEY, propertyId).then((cached) => {
+      if (!cancelled && cached) {
+        setInvoices(cached);
+        setIsReady(true);
+      }
+    });
+
     (async () => {
       const thisYear = new Date().getFullYear();
-      const [rows, maxSequence] = await Promise.all([
-        listInvoices(propertyId),
-        getMaxInvoiceSequence(propertyId, thisYear),
-      ]);
-      if (cancelled) return;
-      setInvoices(rows);
-      sequenceRef.current = { year: thisYear, count: maxSequence };
-      setIsReady(true);
+      try {
+        const [rows, maxSequence] = await Promise.all([
+          listInvoices(propertyId),
+          getMaxInvoiceSequence(propertyId, thisYear),
+        ]);
+        if (cancelled) return;
+        setInvoices(rows);
+        sequenceRef.current = { year: thisYear, count: maxSequence };
+        setIsReady(true);
+        void writeCachedView(INVOICES_VIEW_KEY, propertyId, rows);
+      } catch (e) {
+        // recordInvoice needs a live sequence count, so invoice creation isn't supported offline —
+        // this cache-through only covers viewing the invoice list while disconnected.
+        if (!cancelled && !navigator.onLine) setIsReady(true);
+        else console.error("Failed to load invoices", e);
+      }
     })();
     return () => {
       cancelled = true;

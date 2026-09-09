@@ -9,8 +9,13 @@ import {
   type MaintenanceReport,
   type MaintenanceStatus,
 } from "../lib/maintenance";
+import { readCachedView, writeCachedView } from "../lib/offline/cachedView";
+import { enqueueAction } from "../lib/offline/sync";
+import { ACTION_PRIORITY } from "../lib/offline/db";
 
 export type { MaintenanceReport, MaintenanceStatus };
+
+const REPORTS_VIEW_KEY = "maintenance_reports";
 
 type MaintenanceContextValue = {
   reports: MaintenanceReport[];
@@ -34,11 +39,25 @@ export function MaintenanceProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!propertyId) return;
     let cancelled = false;
-    (async () => {
-      const rows = await listReports(propertyId);
-      if (!cancelled) {
-        setReports(rows);
+
+    readCachedView<MaintenanceReport>(REPORTS_VIEW_KEY, propertyId).then((cached) => {
+      if (!cancelled && cached) {
+        setReports(cached);
         setIsReady(true);
+      }
+    });
+
+    (async () => {
+      try {
+        const rows = await listReports(propertyId);
+        if (!cancelled) {
+          setReports(rows);
+          setIsReady(true);
+        }
+        void writeCachedView(REPORTS_VIEW_KEY, propertyId, rows);
+      } catch (e) {
+        if (!cancelled && !navigator.onLine) setIsReady(true);
+        else console.error("Failed to load maintenance reports", e);
       }
     })();
     return () => {
@@ -60,7 +79,10 @@ export function MaintenanceProvider({ children }: { children: ReactNode }) {
         { event: "*", schema: "public", table: "maintenance_reports", filter: `property_id=eq.${propertyId}` },
         () => {
           void listReports(propertyId)
-            .then(setReports)
+            .then((rows) => {
+              setReports(rows);
+              void writeCachedView(REPORTS_VIEW_KEY, propertyId, rows);
+            })
             .catch((e) => console.error("Failed to refresh reports after a live update", e));
         }
       )
@@ -73,6 +95,22 @@ export function MaintenanceProvider({ children }: { children: ReactNode }) {
   const setStatus = (id: string, status: MaintenanceStatus) => {
     const resolvedAt = status === "resolved" ? new Date().toISOString() : undefined;
     setReports((prev) => prev.map((r) => (r.id === id ? { ...r, status, resolvedAt } : r)));
+
+    if (!navigator.onLine && propertyId) {
+      void enqueueAction({
+        id: crypto.randomUUID(),
+        type: "update_maintenance_report",
+        propertyId,
+        payload: { id, status, resolved_at: resolvedAt ?? null },
+        // The mapped MaintenanceReport type doesn't carry updated_at yet, so this can't be
+        // conflict-checked until that's threaded through lib/maintenance.ts's row mapping —
+        // the write still queues and applies, just without the "someone else changed it" check.
+        baseUpdatedAt: null,
+        priority: ACTION_PRIORITY.update_maintenance_report,
+      });
+      return;
+    }
+
     void updateReportRow(id, { status, resolvedAt }).catch((e) => console.error("Failed to update report status", e));
   };
 

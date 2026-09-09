@@ -17,6 +17,8 @@ import Pagination, { DEFAULT_PAGE_SIZE } from "../components/Pagination";
 import { Skeleton, SkeletonRow } from "../components/Skeleton";
 import MetricCard from "../components/MetricCard";
 import Button from "../components/Button";
+import { PendingSyncTag } from "../components/SyncStatus";
+import { usePendingTenantIds } from "../../lib/offline/hooks";
 
 function LinkIcon() {
   return <LinkSimple size={14} weight="bold" />;
@@ -132,6 +134,7 @@ export default function Rent() {
   const { tenants, logPayment, moveOutTenant, isReady: tenantsReady } = useTenants();
   const { invoicesOn, collectionTargetPct, dailyPenaltyRate } = useSettings();
   const roomTypeRent = useRoomTypeRent();
+  const pendingTenantIds = usePendingTenantIds();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -652,7 +655,10 @@ export default function Rent() {
                       {formatCurrency(row.amountPaid)}
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[row.status]}`}>{statusLabel[row.status]}</span>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[row.status]}`}>{statusLabel[row.status]}</span>
+                        {pendingTenantIds.has(t.id) && <PendingSyncTag />}
+                      </div>
                       {statusDetail(row, dailyPenaltyRate, isCurrentMonth) && (
                         <p className="mt-1 text-[11px] text-muted">{statusDetail(row, dailyPenaltyRate, isCurrentMonth)}</p>
                       )}

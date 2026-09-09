@@ -231,7 +231,7 @@ export async function listTenants(propertyId: string, propertyName: string): Pro
   return tenantRows.map((row) => toTenant(row, propertyName, ledgerByTenant.get(row.id) ?? []));
 }
 
-async function tenantPatchToRow(propertyId: string, patch: Partial<Omit<Tenant, "id" | "ledger">>): Promise<TablesUpdate<"tenants">> {
+export async function tenantPatchToRow(propertyId: string, patch: Partial<Omit<Tenant, "id" | "ledger">>): Promise<TablesUpdate<"tenants">> {
   const row: TablesUpdate<"tenants"> = {};
   if (patch.name !== undefined) row.name = patch.name;
   if (patch.phones !== undefined) row.phones = patch.phones;

@@ -12,6 +12,8 @@ import Modal from "../components/Modal";
 import { uploadPhoto } from "../../lib/storage";
 import { Skeleton } from "../components/Skeleton";
 import Button from "../components/Button";
+import { PendingSyncTag } from "../components/SyncStatus";
+import { usePendingMaintenanceIds } from "../../lib/offline/hooks";
 
 function EyeIcon() {
   return <Eye size={14} weight="duotone" />;
@@ -131,11 +133,13 @@ function ConfirmDeleteReportModal({ onClose, onConfirm }: { onClose: () => void;
 
 function RequestDrawer({
   request,
+  pendingMaintenanceIds,
   onClose,
   onSetStatus,
   onUpdate,
   onDelete,
 }: {
+  pendingMaintenanceIds: Set<string>;
   request: MaintenanceReport;
   onClose: () => void;
   onSetStatus: (status: MaintenanceStatus) => void;
@@ -298,13 +302,14 @@ function RequestDrawer({
         </div>
       ) : (
         <>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ${statusStyle[request.status]}`}>
               {statusLabel[request.status]}
             </span>
             {request.status === "resolved" && request.resolvedAt && (
               <span className="text-xs text-muted">Resolved {formatDate(request.resolvedAt)}</span>
             )}
+            {pendingMaintenanceIds.has(request.id) && <PendingSyncTag />}
           </div>
 
           {/* A note, not a plain filled box — a label above it and a left accent bar give it the
@@ -423,6 +428,7 @@ function AddRequestDrawer({ onClose, onSave }: { onClose: () => void; onSave: (r
 
 export default function Maintenance() {
   const { reports, isReady, setStatus, markRead, addReport, updateReport, deleteReport } = useMaintenance();
+  const pendingMaintenanceIds = usePendingMaintenanceIds();
   const location = useLocation();
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
@@ -732,6 +738,7 @@ export default function Maintenance() {
         {selected && (
           <RequestDrawer
             request={selected}
+            pendingMaintenanceIds={pendingMaintenanceIds}
             onClose={() => setSelectedId(null)}
             onSetStatus={(status) => setStatus(selected.id, status)}
             onUpdate={(patch) => updateReport(selected.id, patch)}

@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { List as MenuIcon } from "@phosphor-icons/react";
 import Sidebar from "./Sidebar";
 import { ThemeProvider, useTheme } from "../ThemeContext";
+import { ToastProvider } from "../ToastContext";
 import { ExpensesProvider } from "../ExpensesContext";
 import { StaffProvider } from "../StaffContext";
 import { TenantsProvider } from "../TenantsContext";
@@ -13,6 +14,7 @@ import { SettingsProvider } from "../SettingsContext";
 import { InvoicesProvider } from "../InvoicesContext";
 import { SidebarProvider, useSidebar } from "../SidebarContext";
 import ProductTour from "./ProductTour";
+import SyncToast from "./SyncToast";
 
 const FOCUSABLE_SELECTOR = 'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
 
@@ -112,6 +114,7 @@ function Shell() {
         </main>
       </div>
       <ProductTour />
+      <SyncToast />
     </div>
   );
 }
@@ -119,23 +122,25 @@ function Shell() {
 export default function DashboardLayout() {
   return (
     <ThemeProvider>
-      <SettingsProvider>
-        <ExpensesProvider>
-          <StaffProvider>
-            <TenantsProvider>
-              <RoomsProvider>
-                <MaintenanceProvider>
-                  <InvoicesProvider>
-                    <SidebarProvider>
-                      <Shell />
-                    </SidebarProvider>
-                  </InvoicesProvider>
-                </MaintenanceProvider>
-              </RoomsProvider>
-            </TenantsProvider>
-          </StaffProvider>
-        </ExpensesProvider>
-      </SettingsProvider>
+      <ToastProvider>
+        <SettingsProvider>
+          <ExpensesProvider>
+            <StaffProvider>
+              <TenantsProvider>
+                <RoomsProvider>
+                  <MaintenanceProvider>
+                    <InvoicesProvider>
+                      <SidebarProvider>
+                        <Shell />
+                      </SidebarProvider>
+                    </InvoicesProvider>
+                  </MaintenanceProvider>
+                </RoomsProvider>
+              </TenantsProvider>
+            </StaffProvider>
+          </ExpensesProvider>
+        </SettingsProvider>
+      </ToastProvider>
     </ThemeProvider>
   );
 }

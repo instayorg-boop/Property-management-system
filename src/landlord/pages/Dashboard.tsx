@@ -16,6 +16,8 @@ import { useMaintenance } from "../MaintenanceContext";
 import { useRoomsView } from "../RoomsContext";
 import { useSettings } from "../SettingsContext";
 import { getLencoBalance } from "../../lib/payoutApi";
+import { useCachedViewSyncedAt } from "../../lib/offline/hooks";
+import { LastSyncedLabel } from "../components/SyncStatus";
 import {
   ArrowRight as ArrowIcon,
   Wrench as WrenchIcon,
@@ -42,12 +44,13 @@ const quickActions: { label: string; action: QuickAction; Icon: typeof CashIcon 
   { label: "Add tenant", action: "add-tenant", Icon: UserPlusIcon },
 ];
 
-function Greeting({ name, onAction }: { name: string; onAction: (action: QuickAction) => void }) {
+function Greeting({ name, propertyId, onAction }: { name: string; propertyId: string | null; onAction: (action: QuickAction) => void }) {
   const hour = new Date().getHours();
   const part = hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening";
 
   const today = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
   const time = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  const tenantsSyncedAt = useCachedViewSyncedAt("tenants", propertyId ?? undefined);
 
   const [sheetOpen, setSheetOpen] = useState(false);
 
@@ -61,6 +64,11 @@ function Greeting({ name, onAction }: { name: string; onAction: (action: QuickAc
         <p className="mt-0.5 text-sm text-muted">
           {today} · {time}
         </p>
+        {propertyId && (
+          <div className="mt-1">
+            <LastSyncedLabel lastSyncedAt={tenantsSyncedAt} />
+          </div>
+        )}
       </div>
 
       {/* Desktop: full quick-action row */}
@@ -354,7 +362,7 @@ export default function Dashboard() {
 
   return (
     <>
-      <Greeting name={landlordName} onAction={handleAction} />
+      <Greeting name={landlordName} propertyId={propertyId} onAction={handleAction} />
 
       {/* Stat cards — their own full-width row, not sharing space with any other panel. Card
           chrome renders immediately; only the figures inside shimmer while loading. */}

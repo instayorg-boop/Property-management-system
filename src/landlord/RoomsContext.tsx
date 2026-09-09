@@ -13,6 +13,12 @@ import {
   type RoomTypeConfig,
   type RoomRecord,
 } from "../lib/rooms";
+import { readCachedView, writeCachedView } from "../lib/offline/cachedView";
+import { enqueueAction } from "../lib/offline/sync";
+import { ACTION_PRIORITY } from "../lib/offline/db";
+
+const ROOMS_VIEW_KEY = "rooms";
+const ROOM_TYPES_VIEW_KEY = "room_types";
 
 // --- Types -------------------------------------------------------------------
 
@@ -65,12 +71,30 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!propertyId) return;
     let cancelled = false;
-    (async () => {
-      const [types, roomRows] = await Promise.all([listRoomTypeConfigs(propertyId), listRooms(propertyId)]);
+
+    Promise.all([
+      readCachedView<RoomTypeConfig>(ROOM_TYPES_VIEW_KEY, propertyId),
+      readCachedView<RoomRecord>(ROOMS_VIEW_KEY, propertyId),
+    ]).then(([cachedTypes, cachedRooms]) => {
       if (cancelled) return;
-      setRoomTypeConfigs(types);
-      setRooms(roomRows);
-      setIsReady(true);
+      if (cachedTypes) setRoomTypeConfigs(cachedTypes);
+      if (cachedRooms) setRooms(cachedRooms);
+      if (cachedTypes || cachedRooms) setIsReady(true);
+    });
+
+    (async () => {
+      try {
+        const [types, roomRows] = await Promise.all([listRoomTypeConfigs(propertyId), listRooms(propertyId)]);
+        if (cancelled) return;
+        setRoomTypeConfigs(types);
+        setRooms(roomRows);
+        setIsReady(true);
+        void writeCachedView(ROOM_TYPES_VIEW_KEY, propertyId, types);
+        void writeCachedView(ROOMS_VIEW_KEY, propertyId, roomRows);
+      } catch (e) {
+        if (!cancelled && !navigator.onLine) setIsReady(true);
+        else console.error("Failed to load rooms", e);
+      }
     })();
     return () => {
       cancelled = true;
@@ -79,12 +103,36 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
 
   const markReady = (number: string) => {
     setRooms((prev) => prev.map((r) => (r.number === number ? { ...r, override: undefined } : r)));
-    if (propertyId) void markRoomReady(propertyId, number);
+    if (!propertyId) return;
+    if (!navigator.onLine) {
+      void enqueueAction({
+        id: crypto.randomUUID(),
+        type: "update_room",
+        propertyId,
+        payload: { property_id: propertyId, number, override: null },
+        baseUpdatedAt: null,
+        priority: ACTION_PRIORITY.update_room,
+      });
+      return;
+    }
+    void markRoomReady(propertyId, number);
   };
 
   const markNotReady = (number: string) => {
     setRooms((prev) => prev.map((r) => (r.number === number ? { ...r, override: "not-ready" } : r)));
-    if (propertyId) void markRoomNotReady(propertyId, number);
+    if (!propertyId) return;
+    if (!navigator.onLine) {
+      void enqueueAction({
+        id: crypto.randomUUID(),
+        type: "update_room",
+        propertyId,
+        payload: { property_id: propertyId, number, override: "not-ready" },
+        baseUpdatedAt: null,
+        priority: ACTION_PRIORITY.update_room,
+      });
+      return;
+    }
+    void markRoomNotReady(propertyId, number);
   };
 
   const deleteRoom = (number: string) => {
