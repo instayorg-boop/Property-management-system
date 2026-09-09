@@ -125,58 +125,99 @@ function BedMeter({ room }: { room: RoomView }) {
 }
 
 // ---------- Grid card ----------
+// Deliberately simple, back to how this looked before the status-vocabulary redesign — a small
+// solid-color tile per room, first name only, a status dot. The fuller card (StatusPill, BedMeter,
+// rent-alert badges) was too much to take in at a glance across a whole grid; that detail still
+// lives in the table view (RoomRow, below) and the room detail SlideOver, both untouched.
+
+function BedSlot({ bed }: { bed: Tenant | null }) {
+  if (!bed) {
+    return (
+      <div className="flex flex-1 items-center justify-center text-paper/40">
+        <Plus size={12} weight="bold" />
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-0.5 px-0.5">
+      <span className="truncate text-[9px] leading-tight font-medium text-paper">{bed.name.split(" ")[0]}</span>
+      <span className={`h-1 w-1 rounded-full ${dotColor[bed.status]}`} />
+    </div>
+  );
+}
 
 function RoomCard({ room, onSelect }: { room: RoomView; onSelect: () => void }) {
-  const meta = statusMeta[room.status];
-  const occupants = room.beds.filter(Boolean) as Tenant[];
-  const alert = rentAlert(room);
+  const capacity = room.beds.length;
+
+  if (room.status === "vacant") {
+    return (
+      <button
+        type="button"
+        onClick={onSelect}
+        className="flex aspect-square flex-col items-center justify-center rounded-lg border border-line bg-paper transition-colors hover:border-ink/20"
+      >
+        <span className="font-display text-sm font-semibold text-muted">{room.number}</span>
+      </button>
+    );
+  }
+
+  if (room.status === "reserved") {
+    return (
+      <button
+        type="button"
+        onClick={onSelect}
+        className="flex aspect-square flex-col items-center justify-center gap-0.5 rounded-lg bg-sky-100 transition-opacity hover:opacity-90"
+      >
+        <span className="font-display text-sm font-semibold text-sky-900">{room.number}</span>
+        <span className="text-[8px] font-medium text-sky-700 uppercase">Reserved</span>
+      </button>
+    );
+  }
+
+  if (room.status === "not-ready") {
+    return (
+      <button
+        type="button"
+        onClick={onSelect}
+        className="flex aspect-square flex-col items-center justify-center gap-0.5 rounded-lg bg-slate-200 transition-opacity hover:opacity-90"
+      >
+        <Wrench size={14} weight="duotone" />
+        <span className="font-display text-xs font-semibold text-slate-600">{room.number}</span>
+      </button>
+    );
+  }
+
+  // occupied
+  if (capacity === 1) {
+    const occupant = room.beds[0];
+    return (
+      <button
+        type="button"
+        onClick={onSelect}
+        className="relative flex aspect-square flex-col items-center justify-center gap-0.5 rounded-lg bg-teal-600 transition-opacity hover:opacity-90"
+      >
+        <span className="absolute top-1 left-1 text-[9px] font-semibold text-paper/70">{room.number}</span>
+        {occupant && (
+          <>
+            <span className={`absolute top-1 right-1 h-1.5 w-1.5 rounded-full ${dotColor[occupant.status]}`} />
+            <span className="truncate px-1.5 text-xs font-medium text-paper">{occupant.name.split(" ")[0]}</span>
+          </>
+        )}
+      </button>
+    );
+  }
 
   return (
     <button
       type="button"
       onClick={onSelect}
-      className={`flex min-h-32 flex-col rounded-lg border p-3.5 text-left transition-colors ${meta.card}`}
+      className="flex aspect-square flex-col overflow-hidden rounded-lg bg-teal-600 transition-opacity hover:opacity-90"
     >
-      <div className="flex items-start justify-between gap-2">
-        <span className="font-display text-lg font-bold tracking-tight text-ink">{room.number}</span>
-        <StatusPill status={room.status} />
-      </div>
-
-      <p className="mt-0.5 text-xs text-muted">
-        {room.typeConfig.name} · {formatCurrency(room.typeConfig.rent)}/mo
-      </p>
-
-      <div className="mt-auto pt-3">
-        {room.status === "occupied" ? (
-          <>
-            <p className="truncate text-sm font-medium text-ink">
-              {occupants[0]?.name}
-              {occupants.length > 1 && <span className="text-muted"> +{occupants.length - 1}</span>}
-            </p>
-            <div className="mt-1.5 flex items-center justify-between gap-2">
-              {room.beds.length > 1 ? (
-                <BedMeter room={room} />
-              ) : (
-                <span className="flex items-center gap-1.5 text-[11px] text-muted">
-                  <span className={`h-1.5 w-1.5 rounded-full ${dotColor[occupants[0]!.status]}`} />
-                  {occupants[0]!.status === "paid" ? "Paid" : occupants[0]!.status === "partial" ? "Partial" : "Owing"}
-                </span>
-              )}
-              {alert && room.beds.length > 1 && (
-                <span className="rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-600">Owing</span>
-              )}
-            </div>
-          </>
-        ) : room.status === "vacant" ? (
-          <span className="flex items-center gap-1 text-xs font-medium text-brand">
-            <Plus size={12} weight="bold" />
-            Assign tenant
-          </span>
-        ) : room.status === "not-ready" ? (
-          <span className="text-xs text-amber-700">Needs turnaround</span>
-        ) : (
-          <span className="text-xs text-sky-700">Held for a booking</span>
-        )}
+      <span className="px-1.5 pt-1 text-[9px] font-semibold text-paper/70">{room.number}</span>
+      <div className={`grid flex-1 divide-paper/15 ${capacity === 2 ? "grid-cols-1 divide-y" : "grid-cols-2 divide-x divide-y"}`}>
+        {room.beds.map((bed, i) => (
+          <BedSlot key={i} bed={bed} />
+        ))}
       </div>
     </button>
   );
