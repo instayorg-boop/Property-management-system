@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   CaretDown,
-  Plus,
   Wrench,
   Bed,
   UsersThree,
@@ -125,99 +124,39 @@ function BedMeter({ room }: { room: RoomView }) {
 }
 
 // ---------- Grid card ----------
-// Deliberately simple, back to how this looked before the status-vocabulary redesign — a small
-// solid-color tile per room, first name only, a status dot. The fuller card (StatusPill, BedMeter,
-// rent-alert badges) was too much to take in at a glance across a whole grid; that detail still
-// lives in the table view (RoomRow, below) and the room detail SlideOver, both untouched.
-
-function BedSlot({ bed }: { bed: Tenant | null }) {
-  if (!bed) {
-    return (
-      <div className="flex flex-1 items-center justify-center text-paper/40">
-        <Plus size={12} weight="bold" />
-      </div>
-    );
-  }
-  return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-0.5 px-0.5">
-      <span className="truncate text-[9px] leading-tight font-medium text-paper">{bed.name.split(" ")[0]}</span>
-      <span className={`h-1 w-1 rounded-full ${dotColor[bed.status]}`} />
-    </div>
-  );
-}
+// Just the essentials — room number, status, who's in it (if anyone) — no rent, no bed-meter bars,
+// no alert badges. Everything else about a room is one click away in the detail SlideOver, so the
+// grid's only job is letting you scan a lot of rooms at once and recognize what you're looking at.
 
 function RoomCard({ room, onSelect }: { room: RoomView; onSelect: () => void }) {
-  const capacity = room.beds.length;
-
-  if (room.status === "vacant") {
-    return (
-      <button
-        type="button"
-        onClick={onSelect}
-        className="flex aspect-square flex-col items-center justify-center rounded-lg border border-line bg-paper transition-colors hover:border-ink/20"
-      >
-        <span className="font-display text-sm font-semibold text-muted">{room.number}</span>
-      </button>
-    );
-  }
-
-  if (room.status === "reserved") {
-    return (
-      <button
-        type="button"
-        onClick={onSelect}
-        className="flex aspect-square flex-col items-center justify-center gap-0.5 rounded-lg bg-sky-100 transition-opacity hover:opacity-90"
-      >
-        <span className="font-display text-sm font-semibold text-sky-900">{room.number}</span>
-        <span className="text-[8px] font-medium text-sky-700 uppercase">Reserved</span>
-      </button>
-    );
-  }
-
-  if (room.status === "not-ready") {
-    return (
-      <button
-        type="button"
-        onClick={onSelect}
-        className="flex aspect-square flex-col items-center justify-center gap-0.5 rounded-lg bg-slate-200 transition-opacity hover:opacity-90"
-      >
-        <Wrench size={14} weight="duotone" />
-        <span className="font-display text-xs font-semibold text-slate-600">{room.number}</span>
-      </button>
-    );
-  }
-
-  // occupied
-  if (capacity === 1) {
-    const occupant = room.beds[0];
-    return (
-      <button
-        type="button"
-        onClick={onSelect}
-        className="relative flex aspect-square flex-col items-center justify-center gap-0.5 rounded-lg bg-teal-600 transition-opacity hover:opacity-90"
-      >
-        <span className="absolute top-1 left-1 text-[9px] font-semibold text-paper/70">{room.number}</span>
-        {occupant && (
-          <>
-            <span className={`absolute top-1 right-1 h-1.5 w-1.5 rounded-full ${dotColor[occupant.status]}`} />
-            <span className="truncate px-1.5 text-xs font-medium text-paper">{occupant.name.split(" ")[0]}</span>
-          </>
-        )}
-      </button>
-    );
-  }
+  const occupants = room.beds.filter(Boolean) as Tenant[];
 
   return (
     <button
       type="button"
       onClick={onSelect}
-      className="flex aspect-square flex-col overflow-hidden rounded-lg bg-teal-600 transition-opacity hover:opacity-90"
+      className={`flex min-h-24 flex-col rounded-lg border p-3 text-left transition-colors ${statusMeta[room.status].card}`}
     >
-      <span className="px-1.5 pt-1 text-[9px] font-semibold text-paper/70">{room.number}</span>
-      <div className={`grid flex-1 divide-paper/15 ${capacity === 2 ? "grid-cols-1 divide-y" : "grid-cols-2 divide-x divide-y"}`}>
-        {room.beds.map((bed, i) => (
-          <BedSlot key={i} bed={bed} />
-        ))}
+      <div className="flex items-center justify-between gap-1.5">
+        <span className="font-display text-sm font-bold tracking-tight text-ink">{room.number}</span>
+        <StatusPill status={room.status} />
+      </div>
+
+      <div className="mt-auto pt-2">
+        {room.beds.length > 1 ? (
+          // A shared room — the thing worth knowing at a glance isn't who's in it, it's whether
+          // there's still a bed open. Both filled solid icons, just a different color, so an open
+          // bed reads clearly instead of disappearing as a faint outline.
+          <div className="flex items-center gap-1">
+            {room.beds.map((bed, i) => (
+              <Bed key={i} size={15} weight="fill" className={bed ? "text-teal-600" : "text-slate-300"} />
+            ))}
+          </div>
+        ) : occupants.length > 0 ? (
+          <p className="truncate text-xs font-medium text-ink">{occupants[0]!.name.split(" ")[0]}</p>
+        ) : (
+          <p className="text-xs text-muted">Empty</p>
+        )}
       </div>
     </button>
   );
@@ -328,7 +267,7 @@ function RoomGroup({
             className="overflow-hidden"
           >
             {view === "grid" ? (
-              <div className="grid grid-cols-3 gap-2 border-t border-line p-4 sm:grid-cols-8 lg:grid-cols-10 xl:grid-cols-12">
+              <div className="grid grid-cols-2 gap-2.5 border-t border-line p-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                 {rooms.map((room) => (
                   <RoomCard key={room.number} room={room} onSelect={() => onSelectRoom(room)} />
                 ))}
@@ -925,9 +864,9 @@ export default function Rooms() {
                   <Skeleton className="h-4 w-32" />
                   <Skeleton className="h-3 w-24" />
                 </div>
-                <div className="grid grid-cols-3 gap-2 border-t border-line px-4 py-4 sm:grid-cols-8 lg:grid-cols-10 xl:grid-cols-12">
+                <div className="grid grid-cols-2 gap-2.5 border-t border-line px-4 py-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                   {Array.from({ length: 6 }).map((_, j) => (
-                    <Skeleton key={j} className="aspect-square rounded-lg" />
+                    <Skeleton key={j} className="h-24 rounded-lg" />
                   ))}
                 </div>
               </div>
