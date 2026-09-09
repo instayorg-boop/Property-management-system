@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { getOrCreatePrimaryProperty, listProperties, createProperty, updateProperty } from "../lib/properties";
 import { getOrCreateSettings, updateSettings, type SettingsRow } from "../lib/settingsApi";
+import { readSettingsCache, writeSettingsCache } from "../lib/offline/settingsCache";
 
 export type NotificationPrefs = {
   newPayment: boolean;
@@ -185,53 +186,96 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [napsaInsurableEarningsCeiling, setNapsaInsurableEarningsCeilingState] = useState(37236);
   const [minimumWageReference, setMinimumWageReferenceState] = useState(1978.99);
 
+  // Applies a settings row (fresh from Supabase or from the offline cache) to state — shared by
+  // both paths below so a cache hydration and a network response go through the same mapping.
+  const applySettingsRow = (settingsRow: SettingsRow) => {
+    const s = fromRow(settingsRow);
+    setInvoicesOnState(s.invoicesOn);
+    setCollectionTargetPctState(s.collectionTargetPct);
+    setLandlordNameState(s.landlordName);
+    setLandlordPhoneState(s.landlordPhone);
+    setPaymentMethodsState(s.paymentMethods);
+    setManagementFeeRateState(s.managementFeeRate);
+    setBillingPeriodState(s.billingPeriod);
+    setDueDayState(s.dueDay);
+    setGracePeriodDaysState(s.gracePeriodDays);
+    setDailyPenaltyRateState(s.dailyPenaltyRate);
+    setReminderLeadDaysState(s.reminderLeadDays);
+    setEscalationDaysState(s.escalationDays);
+    setContactOrderState(s.contactOrder);
+    setNotificationPrefsState(s.notificationPrefs);
+    setLencoConnectedState(s.lencoConnected);
+    setBankNameState(s.bankName);
+    setAccountNumberState(s.accountNumber);
+    setAccountHolderNameState(s.accountHolderName);
+    setPayoutDayState(s.payoutDay);
+    setAccountEmailState(s.accountEmail);
+    setSubscriptionPlanState(s.subscriptionPlan);
+    setSubscriptionRenewsAtState(s.subscriptionRenewsAt);
+    setNapsaInsurableEarningsCeilingState(s.napsaInsurableEarningsCeiling);
+    setMinimumWageReferenceState(s.minimumWageReference);
+  };
+
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      const property = await getOrCreatePrimaryProperty();
-      if (cancelled) return;
-      setPropertyId(property.id);
-      setPropertyNameState(property.name);
-      setPropertyAddressState(property.address ?? "");
-      setPropertyTypeState(property.property_type ?? "");
 
-      const [settingsRow, allProperties] = await Promise.all([
-        getOrCreateSettings(property.id),
-        listProperties(),
-      ]);
-      if (cancelled) return;
-
-      const s = fromRow(settingsRow);
-      setInvoicesOnState(s.invoicesOn);
-      setCollectionTargetPctState(s.collectionTargetPct);
-      setLandlordNameState(s.landlordName);
-      setLandlordPhoneState(s.landlordPhone);
-      setPaymentMethodsState(s.paymentMethods);
-      setManagementFeeRateState(s.managementFeeRate);
-      setBillingPeriodState(s.billingPeriod);
-      setDueDayState(s.dueDay);
-      setGracePeriodDaysState(s.gracePeriodDays);
-      setDailyPenaltyRateState(s.dailyPenaltyRate);
-      setReminderLeadDaysState(s.reminderLeadDays);
-      setEscalationDaysState(s.escalationDays);
-      setContactOrderState(s.contactOrder);
-      setNotificationPrefsState(s.notificationPrefs);
-      setLencoConnectedState(s.lencoConnected);
-      setBankNameState(s.bankName);
-      setAccountNumberState(s.accountNumber);
-      setAccountHolderNameState(s.accountHolderName);
-      setPayoutDayState(s.payoutDay);
-      setAccountEmailState(s.accountEmail);
-      setSubscriptionPlanState(s.subscriptionPlan);
-      setSubscriptionRenewsAtState(s.subscriptionRenewsAt);
-      setNapsaInsurableEarningsCeilingState(s.napsaInsurableEarningsCeiling);
-      setMinimumWageReferenceState(s.minimumWageReference);
-      setProperties(allProperties.map((p) => p.name));
+    // propertyId gates every other context's fetch (Tenants, Rooms, Expenses, ...), so if this
+    // never resolves — e.g. offline with no network call possible — nothing else in the app can
+    // even attempt to read ITS OWN cache. Hydrate from the last known property/settings
+    // immediately so a reload while offline doesn't leave the whole dashboard stuck loading.
+    const cached = readSettingsCache();
+    if (cached) {
+      setPropertyId(cached.property.id);
+      setPropertyNameState(cached.property.name);
+      setPropertyAddressState(cached.property.address);
+      setPropertyTypeState(cached.property.propertyType);
+      applySettingsRow(cached.settingsRow as SettingsRow);
+      setProperties(cached.properties);
       setIsReady(true);
+    }
+
+    (async () => {
+      try {
+        const property = await getOrCreatePrimaryProperty();
+        if (cancelled) return;
+        setPropertyId(property.id);
+        setPropertyNameState(property.name);
+        setPropertyAddressState(property.address ?? "");
+        setPropertyTypeState(property.property_type ?? "");
+
+        const [settingsRow, allProperties] = await Promise.all([
+          getOrCreateSettings(property.id),
+          listProperties(),
+        ]);
+        if (cancelled) return;
+
+        applySettingsRow(settingsRow);
+        setProperties(allProperties.map((p) => p.name));
+        setIsReady(true);
+        writeSettingsCache({
+          property: {
+            id: property.id,
+            name: property.name,
+            address: property.address ?? "",
+            propertyType: property.property_type ?? "",
+          },
+          settingsRow,
+          properties: allProperties.map((p) => p.name),
+        });
+      } catch (e) {
+        // Offline (or the request failed) — if we already hydrated from cache above, the app is
+        // usable as-is; if there was no cache either (first-ever offline load), there's nothing
+        // more to wait for, so stop showing the loading skeleton rather than hang indefinitely.
+        if (cancelled) return;
+        if (!cached) setIsReady(true);
+        if (!navigator.onLine) return;
+        console.error("Failed to load settings/property", e);
+      }
     })();
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const persist = (patch: Parameters<typeof updateSettings>[1]) => {
