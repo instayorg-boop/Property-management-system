@@ -49,7 +49,7 @@ export default function BedRentRoll() {
 
   return (
     <>
-      <PageHeader title="Reports" />
+      <PageHeader title="Room rent roll" description="A full roll of every bed, tenant, and rent amount." />
       <div className="px-4 sm:px-8 pb-10">
         <ReportCard title="Room Rent Roll" audience="Property Manager">
           <p className="text-xs text-muted">A live list of every bed, its rent, and whether it's been paid this month.</p>
@@ -82,7 +82,7 @@ export default function BedRentRoll() {
             <Select value={filter} onChange={setFilter} options={bedFilterOptions} />
           </div>
 
-          <div className="mt-4 overflow-x-auto rounded-lg border border-line">
+          <div className="mt-4 overflow-x-auto rounded-xl border border-line">
             <table className="w-full table-fixed text-left text-sm">
               <colgroup>
                 <col className="w-28" />
@@ -91,21 +91,21 @@ export default function BedRentRoll() {
                 <col className="w-24" />
                 <col className="w-24" />
               </colgroup>
-              <thead className="bg-mist text-xs text-muted">
+              <thead className="border-b border-line bg-paper text-[11px] text-muted uppercase">
                 <tr>
-                  <th className="px-3 py-2 font-medium">Room</th>
-                  <th className="px-3 py-2 font-medium">Bed</th>
-                  <th className="px-3 py-2 font-medium">Tenant</th>
-                  <th className="px-3 py-2 font-medium">Rent</th>
-                  <th className="px-3 py-2 font-medium">Status</th>
+                  <th className="px-6 py-4 font-medium tracking-wide">Room</th>
+                  <th className="px-6 py-4 font-medium tracking-wide">Bed</th>
+                  <th className="px-6 py-4 font-medium tracking-wide">Tenant</th>
+                  <th className="px-6 py-4 font-medium tracking-wide">Rent</th>
+                  <th className="px-6 py-4 font-medium tracking-wide">Status</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-line">
                 {filtered.map((b) => (
-                  <tr key={b.id} className="border-t border-line">
-                    <td className="px-3 py-2 text-ink">{b.room}</td>
-                    <td className="px-3 py-2 text-muted">{b.bed}</td>
-                    <td className="px-3 py-2">
+                  <tr key={b.id} className="transition-colors duration-200 ease-in-out hover:bg-mist">
+                    <td className="px-6 py-4 text-ink">{b.room}</td>
+                    <td className="px-6 py-4 text-muted">{b.bed}</td>
+                    <td className="px-6 py-4">
                       {b.tenant && b.tenantId ? (
                         <button
                           type="button"
@@ -118,8 +118,8 @@ export default function BedRentRoll() {
                         <span className="text-muted italic">— Vacant —</span>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-muted">{currency(b.rent)}</td>
-                    <td className="px-3 py-2">
+                    <td className="px-6 py-4 text-muted">{currency(b.rent)}</td>
+                    <td className="px-6 py-4">
                       <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${bedStatusStyle[b.status]}`}>
                         {bedStatusLabel[b.status]}
                       </span>
@@ -128,7 +128,7 @@ export default function BedRentRoll() {
                 ))}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-3 py-6 text-center text-sm text-muted">
+                    <td colSpan={5} className="px-6 py-6 text-center text-sm text-muted">
                       No beds match this view.
                     </td>
                   </tr>

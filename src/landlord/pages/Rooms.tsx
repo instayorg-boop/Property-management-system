@@ -165,7 +165,7 @@ function RoomCard({
     <button
       type="button"
       onClick={onSelect}
-      className={`flex min-h-24 flex-col rounded-xl border p-3 text-left transition-colors ${statusMeta[room.status].card}`}
+      className={`flex min-h-24 flex-col rounded-lg border p-3 text-left transition-colors ${statusMeta[room.status].card}`}
     >
       <div className="flex items-start justify-between gap-1.5">
         <div>
@@ -1008,7 +1008,6 @@ export default function Rooms() {
             <>
               <MetricCard
                 compact
-                icon={<UsersThree size={16} weight="duotone" />}
                 iconClassName="bg-teal-100 text-teal-700"
                 label="Occupancy"
                 value={`${stats.occupancyPct}%`}
@@ -1016,7 +1015,6 @@ export default function Rooms() {
               />
               <MetricCard
                 compact
-                icon={<Bed size={16} weight="duotone" />}
                 iconClassName="bg-sky-100 text-sky-700"
                 label="Open beds"
                 value={stats.openBeds}
@@ -1026,7 +1024,6 @@ export default function Rooms() {
               />
               <MetricCard
                 compact
-                icon={<CurrencyCircleDollar size={16} weight="duotone" />}
                 iconClassName="bg-amber-100 text-amber-700"
                 label="Idle rent"
                 value={formatCurrency(stats.idleRent)}
@@ -1035,7 +1032,6 @@ export default function Rooms() {
               />
               <MetricCard
                 compact
-                icon={<Wrench size={16} weight="duotone" />}
                 iconClassName="bg-slate-100 text-slate-600"
                 label="Not ready"
                 value={stats.notReady}

@@ -82,3 +82,21 @@ export async function sendPayout(propertyId: string, amount: number, narration?:
   }
   return { payoutId: data.payoutId };
 }
+
+export type PayoutStatus = "pending" | "processing" | "successful" | "failed";
+
+/** Only lenco-webhook normally moves a payout past "processing" — if that webhook was never
+ * registered with Lenco (or a delivery got lost), a transfer sits at "processing" forever with no
+ * way to tell it succeeded or failed, even though Lenco itself already knows. This actively
+ * requeries Lenco's own transfer-status endpoint and applies the result, same as the webhook
+ * would have — see supabase/functions/check-payout-status. */
+export async function checkPayoutStatus(payoutId: string): Promise<{ status: PayoutStatus; failureReason: string | null }> {
+  const { data, error } = await supabase.functions.invoke<{ ok?: boolean; status?: PayoutStatus; failureReason?: string | null; error?: string }>(
+    "check-payout-status",
+    { body: { payoutId } }
+  );
+  if (error || !data?.ok || !data?.status) {
+    throw new Error(await edgeFunctionErrorMessage(error, "Failed to check the transfer's status."));
+  }
+  return { status: data.status, failureReason: data.failureReason ?? null };
+}

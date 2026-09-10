@@ -1042,7 +1042,7 @@ export default function AddTenant() {
       ? Math.round(prorata!.amount)
       : Math.round(rentAmountCollected);
     const rentLedgerLabel = isMidCycle
-      ? `${moveInDateObj.toLocaleDateString("en-US", { month: "long" })} pro-rata`
+      ? `${moveInDateObj.toLocaleDateString("en-US", { month: "long" })} rent, partial month`
       : `${new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })} rent`;
 
     const depositWasCollected =
@@ -1614,7 +1614,7 @@ export default function AddTenant() {
                     <ChoiceCard
                       selected={prorataChoice === "charge"}
                       onClick={() => setProrataChoice("charge")}
-                      title="Charge pro-rata"
+                      title="Charge for partial month"
                       description={`${formatCurrency(prorata.amount)} for the partial month`}
                     />
                     <ChoiceCard

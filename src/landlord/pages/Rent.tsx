@@ -131,7 +131,7 @@ function statusDetail(row: RentRow, isCurrentMonth: boolean): string | null {
 type PaymentStep = "search" | "ledger" | "confirm";
 
 export default function Rent() {
-  const { tenants, logPayment, moveOutTenant, isReady: tenantsReady } = useTenants();
+  const { tenants, logPayments, moveOutTenant, isReady: tenantsReady } = useTenants();
   const { invoicesOn, collectionTargetPct } = useSettings();
   const roomTypeRent = useRoomTypeRent();
   const pendingTenantIds = usePendingTenantIds();
@@ -602,12 +602,12 @@ export default function Rent() {
           <table className="w-full text-left text-sm">
             <thead className="sticky top-0 z-10 border-b border-line bg-paper text-[11px] text-muted uppercase">
               <tr>
-                <th className="px-6 py-4 font-medium tracking-wide">Tenant</th>
-                <th className="px-6 py-4 font-medium tracking-wide">Room type</th>
-                <th className="px-6 py-4 font-medium tracking-wide">Amount paid</th>
-                <th className="px-6 py-4 font-medium tracking-wide">Outstanding balance</th>
-                <th className="px-6 py-4 font-medium tracking-wide">Status</th>
-                <th className="px-6 py-4 font-medium tracking-wide">Action</th>
+                <th className="px-4 py-3 font-medium tracking-wide">Tenant</th>
+                <th className="px-4 py-3 font-medium tracking-wide">Room type</th>
+                <th className="px-4 py-3 font-medium tracking-wide whitespace-nowrap">Amount paid</th>
+                <th className="px-4 py-3 font-medium tracking-wide whitespace-nowrap">Outstanding balance</th>
+                <th className="px-4 py-3 font-medium tracking-wide">Status</th>
+                <th className="px-4 py-3 font-medium tracking-wide">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
@@ -615,7 +615,6 @@ export default function Rent() {
               {tenantsReady && pageRows.map((row) => {
                 const t = row.tenant;
                 const needsAction = row.status !== "paid";
-                const discountNote = rentDiscountNote(t, roomTypeRent);
                 return (
                   <tr
                     key={t.id}
@@ -625,24 +624,21 @@ export default function Rent() {
                       setPaymentStep("ledger");
                     }}
                   >
-                    <td className="px-6 py-4">
+                    <td className="px-4 py-3">
                       <Link to={`/tenants/${t.id}`} onClick={(e) => e.stopPropagation()} className="font-medium text-ink hover:underline">
                         {t.name}
                       </Link>
                       <p className="text-xs text-muted">{t.room}</p>
                     </td>
-                    <td className="px-6 py-4">
-                      <p className="text-ink">{t.roomType}</p>
-                      {discountNote ? (
-                        <p className="text-xs text-amber-600">{discountNote}</p>
-                      ) : (
-                        <p className="text-xs text-muted">{formatCurrency(t.rentAmount)}/mo</p>
-                      )}
+                    <td className="px-4 py-3">
+                      <Link to="/rooms" onClick={(e) => e.stopPropagation()} className="text-ink hover:underline">
+                        {t.roomType}
+                      </Link>
                     </td>
-                    <td className={`px-6 py-4 ${row.amountPaid === 0 ? "font-normal text-muted" : "font-medium text-ink"}`}>
+                    <td className={`px-4 py-3 whitespace-nowrap ${row.amountPaid === 0 ? "font-normal text-muted" : "font-medium text-ink"}`}>
                       {formatCurrency(row.amountPaid)}
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-4 py-3 whitespace-nowrap">
                       {(() => {
                         const outstanding = isCurrentMonth ? calcTotalOwed(row.tenant) : row.owedAmount;
                         return outstanding > 0 ? (
@@ -652,16 +648,13 @@ export default function Rent() {
                         );
                       })()}
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-4 py-3">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[row.status]}`}>{statusLabel[row.status]}</span>
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${statusStyle[row.status]}`}>{statusLabel[row.status]}</span>
                         {pendingTenantIds.has(t.id) && <PendingSyncTag />}
                       </div>
-                      {statusDetail(row, isCurrentMonth) && (
-                        <p className="mt-1 text-[11px] text-muted">{statusDetail(row, isCurrentMonth)}</p>
-                      )}
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-4 py-3 whitespace-nowrap">
                       {needsAction && isCurrentMonth ? (
                         <button
                           type="button"
@@ -766,8 +759,16 @@ export default function Rent() {
             rentAmount={payingTenant.rentAmount}
             ledger={payingTenant.ledger}
             onClose={() => setPaymentStep("ledger")}
-            onConfirm={(payment) => {
-              logPayment(payingTenant.id, payment.amount, payment.label, payment.method === "mobile" ? "mobile-money" : "cash", payment.date);
+            onConfirm={(payments) => {
+              logPayments(
+                payingTenant.id,
+                payments.map((payment) => ({
+                  amount: payment.amount,
+                  label: payment.label,
+                  method: payment.method === "mobile" ? "mobile-money" : "cash",
+                  paidAt: payment.date,
+                })),
+              );
               setPaymentStep(null);
               setPayingTenant(null);
             }}

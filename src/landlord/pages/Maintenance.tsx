@@ -629,23 +629,21 @@ export default function Maintenance() {
                             <div className="hidden overflow-x-auto md:block">
                               <table className="w-full table-fixed text-left text-sm">
                                 <colgroup>
-                                  <col className="w-36" />
-                                  
+                                  <col className="w-40" />
                                   <col />
+                                  <col className="w-36" />
+                                  <col className="w-24" />
                                   <col className="w-28" />
-                                  <col className="w-24" />
-                                  <col className="w-32" />
-                                  <col className="w-24" />
+                                  <col className="w-10" />
                                 </colgroup>
                                 <thead className="border-b border-line bg-paper text-[11px] text-muted uppercase">
                                   <tr>
-                                    <th className="px-6 py-4 font-medium tracking-wide">Location</th>
-                                   
-                                    <th className="px-6 py-4 font-medium tracking-wide">Description</th>
-                                    <th className="px-6 py-4 font-medium tracking-wide">Reported by</th>
-                                    <th className="px-6 py-4 font-medium tracking-wide">Photos</th>
-                                    <th className="px-6 py-4 font-medium tracking-wide">Date</th>
-                                    <th className="px-6 py-4 font-medium"></th>
+                                    <th className="px-4 py-3 font-medium tracking-wide">Location</th>
+                                    <th className="px-4 py-3 font-medium tracking-wide">Description</th>
+                                    <th className="px-4 py-3 font-medium tracking-wide">Reported by</th>
+                                    <th className="px-4 py-3 font-medium tracking-wide">Photos</th>
+                                    <th className="px-4 py-3 font-medium tracking-wide">Date</th>
+                                    <th className="px-4 py-3 font-medium"></th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-line">
@@ -655,37 +653,38 @@ export default function Maintenance() {
                                       onClick={() => openRequest(r)}
                                       className="group cursor-pointer transition-colors duration-200 ease-in-out hover:bg-mist"
                                     >
-                                      <td className="px-6 py-6 align-top">
+                                      <td className="px-4 py-4 align-top">
                                         <div className="flex items-center gap-1.5">
                                           {r.unread ? (
                                             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
                                           ) : (
                                             <CheckCircle size={12} weight="fill" className="shrink-0 text-muted/50" />
                                           )}
-                                          <span className=" font-semibold text-ink">{r.location}</span>
+                                          <span className="truncate font-semibold text-ink">{r.location}</span>
                                         </div>
                                       </td>
-                                      <td className="px-6 py-6 align-top text-muted">
-                                        <p className="whitespace-normal">{r.description}</p>
+                                      <td className="px-4 py-4 align-top text-muted">
+                                        <p className="line-clamp-2 whitespace-normal">{r.description}</p>
                                       </td>
-                                      <td className="truncate px-6 py-6 align-top text-muted">{r.tenant}</td>
-                                     
-                                      <td className="px-6 py-6 align-top">
+                                      <td className="px-4 py-4 align-top text-muted">
+                                        <span className="line-clamp-2 whitespace-normal">{r.tenant}</span>
+                                      </td>
+                                      <td className="px-4 py-4 align-top">
                                         {r.photoUrls.length > 0 ? (
-                                          <span className="flex w-fit items-center gap-1 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600">
+                                          <span className="flex w-fit items-center gap-1 whitespace-nowrap rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600">
                                             <Image size={10} weight="duotone" />
                                             Photos
                                           </span>
                                         ) : (
-                                          <span className="flex w-fit items-center rounded-full bg-mist px-1.5 py-0.5 text-[10px] font-medium text-muted/60">
+                                          <span className="flex w-fit items-center whitespace-nowrap rounded-full bg-mist px-1.5 py-0.5 text-[10px] font-medium text-muted/60">
                                             None
                                           </span>
                                         )}
                                       </td>
-                                      <td className="px-6 py-6 align-top text-muted">
+                                      <td className="px-4 py-4 align-top text-muted">
                                         <span className="whitespace-nowrap">{formatDate(r.submittedAt)}</span>
                                       </td>
-                                      <td className="px-6 py-6 text-right align-top">
+                                      <td className="px-4 py-4 text-right align-top">
                                         <CaretRight size={16} weight="bold" className="inline text-muted transition-colors group-hover:text-ink" />
                                       </td>
                                     </tr>

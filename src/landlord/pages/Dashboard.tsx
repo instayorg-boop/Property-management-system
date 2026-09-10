@@ -194,7 +194,7 @@ const ledgerStatusLabel: Record<string, string> = { paid: "Paid", overdue: "Over
 type PaymentStep = "search" | "ledger" | "confirm";
 
 export default function Dashboard() {
-  const { tenants, logPayment, moveOutTenant, isReady: tenantsReady } = useTenants();
+  const { tenants, logPayments, moveOutTenant, isReady: tenantsReady } = useTenants();
   const { expenses } = useExpenses();
   const { reports } = useMaintenance();
   const rooms = useRoomsView();
@@ -856,8 +856,16 @@ export default function Dashboard() {
             rentAmount={payingTenant.rentAmount}
             ledger={payingTenant.ledger}
             onClose={() => setPaymentStep("ledger")}
-            onConfirm={(payment) => {
-              logPayment(payingTenant.id, payment.amount, payment.label, payment.method === "mobile" ? "mobile-money" : "cash", payment.date);
+            onConfirm={(payments) => {
+              logPayments(
+                payingTenant.id,
+                payments.map((payment) => ({
+                  amount: payment.amount,
+                  label: payment.label,
+                  method: payment.method === "mobile" ? "mobile-money" : "cash",
+                  paidAt: payment.date,
+                })),
+              );
               setPaymentStep(null);
               setPayingTenant(null);
             }}

@@ -8,6 +8,7 @@ import {
   updateTenantRow,
   deleteTenantRow,
   addLedgerEntry,
+  deleteLedgerEntry as deleteLedgerEntryRow,
   tenantPatchToRow,
   relationLabel,
   RELATION_OPTIONS,
@@ -53,8 +54,18 @@ type TenantsContextValue = {
    * anything that isn't a plain full-month rent payment (e.g. a pro-rata partial month). `method`
    * records how the landlord says this was paid (cash/mobile money/etc, from LogPaymentModal) —
    * real mobile-money payments via the tenant portal are tagged separately by lenco-webhook, never
-   * through this path. */
-  logPayment: (id: string, amount: number, label?: string, method?: PaymentMethod) => void;
+   * through this path. `paidAt` (YYYY-MM-DD) defaults to today — pass it when the landlord is
+   * logging a payment that was actually made on a different day (backdating, paying in advance). */
+  logPayment: (id: string, amount: number, label?: string, method?: PaymentMethod, paidAt?: string) => void;
+  /** Same as `logPayment` but for several payments against the same tenant at once (e.g. paying
+   * two or three months in advance in a single action) — applied as one state update so each
+   * later entry's balance math sees the previous ones already settled, instead of separate
+   * `logPayment` calls in a loop, which only the first of would actually take effect (see
+   * logPayments' comment for why). */
+  logPayments: (id: string, payments: { amount: number; label?: string; method?: PaymentMethod; paidAt?: string }[]) => void;
+  /** Removes one payment-history record — a correction to the log, not a balance change; see
+   * lib/tenants.ts's deleteLedgerEntry for why owedAmount/status are untouched. */
+  deleteLedgerEntry: (tenantId: string, entryId: string) => void;
 };
 
 const TenantsContext = createContext<TenantsContextValue | null>(null);
@@ -230,80 +241,125 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
       });
   };
 
-  const logPayment = (id: string, amount: number, label?: string, method?: PaymentMethod) => {
+  // NOTE: this does everything in one setTenants call, applying every payment against a running
+  // local `current` snapshot rather than calling this once per payment. React only synchronously
+  // runs a useState functional updater for the *first* update queued in a batch (its "eager state"
+  // bailout) — a second setTenants call made before the first has actually re-rendered gets queued
+  // without running, so `updated` would still be undefined and its network call would silently
+  // never fire. Looping this per-payment used to lose every payment after the first for exactly
+  // that reason; batching them into one updater sidesteps it entirely.
+  const logPayments = (
+    id: string,
+    payments: { amount: number; label?: string; method?: PaymentMethod; paidAt?: string }[]
+  ) => {
+    if (payments.length === 0) return;
     let updated: Tenant | undefined;
+    let newEntries: LedgerRow[] = [];
     setTenants((prev) =>
       prev.map((t) => {
         if (t.id !== id) return t;
-        const next: Tenant = {
-          ...t,
-          status: "paid",
-          owedAmount: 0,
-          onTimeCount: t.status === "overdue" || t.status === "unpaid" ? t.onTimeCount : t.onTimeCount + 1,
-          totalMonthsCount: t.totalMonthsCount + 1,
-          ledger: [
-            {
-              label: label ?? `${new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })} rent`,
-              amount,
-              status: "paid",
-              createdAt: new Date().toISOString(),
-              method: method ?? null,
-            },
-            ...t.ledger,
-          ],
-        };
+        let current = t;
+        const createdEntries: LedgerRow[] = [];
+        for (const { amount, label, method, paidAt } of payments) {
+          // Generated once and reused everywhere (local state, the online insert, the offline
+          // queue's idempotency key) so a retried/double-triggered sync can't insert the same
+          // payment twice, and so the row can be targeted for deletion right after it's logged.
+          const ledgerEntryId = crypto.randomUUID();
+          // `paidAt` is a plain YYYY-MM-DD from DatePicker — treat it as local midnight on that
+          // day rather than letting `new Date("YYYY-MM-DD")` parse it as UTC, which can land a day off.
+          const createdAt = paidAt
+            ? (() => {
+                const [y, m, d] = paidAt.split("-").map(Number);
+                return new Date(y, (m || 1) - 1, d || 1).toISOString();
+              })()
+            : new Date().toISOString();
+          // A logged amount can settle less than what's owed — only clear the balance and flip to
+          // "paid" once it covers the full outstanding amount; otherwise the tenant stays "partial"
+          // with the remainder still owed, instead of every manual payment wiping the balance to 0.
+          const owedBefore = current.owedAmount || current.rentAmount;
+          const remaining = Math.max(0, owedBefore - amount);
+          const settledInFull = remaining <= 0;
+          createdEntries.push({
+            id: ledgerEntryId,
+            label: label ?? `${new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })} rent`,
+            // `amount` is what was owed for this period, `paidAmount` is what's actually been
+            // paid toward it — the same convention every reader (Rent, Dashboard, Accounting, the
+            // profile ledger row) uses to show "K400 of K1,000" on a partial entry. A row that
+            // settles in full doesn't need paidAmount — readers just use `amount` — but a partial
+            // one left without it always read as K0 collected, however much was logged.
+            amount: owedBefore,
+            paidAmount: settledInFull ? undefined : amount,
+            status: settledInFull ? "paid" : "partial",
+            createdAt,
+            method: method ?? null,
+            source: "manual",
+          });
+          current = {
+            ...current,
+            status: settledInFull ? "paid" : "partial",
+            owedAmount: remaining,
+            onTimeCount:
+              settledInFull && current.status !== "overdue" && current.status !== "unpaid"
+                ? current.onTimeCount + 1
+                : current.onTimeCount,
+            totalMonthsCount: settledInFull ? current.totalMonthsCount + 1 : current.totalMonthsCount,
+          };
+        }
+        const next: Tenant = { ...current, ledger: [...[...createdEntries].reverse(), ...t.ledger] };
         updated = next;
+        newEntries = createdEntries;
         return next;
       })
     );
     if (propertyId && updated) {
-      const newEntry = updated.ledger[0];
       const tenantPatch = {
-        status: "paid" as const,
-        owedAmount: 0,
+        status: updated.status,
+        owedAmount: updated.owedAmount,
         onTimeCount: updated.onTimeCount,
         totalMonthsCount: updated.totalMonthsCount,
       };
 
       if (!navigator.onLine) {
         // sync.ts writes this patch straight to the `tenants` table, so it needs the DB's
-        // snake_case column names rather than the Tenant view model's camelCase ones.
+        // snake_case column names rather than the Tenant view model's camelCase ones. The combined
+        // tenant patch only needs to ride along with one of the entries — sync.ts applies it once
+        // per action, so attaching it to every entry would just repeat the same (idempotent) patch.
         const tenantRowPatch = {
-          status: "paid",
-          owed_amount: 0,
+          status: updated.status,
+          owed_amount: updated.owedAmount,
           on_time_count: updated.onTimeCount,
           total_months_count: updated.totalMonthsCount,
         };
-        // Queue instead of writing directly. The ledger row's id is generated here (rather than
-        // left to the DB default) and reused as the queue action's idempotency key, so a retried
-        // or double-triggered sync can't insert the same payment twice.
-        const ledgerEntryId = crypto.randomUUID();
-        void enqueueAction({
-          id: ledgerEntryId,
-          type: "record_payment",
-          propertyId,
-          payload: {
-            id: ledgerEntryId,
-            tenant_id: id,
-            label: newEntry.label,
-            amount: newEntry.amount,
-            paid_amount: newEntry.paidAmount ?? null,
-            status: newEntry.status ?? null,
-            method: newEntry.method ?? null,
-            _tenantPatch: tenantRowPatch,
-          },
-          baseUpdatedAt: null,
-          priority: ACTION_PRIORITY.record_payment,
+        newEntries.forEach((entry, i) => {
+          void enqueueAction({
+            id: entry.id,
+            type: "record_payment",
+            propertyId,
+            payload: {
+              id: entry.id,
+              tenant_id: id,
+              label: entry.label,
+              amount: entry.amount,
+              paid_amount: entry.paidAmount ?? null,
+              status: entry.status ?? null,
+              method: entry.method ?? null,
+              source: entry.source,
+              created_at: entry.createdAt,
+              _tenantPatch: i === newEntries.length - 1 ? tenantRowPatch : undefined,
+            },
+            baseUpdatedAt: null,
+            priority: ACTION_PRIORITY.record_payment,
+          });
         });
-        showToast("Payment saved — will sync when you're back online", "info");
+        showToast(
+          newEntries.length > 1 ? "Payments saved — will sync when you're back online" : "Payment saved — will sync when you're back online",
+          "info"
+        );
         return;
       }
 
-      void Promise.all([
-        updateTenantRow(propertyId, id, tenantPatch),
-        addLedgerEntry(id, newEntry),
-      ])
-        .then(() => showToast("Payment logged", "success"))
+      void Promise.all([updateTenantRow(propertyId, id, tenantPatch), ...newEntries.map((entry) => addLedgerEntry(id, entry))])
+        .then(() => showToast(newEntries.length > 1 ? "Payments logged" : "Payment logged", "success"))
         .catch((e) => {
           console.error("Failed to log payment", e);
           showToast("Couldn't log that payment — please try again.", "error");
@@ -311,9 +367,30 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const logPayment = (id: string, amount: number, label?: string, method?: PaymentMethod, paidAt?: string) =>
+    logPayments(id, [{ amount, label, method, paidAt }]);
+
+  // Deleting a payment-history row is a record correction, not a balance change — owedAmount,
+  // status, and the on-time/total month counts stay exactly as they are (see the comment on
+  // lib/tenants.ts's deleteLedgerEntry). Only supported online: this one skips the offline queue
+  // rather than risk a delete racing a not-yet-synced payment insert for the same row.
+  const deleteLedgerEntry = (tenantId: string, entryId: string) => {
+    if (!navigator.onLine) {
+      showToast("Reconnect to delete this entry.", "info");
+      return;
+    }
+    setTenants((prev) =>
+      prev.map((t) => (t.id === tenantId ? { ...t, ledger: t.ledger.filter((row) => row.id !== entryId) } : t))
+    );
+    void deleteLedgerEntryRow(entryId).catch((e) => {
+      console.error("Failed to delete ledger entry", e);
+      showToast("Couldn't delete that entry — please try again.", "error");
+    });
+  };
+
   return (
     <TenantsContext.Provider
-      value={{ tenants, isReady, addTenant, updateTenant, deleteTenant, moveOutTenant, reactivateTenant, logPayment }}
+      value={{ tenants, isReady, addTenant, updateTenant, deleteTenant, moveOutTenant, reactivateTenant, logPayment, logPayments, deleteLedgerEntry }}
     >
       {children}
     </TenantsContext.Provider>

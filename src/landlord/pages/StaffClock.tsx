@@ -4,6 +4,7 @@ import { MagnifyingGlass as Search } from "@phosphor-icons/react";
 import PageHeader from "../components/PageHeader";
 import Modal from "../components/Modal";
 import Select from "../components/Select";
+import DatePicker from "../components/DatePicker";
 import { useStaff, type ClockEntry } from "../StaffContext";
 import { SkeletonRow } from "../components/Skeleton";
 import Button from "../components/Button";
@@ -61,7 +62,7 @@ function EntryFormModal({
         </div>
         <div>
           <label className="mb-1.5 block text-xs font-medium text-muted">Date</label>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand" />
+          <DatePicker value={date} onChange={setDate} />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -120,7 +121,7 @@ export default function StaffClock() {
 
   return (
     <>
-      <PageHeader title="Clock in & Clock out" />
+      <PageHeader title="Clock in & Clock out" description="Log and review staff attendance." />
 
       <div className="space-y-4 px-4 sm:px-8 pb-10">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -149,7 +150,7 @@ export default function StaffClock() {
           Hours logged here are added automatically to each hourly employee's pay.
         </p>
 
-        <div className="overflow-x-auto rounded-lg border border-line">
+        <div className="overflow-x-auto rounded-xl border border-line">
           <table className="w-full table-fixed text-left text-sm">
             <colgroup>
               <col className="w-48" />
@@ -159,25 +160,25 @@ export default function StaffClock() {
               <col className="w-28" />
               <col className="w-16" />
             </colgroup>
-            <thead className="bg-mist text-xs text-muted">
+            <thead className="border-b border-line bg-paper text-[11px] text-muted uppercase">
               <tr>
-                <th className="px-4 py-3 font-medium">Employee</th>
-                <th className="px-4 py-3 font-medium">Date</th>
-                <th className="px-4 py-3 font-medium">Hours</th>
-                <th className="px-4 py-3 font-medium">Overtime</th>
-                <th className="px-4 py-3 font-medium">Source</th>
-                <th className="px-4 py-3 font-medium"></th>
+                <th className="px-6 py-4 font-medium tracking-wide">Employee</th>
+                <th className="px-6 py-4 font-medium tracking-wide">Date</th>
+                <th className="px-6 py-4 font-medium tracking-wide">Hours</th>
+                <th className="px-6 py-4 font-medium tracking-wide">Overtime</th>
+                <th className="px-6 py-4 font-medium tracking-wide">Source</th>
+                <th className="px-6 py-4 font-medium"></th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-line">
               {!isReady && Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={6} />)}
               {isReady && filtered.map((c) => (
-                <tr key={c.id} className="border-t border-line transition-colors hover:bg-mist">
-                  <td className="truncate px-4 py-3 font-medium text-ink">{employeeName(c.employeeId)}</td>
-                  <td className="px-4 py-3 text-muted whitespace-nowrap">{formatDate(c.date)}</td>
-                  <td className="px-4 py-3 text-muted">{c.hours}</td>
-                  <td className="px-4 py-3 text-muted">{c.overtimeHours > 0 ? c.overtimeHours : "—"}</td>
-                  <td className="px-4 py-3">
+                <tr key={c.id} className="transition-colors duration-200 ease-in-out hover:bg-mist">
+                  <td className="truncate px-6 py-4 font-medium text-ink">{employeeName(c.employeeId)}</td>
+                  <td className="px-6 py-4 text-muted whitespace-nowrap">{formatDate(c.date)}</td>
+                  <td className="px-6 py-4 text-muted">{c.hours}</td>
+                  <td className="px-6 py-4 text-muted">{c.overtimeHours > 0 ? c.overtimeHours : "—"}</td>
+                  <td className="px-6 py-4">
                     <span
                       className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                         c.source === "manual" ? "bg-sky-50 text-sky-600" : "bg-violet-50 text-violet-600"
@@ -186,7 +187,7 @@ export default function StaffClock() {
                       {c.source === "manual" ? "Manual" : "Gatehouse"}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-6 py-4 text-right">
                     <div className="flex items-center justify-end gap-3">
                       <button
                         type="button"

@@ -160,6 +160,7 @@ Deno.serve(async (req) => {
         amount: collectionRow.amount,
         status: "paid",
         method: "mobile-money",
+        source: "lenco",
       });
     }
   }

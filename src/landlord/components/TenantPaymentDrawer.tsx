@@ -190,8 +190,10 @@ export default function TenantPaymentDrawer({
           <div key={`${row.label}-${i}`} className="flex items-center justify-between py-2.5">
             <div className="flex items-center gap-1.5">
               <span className="text-sm text-ink">{row.label}</span>
-              {row.label.toLowerCase().includes("pro-rata") && (
-                <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-600">Pro-rata</span>
+              {/* Matches both wordings — older ledger rows were labeled "pro-rata" before that was
+                  reworded to "partial month" for tenants who didn't recognize the term. */}
+              {(row.label.toLowerCase().includes("pro-rata") || row.label.toLowerCase().includes("partial month")) && (
+                <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-600">Partial month</span>
               )}
               {/* No badge for rows logged before the method column existed — nothing to show is
                   more honest than guessing. */}

@@ -27,7 +27,7 @@ export default function OccupancyRate() {
 
   return (
     <>
-      <PageHeader title="Reports" />
+      <PageHeader title="Occupancy rate" description="Track room and bed occupancy across your property." />
       <div className="px-4 sm:px-8 pb-10">
         <ReportCard title="Occupancy Rate" audience="Property Manager / Investor">
           <p className="text-xs text-muted">Current occupancy across the property, broken down by room type.</p>
@@ -49,7 +49,7 @@ export default function OccupancyRate() {
             </div>
           </div>
 
-          <div className="mt-4 overflow-x-auto rounded-lg border border-line">
+          <div className="mt-4 overflow-x-auto rounded-xl border border-line">
             <table className="w-full table-fixed text-left text-sm">
               <colgroup>
                 <col />
@@ -57,23 +57,23 @@ export default function OccupancyRate() {
                 <col className="w-24" />
                 <col className="w-28" />
               </colgroup>
-              <thead className="bg-mist text-xs text-muted">
+              <thead className="border-b border-line bg-paper text-[11px] text-muted uppercase">
                 <tr>
-                  <th className="px-3 py-2 font-medium">Room type</th>
-                  <th className="px-3 py-2 font-medium">Rooms</th>
-                  <th className="px-3 py-2 font-medium">Beds</th>
-                  <th className="px-3 py-2 font-medium">Occupancy</th>
+                  <th className="px-6 py-4 font-medium tracking-wide">Room type</th>
+                  <th className="px-6 py-4 font-medium tracking-wide">Rooms</th>
+                  <th className="px-6 py-4 font-medium tracking-wide">Beds</th>
+                  <th className="px-6 py-4 font-medium tracking-wide">Occupancy</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-line">
                 {stats.byType.map((t) => (
-                  <tr key={t.name} className="border-t border-line">
-                    <td className="px-3 py-2 text-ink">{t.name}</td>
-                    <td className="px-3 py-2 text-muted">{t.rooms}</td>
-                    <td className="px-3 py-2 text-muted">
+                  <tr key={t.name} className="transition-colors duration-200 ease-in-out hover:bg-mist">
+                    <td className="px-6 py-4 text-ink">{t.name}</td>
+                    <td className="px-6 py-4 text-muted">{t.rooms}</td>
+                    <td className="px-6 py-4 text-muted">
                       {t.occupiedBeds} / {t.beds}
                     </td>
-                    <td className="px-3 py-2 text-muted">{t.beds > 0 ? Math.round((t.occupiedBeds / t.beds) * 100) : 0}%</td>
+                    <td className="px-6 py-4 text-muted">{t.beds > 0 ? Math.round((t.occupiedBeds / t.beds) * 100) : 0}%</td>
                   </tr>
                 ))}
               </tbody>

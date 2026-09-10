@@ -7,17 +7,6 @@ import {
   QrCode as QrIconBase,
   Plus as PlusIconBase,
   Check as CheckIconBase,
-  CaretRight as CaretRightIcon,
-  ArrowLeft as ArrowLeftIcon,
-  House as HouseIcon,
-  Receipt as ReceiptIcon,
-  BellRinging as BellRingingIcon,
-  LinkSimple as LinkSimpleIcon,
-  Bank as BankIcon,
-  // Scales as ScalesIcon, // MVP: was Statutory's tab icon — see the note by `tabs` above.
-  Bell as BellIcon,
-  Gift as GiftIcon,
-  UserCircle as UserCircleIcon,
   CheckCircle as CheckCircleIcon,
   Laptop as LaptopIcon,
   Wallet as WalletIcon,
@@ -25,6 +14,7 @@ import {
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 import PageHeader from "../components/PageHeader";
+import SectionLabel from "../components/SectionLabel";
 import ThemeSwitcher from "../components/ThemeSwitcher";
 import Button from "../components/Button";
 import BankSelect from "../components/BankSelect";
@@ -65,13 +55,15 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
   );
 }
 
-/** One horizontal label/description + control row — the space-efficient pattern, no boxed card per field. */
+/** One horizontal label/description + control row — the space-efficient pattern, no boxed card per
+ * field. The label reads as a small section heading (bold, ink) rather than a form-field caption,
+ * since a Row is a whole labeled setting, not just one input. */
 function Row({ label, desc, children }: { label: string; desc?: string; children: React.ReactNode }) {
   return (
     <div className="py-5">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:max-w-3xl">
         <div>
-          <p className="text-sm font-medium text-ink">{label}</p>
+          <p className="font-display text-[15px] font-bold tracking-tight text-ink">{label}</p>
           {desc && <p className="mt-1 max-w-sm text-xs text-muted">{desc}</p>}
         </div>
         <div className="flex items-center">{children}</div>
@@ -80,7 +72,8 @@ function Row({ label, desc, children }: { label: string; desc?: string; children
   );
 }
 
-const fieldCls = "w-full max-w-xs rounded-lg border border-line bg-paper px-3 py-2 text-sm outline-none focus:border-brand";
+const fieldCls =
+  "w-full max-w-xs rounded-lg border-none bg-mist px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand/30";
 
 // MVP: "Statutory" (NAPSA/payroll figures) is commented out along with staff/payroll everywhere
 // else — see the note in Sidebar.tsx. Re-add it to this tuple to bring the tab back.
@@ -98,38 +91,30 @@ const tabSlug: Record<Tab, string> = {
   Account: "account",
 };
 
-const tabIcon: Record<Tab, PhosphorIcon> = {
-  Property: HouseIcon,
-  "Billing & invoicing": ReceiptIcon,
-  Reminders: BellRingingIcon,
-  "Payment link": LinkSimpleIcon,
-  "Online payments": BankIcon,
-  Notifications: BellIcon,
-  Subscription: GiftIcon,
-  Account: UserCircleIcon,
-};
-
 function tabFromSlug(slug: string | null): Tab {
   const match = tabs.find((t) => tabSlug[t] === slug?.toLowerCase());
   return match ?? "Property";
 }
 
+// The 8 underlying sections, grouped into 4 top-level tabs so the bar doesn't sprawl — related
+// settings (billing + reminders, online payments + the payment link, account + notifications +
+// subscription) live together on one page instead of behind separate clicks. Each group's URL
+// slug is its first member's, so existing deep links ("/settings/property",
+// "/settings/online-payments" from SetupChecklist/PayoutDetailDrawer) keep working unchanged.
+const tabGroups = [
+  { label: "Property", members: ["Property"] as Tab[] },
+  { label: "Billing & rent", members: ["Billing & invoicing", "Reminders"] as Tab[] },
+  { label: "Payments", members: ["Online payments", "Payment link"] as Tab[] },
+  { label: "Account", members: ["Account", "Notifications", "Subscription"] as Tab[] },
+] as const;
+
+function groupFor(t: Tab) {
+  return tabGroups.find((g) => (g.members as readonly Tab[]).includes(t))!;
+}
+
 function slugify(name: string) {
   return name.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
 }
-
-// Plain-language explanation of what each section actually contains — shown on the section list so
-// landlords don't have to open a section just to find out what's in it.
-const tabDescription: Record<Tab, string> = {
-  Property: "Your property's name and address, plus switching between properties you manage.",
-  "Billing & invoicing": "When rent is due, late-payment penalties, and generating tenant invoices.",
-  Reminders: "When tenants and their guardians get reminded about upcoming or overdue rent.",
-  "Payment link": "The link and QR code tenants use to pay their rent online.",
-  "Online payments": "Connect a bank account so rent paid online lands there automatically.",
-  Notifications: "Which events send you a push notification or email.",
-  Subscription: "Your current plan, billing, and upgrade options.",
-  Account: "Your login email, password, and app appearance.",
-};
 
 const onlinePaymentsSteps: { label: string; Icon: PhosphorIcon }[] = [
   { label: "Set up online payments", Icon: LaptopIcon },
@@ -151,10 +136,9 @@ export default function Settings() {
   // change, not a shared-component tab flip, so there's no flash of intermediate sections.
   const { section } = useParams<{ section?: string }>();
   const tab = tabFromSlug(section ?? null);
-  const sectionOpen = !!section;
+  const activeGroup = groupFor(tab);
 
   const openTab = (t: Tab) => navigate(`/settings/${tabSlug[t]}`);
-  const goToList = () => navigate("/settings");
 
   useEffect(() => {
     if (tab !== "Online payments" || !location.hash) return;
@@ -248,7 +232,7 @@ export default function Settings() {
 
   // The setup flow (intro + wizard) is a centered, full-width screen, not a left-aligned settings
   // form — it needs the full content width to actually center in, not just within the narrow column.
-  const onlinePaymentsWizard = tab === "Online payments" && (!lencoConnected || editingBank);
+  const onlinePaymentsWizard = activeGroup.label === "Payments" && (!lencoConnected || editingBank);
 
   const startEditingBank = () => {
     // The previously-saved bank was stored by name, not code (before this table existed) — best-effort
@@ -301,7 +285,7 @@ export default function Settings() {
   // view and the desktop list-plus-detail layout so it's only written once.
   const detail = (
     <>
-      {tab === "Property" && (
+      {activeGroup.label === "Property" && (
             <>
               <Row label="Property name" desc="Used across the dashboard — tenants added on the Tenants page are assigned to this property automatically.">
                 <input
@@ -323,88 +307,14 @@ export default function Settings() {
                   className={fieldCls}
                 />
               </Row>
-              <Row label="Property type">
-                <input
-                  value={propertyType}
-                  onChange={(e) => {
-                    setPropertyType(e.target.value);
-                    flash();
-                  }}
-                  placeholder="e.g. Student accommodation"
-                  className={fieldCls}
-                />
-              </Row>
-              <Row label="Landlord name" desc="Shown on invoices, in the From section.">
-                <input
-                  value={landlordName}
-                  onChange={(e) => {
-                    setLandlordName(e.target.value);
-                    flash();
-                  }}
-                  className={fieldCls}
-                />
-              </Row>
-              <Row label="Landlord phone" desc="Shown on invoices as the mobile money payment number.">
-                <input
-                  value={landlordPhone}
-                  onChange={(e) => {
-                    setLandlordPhone(e.target.value);
-                    flash();
-                  }}
-                  className={fieldCls}
-                />
-              </Row>
-              <Row label="Your properties" desc="Switch which property the dashboard is scoped to, or add another one you manage.">
-                <div className="w-full max-w-xs space-y-2">
-                  {properties.map((p) => (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => {
-                        setPropertyName(p);
-                        flash();
-                      }}
-                      className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-sm transition-colors ${
-                        p === propertyName ? "border-brand bg-brand-soft text-brand" : "border-line text-ink hover:bg-mist"
-                      }`}
-                    >
-                      {p}
-                      {p === propertyName && <CheckIcon />}
-                    </button>
-                  ))}
-                  <div className="flex gap-2">
-                    <input
-                      value={newPropertyName}
-                      onChange={(e) => setNewPropertyName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && newPropertyName.trim()) {
-                          addProperty(newPropertyName.trim());
-                          setNewPropertyName("");
-                          flash("Property added");
-                        }
-                      }}
-                      placeholder="New property name"
-                      className="flex-1 rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-brand"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!newPropertyName.trim()) return;
-                        addProperty(newPropertyName.trim());
-                        setNewPropertyName("");
-                        flash("Property added");
-                      }}
-                      className="flex shrink-0 items-center gap-1 rounded-lg border border-line px-3 text-sm font-medium text-ink hover:bg-mist"
-                    >
-                      <PlusIcon />
-                    </button>
-                  </div>
-                </div>
-              </Row>
+              
+              
+              
+              
             </>
           )}
 
-          {tab === "Billing & invoicing" && (
+          {activeGroup.label === "Billing & rent" && (
             <>
               <Row label="Billing period">
                 <input value={billingPeriod} onChange={(e) => { setBillingPeriod(e.target.value); flash(); }} className={fieldCls} />
@@ -457,11 +367,10 @@ export default function Settings() {
                   className={fieldCls}
                 />
               </Row>
-            </>
-          )}
 
-          {tab === "Reminders" && (
-            <>
+              <div className="pt-2">
+                <SectionLabel>Reminders</SectionLabel>
+              </div>
               <Row label="Days before rent is due" desc="How many days ahead of the due date the first reminder is sent.">
                 <input
                   type="number"
@@ -500,35 +409,9 @@ export default function Settings() {
             </>
           )}
 
-          {tab === "Payment link" && (
-            <Row label="Your payment link" desc="Share this with tenants directly, or display the QR code at the property office.">
-              <div className="w-full max-w-md space-y-3">
-                <div className="flex items-center gap-2 rounded-lg border border-line bg-mist px-3 py-2">
-                  <span className="flex-1 truncate text-sm text-muted">{paymentLink}</span>
-                  <Button variant="secondary" size="sm" className="gap-1.5" onClick={copyLink}>
-                    <CopyIcon />
-                    {linkCopied ? "Copied" : "Copy"}
-                  </Button>
-                  <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => setShowQr((v) => !v)}>
-                    <QrIcon />
-                    QR code
-                  </Button>
-                </div>
-                {showQr && (
-                  <div className="flex flex-col items-center gap-2 rounded-lg border border-line bg-paper p-5">
-                    <QRCodeSVG value={`${window.location.origin}${paymentPath}`} size={160} />
-                    <p className="text-xs text-muted">Print or screenshot this for the property office.</p>
-                  </div>
-                )}
-                <a href={paymentPath} target="_blank" rel="noreferrer" className="inline-block text-xs font-medium text-brand hover:underline">
-                  Open the tenant-facing page →
-                </a>
-              </div>
-            </Row>
-          )}
-
-          {tab === "Online payments" && (
+          {activeGroup.label === "Payments" && (
             <>
+              <SectionLabel>Bank & payouts</SectionLabel>
               {lencoConnected && !editingBank ? (
                 <>
                   <div className="border-b border-line py-5">
@@ -547,7 +430,7 @@ export default function Settings() {
                   </div>
                   <Row label="Bank account">
                     <span className="text-sm font-medium text-ink">
-                      {bankName} · •••• {accountNumber.slice(-4)}
+                      {bankName} •••• {accountNumber.slice(-4)}
                     </span>
                   </Row>
                   <Row label="Account holder">
@@ -561,81 +444,7 @@ export default function Settings() {
                       Edit payout details
                     </Button>
                   </Row>
-                  <div className="py-5">
-                    <p className="text-sm font-medium text-ink">Payment methods</p>
-                    <p className="mt-1 max-w-sm text-xs text-muted">Shown to tenants on invoices, in the "How to pay" section.</p>
-
-                    <div className="mt-3 max-w-md space-y-3">
-                      {(
-                        [
-                          { type: "mtn", checkboxLabel: "MTN MoMo" },
-                          { type: "airtel", checkboxLabel: "Airtel Money" },
-                          { type: "cash", checkboxLabel: "Cash" },
-                          { type: "bank", checkboxLabel: "Bank transfer" },
-                          { type: "other", checkboxLabel: "Other (Mukuru, Zamtel Kwacha, etc.)" },
-                        ] as const
-                      ).map(({ type, checkboxLabel }) => {
-                        const method = paymentMethods.find((m) => m.type === type);
-                        const enabled = !!method;
-                        return (
-                          <div key={type} className="rounded-lg border border-line p-3">
-                            <label className="flex cursor-pointer items-center gap-2.5 text-sm font-medium text-ink">
-                              <input
-                                type="checkbox"
-                                checked={enabled}
-                                onChange={(e) => togglePaymentMethod(type, e.target.checked)}
-                                className="h-4 w-4 rounded border-line accent-brand"
-                              />
-                              {checkboxLabel}
-                            </label>
-
-                            {enabled && (type === "mtn" || type === "airtel") && (
-                              <input
-                                value={method?.number ?? ""}
-                                onChange={(e) => updatePaymentMethod(type, { number: e.target.value })}
-                                placeholder="Phone number"
-                                className="mt-2.5 w-full rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-brand"
-                              />
-                            )}
-
-                            {enabled && type === "bank" && (
-                              <div className="mt-2.5 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                <input
-                                  value={method?.bankName ?? ""}
-                                  onChange={(e) => updatePaymentMethod(type, { bankName: e.target.value })}
-                                  placeholder="Bank name"
-                                  className="w-full rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-brand"
-                                />
-                                <input
-                                  value={method?.accountNumber ?? ""}
-                                  onChange={(e) => updatePaymentMethod(type, { accountNumber: e.target.value })}
-                                  placeholder="Account number"
-                                  className="w-full rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-brand"
-                                />
-                              </div>
-                            )}
-
-                            {enabled && type === "other" && (
-                              <div className="mt-2.5 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                <input
-                                  value={method?.label ?? ""}
-                                  onChange={(e) => updatePaymentMethod(type, { label: e.target.value })}
-                                  placeholder="Platform name (e.g. Mukuru)"
-                                  className="w-full rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-brand"
-                                />
-                                <input
-                                  value={method?.number ?? ""}
-                                  onChange={(e) => updatePaymentMethod(type, { number: e.target.value })}
-                                  placeholder="Account / number"
-                                  className="w-full rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-brand"
-                                />
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
+                  
                 </>
               ) : (
                 <AnimatePresence mode="wait">
@@ -848,6 +657,34 @@ export default function Settings() {
                   )}
                 </AnimatePresence>
               )}
+
+              <div className="pt-2">
+                <SectionLabel>Payment link</SectionLabel>
+              </div>
+              <Row label="Your payment link" desc="Share this with tenants directly, or display the QR code at the property office.">
+                <div className="w-full max-w-md space-y-3">
+                  <div className="flex items-center gap-2 rounded-lg border border-line bg-mist px-3 py-2">
+                    <span className="flex-1 truncate text-sm text-muted">{paymentLink}</span>
+                    <Button variant="secondary" size="sm" className="gap-1.5" onClick={copyLink}>
+                      <CopyIcon />
+                      {linkCopied ? "Copied" : "Copy"}
+                    </Button>
+                    <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => setShowQr((v) => !v)}>
+                      <QrIcon />
+                      QR code
+                    </Button>
+                  </div>
+                  {showQr && (
+                    <div className="flex flex-col items-center gap-2 rounded-lg border border-line bg-paper p-5">
+                      <QRCodeSVG value={`${window.location.origin}${paymentPath}`} size={160} />
+                      <p className="text-xs text-muted">Print or screenshot this for the property office.</p>
+                    </div>
+                  )}
+                  <a href={paymentPath} target="_blank" rel="noreferrer" className="inline-block text-xs font-medium text-brand hover:underline">
+                    Open the tenant-facing page →
+                  </a>
+                </div>
+              </Row>
             </>
           )}
 
@@ -883,36 +720,7 @@ export default function Settings() {
             </>
           )} */}
 
-          {tab === "Notifications" && (
-            <>
-              <p className="pt-5 text-xs text-muted">Choose which events send you a push notification or email.</p>
-              {notificationRows.map((n) => (
-                <Row key={n.key} label={n.label} desc={n.desc}>
-                  <Toggle checked={notificationPrefs[n.key]} onChange={(v) => { setNotificationPref(n.key, v); flash(); }} />
-                </Row>
-              ))}
-            </>
-          )}
-
-          {tab === "Subscription" && (
-            <Row
-              label="Current plan"
-              desc={
-                subscriptionRenewsAt
-                  ? `Renews ${new Date(subscriptionRenewsAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}.`
-                  : "No renewal date set."
-              }
-            >
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-medium text-ink">{subscriptionPlan || "—"}</span>
-                <Button variant="primary" size="sm">
-                  Upgrade
-                </Button>
-              </div>
-            </Row>
-          )}
-
-          {tab === "Account" && (
+          {activeGroup.label === "Account" && (
             <>
               <Row label="Email address">
                 <input
@@ -934,11 +742,36 @@ export default function Settings() {
               <Row label="Appearance" desc="Switch between light, dark, or match your device.">
                 <ThemeSwitcher />
               </Row>
+              <Row
+                label="Current plan"
+                desc={
+                  subscriptionRenewsAt
+                    ? `Renews ${new Date(subscriptionRenewsAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}.`
+                    : "No renewal date set."
+                }
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium text-ink">{subscriptionPlan || "—"}</span>
+                  <Button variant="primary" size="sm">
+                    Upgrade
+                  </Button>
+                </div>
+              </Row>
               <Row label="Sign out" desc="You'll need to sign in again on this device.">
                 <Button variant="danger" onClick={() => navigate("/sign-in")}>
                   Sign out
                 </Button>
               </Row>
+
+              <div className="pt-2">
+                <SectionLabel>Notifications</SectionLabel>
+              </div>
+              <p className="pt-3 text-xs text-muted">Choose which events send you a push notification or email.</p>
+              {notificationRows.map((n) => (
+                <Row key={n.key} label={n.label} desc={n.desc}>
+                  <Toggle checked={notificationPrefs[n.key]} onChange={(v) => { setNotificationPref(n.key, v); flash(); }} />
+                </Row>
+              ))}
             </>
           )}
     </>
@@ -946,52 +779,36 @@ export default function Settings() {
 
   return (
     <>
-      {!sectionOpen ? (
-        <>
-          <PageHeader title="Settings" />
-          <div className="px-4 pb-10 sm:px-8">
-            <div className="grid grid-cols-1 gap-x-8 gap-y-7 py-2 sm:grid-cols-2 lg:grid-cols-3">
-              {tabs.map((t) => {
-                const Icon = tabIcon[t];
-                const linkLabel = t === "Online payments" ? (lencoConnected ? "Manage" : "Set up") : "Manage";
-                return (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => openTab(t)}
-                    className="group flex flex-col items-start rounded-lg text-left transition-colors hover:bg-mist -m-2 p-2"
-                  >
-                    <div className="flex items-center gap-2 text-sm font-semibold text-ink">
-                      <Icon size={17} weight="duotone" className="text-muted" />
-                      {t}
-                    </div>
-                    <p className="mt-1.5 text-xs leading-relaxed text-muted">{tabDescription[t]}</p>
-                    <span className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-brand">
-                      {linkLabel}
-                      <CaretRightIcon size={11} weight="bold" className="transition-transform group-hover:translate-x-0.5" />
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </>
-      ) : (
-        <>
-          {/* Selected section replaces the list entirely — back returns to the list, not a split view */}
-          <div className="bg-paper px-4 pt-5 pb-6 sm:px-8">
+      <PageHeader title="Settings" description="Manage your property, billing, and account preferences." />
+
+      {/* Persistent tab bar — every section is one click away instead of a list-then-back flow.
+          overflow-x-auto lets it scroll on narrow screens rather than wrap, so the sliding
+          underline never has to jump between lines. */}
+      <div className="overflow-x-auto border-b border-line px-4 sm:px-8">
+        <div className="flex items-center gap-1">
+          {tabGroups.map((g) => (
             <button
+              key={g.label}
               type="button"
-              onClick={goToList}
-              className="flex items-center gap-2 font-display text-xl font-semibold tracking-tight text-brand"
+              onClick={() => openTab(g.members[0])}
+              className={`relative shrink-0 px-3 py-3 text-sm font-medium whitespace-nowrap transition-colors ${
+                activeGroup.label === g.label ? "text-ink" : "text-muted hover:text-ink"
+              }`}
             >
-              <ArrowLeftIcon size={20} weight="bold" />
-              {tab}
+              {g.label}
+              {activeGroup.label === g.label && (
+                <motion.span
+                  layoutId="settings-tab"
+                  className="absolute inset-x-0 -bottom-px h-0.5 bg-brand"
+                  transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                />
+              )}
             </button>
-          </div>
-          <div className={`px-4 pb-10 sm:px-8 ${onlinePaymentsWizard ? "" : "max-w-3xl"}`}>{detail}</div>
-        </>
-      )}
+          ))}
+        </div>
+      </div>
+
+      <div className={`px-4 pt-6 pb-10 sm:px-8 ${onlinePaymentsWizard ? "" : "max-w-3xl"}`}>{detail}</div>
 
       <AnimatePresence>
         {toast && (

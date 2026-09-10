@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import { CaretLeft, CaretRight } from "@phosphor-icons/react";
 import PageHeader from "../../components/PageHeader";
+import MonthSwitcher from "../../components/MonthSwitcher";
 import { useExpenses } from "../../ExpensesContext";
 import { useCollectedRent } from "../../TenantsContext";
 import { ReportCard, currency } from "./shared";
@@ -37,31 +37,18 @@ export default function OwnerPayoutStatement() {
 
   return (
     <>
-      <PageHeader title="Reports" />
+      <PageHeader title="Payout statement" description="Review what's owed to the property owner." />
       <div className="px-4 sm:px-8 pb-10">
         <ReportCard title="Owner Payout Statement" audience="Property Owner">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-xs text-muted">Gross rent collected minus logged expenses → net balance due to the landlord.</p>
-            <div className="flex shrink-0 items-center gap-1 rounded-lg border border-line bg-paper px-1.5 py-1">
-              <button
-                type="button"
-                onClick={() => setMonthOffset((o) => o - 1)}
-                aria-label="Previous month"
-                className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-mist hover:text-ink"
-              >
-                <CaretLeft size={14} weight="bold" />
-              </button>
-              <span className="w-32 text-center text-sm font-medium text-ink">{month}</span>
-              <button
-                type="button"
-                onClick={() => setMonthOffset((o) => Math.min(0, o + 1))}
-                disabled={monthOffset === 0}
-                aria-label="Next month"
-                className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-mist hover:text-ink disabled:opacity-30 disabled:hover:bg-transparent"
-              >
-                <CaretRight size={14} weight="bold" />
-              </button>
-            </div>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="max-w-md text-xs text-muted">Gross rent collected minus logged expenses → net balance due to the landlord.</p>
+            <MonthSwitcher
+              month={month}
+              monthOffset={monthOffset}
+              onPrev={() => setMonthOffset((o) => o - 1)}
+              onNext={() => setMonthOffset((o) => Math.min(0, o + 1))}
+              onJumpToNow={() => setMonthOffset(0)}
+            />
           </div>
 
           {grossCollected === null && (

@@ -90,7 +90,7 @@ export function calcTenantInvoice(tenant: Tenant, periodDate: Date, rentOverride
   const total = rentAmount + outstanding + penalty;
 
   const rentLabel = isProrata
-    ? `${periodLabel(periodDate)} rent pro-rata (${days} days)`
+    ? `${periodLabel(periodDate)} rent, partial month (${days} days)`
     : `${periodLabel(periodDate)} rent`;
 
   const lineItems: InvoiceLineItem[] = [{ label: rentLabel, amount: rentAmount }];

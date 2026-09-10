@@ -390,7 +390,7 @@ export default function GenerateInvoicesOverlay({
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
                     {calc.isProrata && (
-                      <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-600">Pro-rata</span>
+                      <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-600">Partial month</span>
                     )}
                     {alreadySent && (
                       <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600">
@@ -503,7 +503,7 @@ export default function GenerateInvoicesOverlay({
                   <td className="px-6 py-4">
                     <div className="flex flex-wrap items-center gap-1.5">
                       {calc.isProrata && (
-                        <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-600">Pro-rata</span>
+                        <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-600">Partial month</span>
                       )}
                       {alreadySent && (
                         <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600">

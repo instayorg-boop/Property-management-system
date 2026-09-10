@@ -35,7 +35,7 @@ export default function ArrearsDelinquency() {
 
   return (
     <>
-      <PageHeader title="Reports" />
+      <PageHeader title="Overdue rent" description="See who's behind on rent and by how much." />
       <div className="px-4 sm:px-8 pb-10">
         <ReportCard title="Overdue Rent" audience="Property Manager / Operations">
           <p className="text-xs text-muted">Tenants behind on rent, how many days late, what they still owe, and parent/guardian contact info.</p>
@@ -64,7 +64,7 @@ export default function ArrearsDelinquency() {
             <Select value={sort} onChange={setSort} options={arrearsSortOptions} />
           </div>
 
-          <div className="mt-4 overflow-x-auto rounded-lg border border-line">
+          <div className="mt-4 overflow-x-auto rounded-xl border border-line">
             <table className="w-full table-fixed text-left text-sm">
               <colgroup>
                 <col className="w-32" />
@@ -73,19 +73,19 @@ export default function ArrearsDelinquency() {
                 <col className="w-24" />
                 <col className="w-52" />
               </colgroup>
-              <thead className="bg-mist text-xs text-muted">
+              <thead className="border-b border-line bg-paper text-[11px] text-muted uppercase">
                 <tr>
-                  <th className="px-3 py-2 font-medium">Tenant</th>
-                  <th className="px-3 py-2 font-medium">Room</th>
-                  <th className="px-3 py-2 font-medium">Days overdue</th>
-                  <th className="px-3 py-2 font-medium">Owed</th>
-                  <th className="px-3 py-2 font-medium">Emergency contact</th>
+                  <th className="px-6 py-4 font-medium tracking-wide">Tenant</th>
+                  <th className="px-6 py-4 font-medium tracking-wide">Room</th>
+                  <th className="px-6 py-4 font-medium tracking-wide">Days overdue</th>
+                  <th className="px-6 py-4 font-medium tracking-wide">Owed</th>
+                  <th className="px-6 py-4 font-medium tracking-wide">Emergency contact</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-line">
                 {rows.map((a) => (
-                  <tr key={a.id} className="border-t border-line align-top">
-                    <td className="px-3 py-2 font-medium">
+                  <tr key={a.id} className="align-top transition-colors duration-200 ease-in-out hover:bg-mist">
+                    <td className="px-6 py-4 font-medium">
                       <button
                         type="button"
                         onClick={() => navigate(`/tenants/${a.tenantId}`)}
@@ -94,14 +94,14 @@ export default function ArrearsDelinquency() {
                         {a.tenant}
                       </button>
                     </td>
-                    <td className="px-3 py-2 text-muted">{a.room}</td>
-                    <td className="px-3 py-2">
+                    <td className="px-6 py-4 text-muted">{a.room}</td>
+                    <td className="px-6 py-4">
                       <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${daysBadgeStyle(a.daysOverdue)}`}>
                         {a.daysOverdue}d
                       </span>
                     </td>
-                    <td className="px-3 py-2 font-medium text-ink">{currency(a.owed)}</td>
-                    <td className="px-3 py-2">
+                    <td className="px-6 py-4 font-medium text-ink">{currency(a.owed)}</td>
+                    <td className="px-6 py-4">
                       <p className="text-ink">{a.contactName}</p>
                       {a.contactPhone && (
                         <div className="mt-1 flex items-center gap-2">

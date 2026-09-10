@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Modal from "./Modal";
+import DatePicker from "./DatePicker";
 import type { Tenant } from "../TenantsContext";
 
 function todayISO() {
@@ -22,7 +23,7 @@ export default function ReactivateTenantModal({
       onClose={onClose}
       maxWidth="max-w-sm"
       title="Reactivate tenant"
-      description={`${tenant.name} · ${tenant.room}`}
+      description={`Marks ${tenant.name} active again in ${tenant.room}, starting a new tenancy from the date below.`}
       footer={
         <div className="flex justify-end gap-2">
           <button type="button" onClick={onClose} className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist">
@@ -39,12 +40,7 @@ export default function ReactivateTenantModal({
       }
     >
       <label className="mb-1.5 block text-xs font-medium text-muted">New move-in date</label>
-      <input
-        type="date"
-        value={moveInDate}
-        onChange={(e) => setMoveInDate(e.target.value)}
-        className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
-      />
+      <DatePicker value={moveInDate} onChange={setMoveInDate} />
     </Modal>
   );
 }

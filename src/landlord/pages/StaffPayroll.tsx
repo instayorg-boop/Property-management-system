@@ -408,7 +408,7 @@ export default function StaffPayroll() {
 
   return (
     <>
-      <PageHeader title="Payroll" />
+      <PageHeader title="Payroll" description="Run payroll and track staff compensation." />
 
       <div className="space-y-6 px-4 sm:px-8 pb-10">
         <div className="flex rounded-lg border border-line p-0.5 w-fit">
@@ -538,7 +538,7 @@ export default function StaffPayroll() {
               />
             </div>
 
-            <div className="overflow-x-auto rounded-lg border border-line bg-paper">
+            <div className="overflow-x-auto rounded-xl border border-line bg-paper">
               <table className="w-full table-fixed text-left text-sm">
                 <colgroup>
                   <col className="w-56" />
@@ -547,16 +547,16 @@ export default function StaffPayroll() {
                   <col className="w-28" />
                   <col className="w-16" />
                 </colgroup>
-                <thead className="bg-mist text-xs text-muted">
+                <thead className="border-b border-line bg-paper text-[11px] text-muted uppercase">
                   <tr>
-                    <th className="px-4 py-3 font-medium">Employee</th>
-                    <th className="px-4 py-3 font-medium">Pay type</th>
-                    <th className="px-4 py-3 font-medium">Pay before deductions</th>
-                    <th className="px-4 py-3 font-medium">Pay after deductions</th>
-                    <th className="px-4 py-3 font-medium"></th>
+                    <th className="px-6 py-4 font-medium tracking-wide">Employee</th>
+                    <th className="px-6 py-4 font-medium tracking-wide">Pay type</th>
+                    <th className="px-6 py-4 font-medium tracking-wide">Pay before deductions</th>
+                    <th className="px-6 py-4 font-medium tracking-wide">Pay after deductions</th>
+                    <th className="px-6 py-4 font-medium"></th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-line">
                   {!isReady && Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={5} />)}
                   <AnimatePresence initial={false}>
                     {isReady && pageRows.map((e) => (
@@ -567,20 +567,20 @@ export default function StaffPayroll() {
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         onClick={() => setSelectedId(e.id)}
-                        className="cursor-pointer border-t border-line transition-colors hover:bg-mist"
+                        className="cursor-pointer transition-colors duration-200 ease-in-out hover:bg-mist"
                       >
-                        <td className="px-4 py-3">
+                        <td className="px-6 py-4">
                           <div className="flex items-center gap-2">
                             <TpinAlert employee={e} />
                             <span className="truncate font-medium text-ink">{e.name}</span>
                           </div>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-6 py-4">
                           <PayTypeBadge payType={e.payType} />
                         </td>
-                        <td className="px-4 py-3 text-muted">{currency(grossPay(e))}</td>
-                        <td className="px-4 py-3 font-semibold text-ink">{currency(netPay(e))}</td>
-                        <td className="px-4 py-3 text-right">
+                        <td className="px-6 py-4 text-muted">{currency(grossPay(e))}</td>
+                        <td className="px-6 py-4 font-semibold text-ink">{currency(netPay(e))}</td>
+                        <td className="px-6 py-4 text-right">
                           <button
                             type="button"
                             aria-label={`Adjust ${e.name}`}
@@ -627,7 +627,7 @@ export default function StaffPayroll() {
         )}
 
         {pageTab === "history" && (
-          <div className="overflow-x-auto rounded-lg border border-line bg-paper">
+          <div className="overflow-x-auto rounded-xl border border-line bg-paper">
             <table className="w-full table-fixed text-left text-sm">
               <colgroup>
                 <col />
@@ -635,22 +635,22 @@ export default function StaffPayroll() {
                 <col className="w-32" />
                 <col className="w-28" />
               </colgroup>
-              <thead className="bg-mist text-xs text-muted">
+              <thead className="border-b border-line bg-paper text-[11px] text-muted uppercase">
                 <tr>
-                  <th className="px-4 py-3 font-medium">Period</th>
-                  <th className="px-4 py-3 font-medium">Employees paid</th>
-                  <th className="px-4 py-3 font-medium">Total cost</th>
-                  <th className="px-4 py-3 font-medium"></th>
+                  <th className="px-6 py-4 font-medium tracking-wide">Period</th>
+                  <th className="px-6 py-4 font-medium tracking-wide">Employees paid</th>
+                  <th className="px-6 py-4 font-medium tracking-wide">Total cost</th>
+                  <th className="px-6 py-4 font-medium"></th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-line">
                 {!isReady && Array.from({ length: 4 }).map((_, i) => <SkeletonRow key={i} cols={4} />)}
                 {isReady && payrollRuns.map((r) => (
-                  <tr key={r.id} onClick={() => setOpenRunId(r.id)} className="cursor-pointer border-t border-line transition-colors hover:bg-mist">
-                    <td className="px-4 py-3 font-medium text-ink">{r.period}</td>
-                    <td className="px-4 py-3 text-muted">{r.employees.length}</td>
-                    <td className="px-4 py-3 text-muted">{currency(r.totals.employerCost)}</td>
-                    <td className="px-4 py-3 text-right">
+                  <tr key={r.id} onClick={() => setOpenRunId(r.id)} className="cursor-pointer transition-colors duration-200 ease-in-out hover:bg-mist">
+                    <td className="px-6 py-4 font-medium text-ink">{r.period}</td>
+                    <td className="px-6 py-4 text-muted">{r.employees.length}</td>
+                    <td className="px-6 py-4 text-muted">{currency(r.totals.employerCost)}</td>
+                    <td className="px-6 py-4 text-right">
                       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-600">
                         <Lock className="h-3 w-3" /> Processed
                       </span>

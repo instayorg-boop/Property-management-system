@@ -23,7 +23,7 @@ export default function PayrollSummary() {
 
   return (
     <>
-      <PageHeader title="Reports" />
+      <PageHeader title="Payroll summary" description="Summary of staff pay for the selected period." />
       <div className="px-4 sm:px-8 pb-10">
         <ReportCard title="Staff Payroll Summary" audience="Property Manager / ZRA compliance">
           <p className="text-xs text-muted">
@@ -52,7 +52,7 @@ export default function PayrollSummary() {
             </p>
           )}
 
-          <div className="mt-4 overflow-x-auto rounded-lg border border-line">
+          <div className="mt-4 overflow-x-auto rounded-xl border border-line">
             <table className="w-full table-fixed text-left text-sm">
               <colgroup>
                 <col />
@@ -61,28 +61,28 @@ export default function PayrollSummary() {
                 <col className="w-24" />
                 <col className="w-24" />
               </colgroup>
-              <thead className="bg-mist text-xs text-muted">
+              <thead className="border-b border-line bg-paper text-[11px] text-muted uppercase">
                 <tr>
-                  <th className="px-3 py-2 font-medium">Employee</th>
-                  <th className="px-3 py-2 font-medium">NRC</th>
-                  <th className="px-3 py-2 font-medium">TPIN</th>
-                  <th className="px-3 py-2 font-medium">Gross</th>
-                  <th className="px-3 py-2 font-medium">Net</th>
+                  <th className="px-6 py-4 font-medium tracking-wide">Employee</th>
+                  <th className="px-6 py-4 font-medium tracking-wide">NRC</th>
+                  <th className="px-6 py-4 font-medium tracking-wide">TPIN</th>
+                  <th className="px-6 py-4 font-medium tracking-wide">Gross</th>
+                  <th className="px-6 py-4 font-medium tracking-wide">Net</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-line">
                 {employees.map((e) => (
-                  <tr key={e.id} className="border-t border-line">
-                    <td className="truncate px-3 py-2 text-ink">{e.name}</td>
-                    <td className="px-3 py-2 text-muted">{e.nrc ?? "—"}</td>
-                    <td className="px-3 py-2 text-muted">{e.tpin ?? "—"}</td>
-                    <td className="px-3 py-2 text-muted">{currency(grossPay(e))}</td>
-                    <td className="px-3 py-2 font-medium text-ink">{currency(netPay(e))}</td>
+                  <tr key={e.id} className="transition-colors duration-200 ease-in-out hover:bg-mist">
+                    <td className="truncate px-6 py-4 text-ink">{e.name}</td>
+                    <td className="px-6 py-4 text-muted">{e.nrc ?? "—"}</td>
+                    <td className="px-6 py-4 text-muted">{e.tpin ?? "—"}</td>
+                    <td className="px-6 py-4 text-muted">{currency(grossPay(e))}</td>
+                    <td className="px-6 py-4 font-medium text-ink">{currency(netPay(e))}</td>
                   </tr>
                 ))}
                 {employees.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-3 py-6 text-center text-sm text-muted">
+                    <td colSpan={5} className="px-6 py-6 text-center text-sm text-muted">
                       No active staff.
                     </td>
                   </tr>

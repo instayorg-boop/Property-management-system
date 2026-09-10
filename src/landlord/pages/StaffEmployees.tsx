@@ -5,6 +5,7 @@ import PageHeader from "../components/PageHeader";
 import Modal from "../components/Modal";
 import SlideOver from "../components/SlideOver";
 import Select from "../components/Select";
+import DatePicker from "../components/DatePicker";
 import { useStaff, type Employee, type PayType, type Gender, type MaritalStatus, type ContractType } from "../StaffContext";
 import { SkeletonRow } from "../components/Skeleton";
 import Button from "../components/Button";
@@ -329,7 +330,7 @@ function EmployeeFormModal({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className={labelCls}>Date of birth</label>
-              <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} className={inputCls} />
+              <DatePicker value={dateOfBirth} onChange={setDateOfBirth} />
             </div>
             <div>
               <label className={labelCls}>Gender</label>
@@ -381,7 +382,7 @@ function EmployeeFormModal({
           </div>
           <div>
             <label className={labelCls}>Employment start date</label>
-            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className={inputCls} />
+            <DatePicker value={startDate} onChange={setStartDate} />
             <p className="mt-1 text-xs text-muted">Required for NAPSA registration within 30 days of hire.</p>
           </div>
           <div>
@@ -397,7 +398,7 @@ function EmployeeFormModal({
           {contractType === "fixed-term" && (
             <div>
               <label className={labelCls}>Contract end date</label>
-              <input type="date" value={contractEndDate} onChange={(e) => setContractEndDate(e.target.value)} className={inputCls} />
+              <DatePicker value={contractEndDate} onChange={setContractEndDate} />
             </div>
           )}
           <div className="grid grid-cols-2 gap-3">
@@ -698,7 +699,7 @@ export default function StaffEmployees() {
 
   return (
     <>
-      <PageHeader title="Employees" />
+      <PageHeader title="Employees" description="Manage your staff records and employment details." />
 
       <div className="space-y-4 px-4 sm:px-8 pb-10">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -728,7 +729,7 @@ export default function StaffEmployees() {
           </Button>
         </div>
 
-        <div className="overflow-x-auto rounded-lg border border-line">
+        <div className="overflow-x-auto rounded-xl border border-line">
           <table className="w-full table-fixed text-left text-sm">
             <colgroup>
               <col className="w-64" />
@@ -738,25 +739,25 @@ export default function StaffEmployees() {
               <col className="w-40" />
               <col className="w-16" />
             </colgroup>
-            <thead className="bg-mist text-xs text-muted">
+            <thead className="border-b border-line bg-paper text-[11px] text-muted uppercase">
               <tr>
-                <th className="px-4 py-3 font-medium">Employee</th>
-                <th className="px-4 py-3 font-medium">Contact</th>
-                <th className="px-4 py-3 font-medium">Pay setup</th>
-                <th className="px-4 py-3 font-medium">Start date</th>
-                <th className="px-4 py-3 font-medium">Compliance</th>
-                <th className="px-4 py-3 font-medium"></th>
+                <th className="px-6 py-4 font-medium tracking-wide">Employee</th>
+                <th className="px-6 py-4 font-medium tracking-wide">Contact</th>
+                <th className="px-6 py-4 font-medium tracking-wide">Pay setup</th>
+                <th className="px-6 py-4 font-medium tracking-wide">Start date</th>
+                <th className="px-6 py-4 font-medium tracking-wide">Compliance</th>
+                <th className="px-6 py-4 font-medium"></th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-line">
               {!isReady && Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={6} />)}
               {isReady && filtered.map((e) => (
                 <tr
                   key={e.id}
                   onClick={() => setSelectedId(e.id)}
-                  className={`cursor-pointer border-t border-line transition-colors hover:bg-mist ${!e.active ? "opacity-50" : ""}`}
+                  className={`cursor-pointer transition-colors duration-200 ease-in-out hover:bg-mist ${!e.active ? "opacity-50" : ""}`}
                 >
-                  <td className="px-4 py-3">
+                  <td className="px-6 py-4">
                     <div className="flex items-center gap-2.5">
                       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-mist text-[10px] font-semibold text-muted">
                         {e.name.split(" ").map((s) => s[0]).join("")}
@@ -770,7 +771,7 @@ export default function StaffEmployees() {
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-muted">
+                  <td className="px-6 py-4 text-muted">
                     {e.phone ? (
                       <span className="flex items-center gap-1.5">
                         <PhoneIcon size={12} weight="duotone" className="shrink-0" />
@@ -780,7 +781,7 @@ export default function StaffEmployees() {
                       "—"
                     )}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-6 py-4">
                     <span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${payTypeStyle[e.payType]}`}>
                       {payTypeLabel[e.payType]}
                     </span>
@@ -798,8 +799,8 @@ export default function StaffEmployees() {
                             : "—"}
                     </p>
                   </td>
-                  <td className="px-4 py-3 text-muted">{formatDate(e.startDate)}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-6 py-4 text-muted">{formatDate(e.startDate)}</td>
+                  <td className="px-6 py-4">
                     <div className="flex flex-col gap-0.5">
                       <TpinBadge tpin={e.tpin} />
                       {!e.nrc && (
@@ -809,7 +810,7 @@ export default function StaffEmployees() {
                       )}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-6 py-4 text-right">
                     {e.active && (
                       <button
                         type="button"

@@ -58,21 +58,16 @@ export default function IncomeExpenses() {
   const periodKey = periodKeyFor(monthDate);
   const isCurrentMonth = monthOffset === 0;
 
-  // Rent-collected only reflects live tenant state, not a real per-month history yet — so the
-  // itemized income side (who actually paid what) can only be shown for the current month, same
-  // limitation the old lump-sum figure had.
-  const incomeItems = useMemo<LineItem[]>(() => {
-    if (!isCurrentMonth) return [];
+  // Rent-collected only reflects live tenant state, not a real per-month history yet — only
+  // current-month is shown. Deliberately NOT itemized per tenant here — with a lot of tenants,
+  // listing every single one who paid isn't useful on a summary report; "total income from rent"
+  // is the number that actually belongs on a statement like this.
+  const income = useMemo(() => {
+    if (!isCurrentMonth) return null;
     return tenants
       .filter((t) => t.active && (t.status === "paid" || t.status === "partial"))
-      .map((t) => ({
-        label: t.name,
-        sublabel: t.room,
-        amount: t.status === "partial" ? (t.ledger[0]?.paidAmount ?? 0) : t.rentAmount,
-      }))
-      .filter((item) => item.amount > 0);
+      .reduce((sum, t) => sum + (t.status === "partial" ? (t.ledger[0]?.paidAmount ?? 0) : t.rentAmount), 0);
   }, [tenants, isCurrentMonth]);
-  const income = isCurrentMonth ? incomeItems.reduce((sum, i) => sum + i.amount, 0) : null;
 
   const periodExpenses = useMemo(() => expenses.filter((e) => e.date.startsWith(periodKey)), [expenses, periodKey]);
   const expensesTotal = periodExpenses.reduce((sum, e) => sum + e.amount, 0);
@@ -89,8 +84,6 @@ export default function IncomeExpenses() {
       .filter((s) => s.items.length > 0);
   }, [categories, periodExpenses]);
 
-  const incomeSection: Section = { name: "Rent", items: incomeItems, total: income ?? 0 };
-
   return (
     <>
       <PageHeader title="Income vs expenses" description="A detailed income and expense statement, month to month." />
@@ -98,7 +91,7 @@ export default function IncomeExpenses() {
         <ReportCard title="Income vs Expenses" audience="Landlord / Accountant">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="max-w-md text-xs text-muted">
-              Every rent payment and logged expense for the period, itemized by category — the statement handed to an accountant at month end.
+              Total rent collected against every logged expense, itemized by category — the statement handed to an accountant at month end.
             </p>
             <MonthSwitcher
               month={month}
@@ -111,7 +104,7 @@ export default function IncomeExpenses() {
 
           {income === null && (
             <p className="mt-3 rounded-lg bg-amber-50 px-3.5 py-2.5 text-xs text-amber-700">
-              Rent-collected figures aren't tracked per past month yet — only {monthLabel(new Date())} is shown itemized. Expenses
+              Rent-collected figures aren't tracked per past month yet — only {monthLabel(new Date())} is shown. Expenses
               for {month} are still accurate.
             </p>
           )}
@@ -130,22 +123,6 @@ export default function IncomeExpenses() {
               <p className="mt-0.5 font-display text-lg font-semibold text-ink">{net === null ? "—" : currency(net)}</p>
             </div>
           </div>
-
-          {/* Income — itemized by tenant, same shape as the expense statement below */}
-          {income !== null && (
-            <div className="mt-5">
-              <p className="text-xs font-medium text-muted">Income</p>
-              {incomeItems.length === 0 ? (
-                <p className="mt-2 rounded-lg border border-dashed border-line px-3.5 py-4 text-center text-sm text-muted">
-                  No rent collected for {month}.
-                </p>
-              ) : (
-                <div className="mt-2 rounded-lg border border-line px-3.5 py-3">
-                  <SectionBlock section={incomeSection} tone="income" />
-                </div>
-              )}
-            </div>
-          )}
 
           {/* Expenses — one block per category: header, indented line items, subtotal */}
           <div className="mt-5">

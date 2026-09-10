@@ -20,11 +20,11 @@ export default function Modal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
+        initial={{ opacity: 0, backdropFilter: "blur(0px)" }}
+        animate={{ opacity: 1, backdropFilter: "blur(8px)" }}
+        exit={{ opacity: 0, backdropFilter: "blur(0px)" }}
         transition={{ duration: 0.2 }}
-        className="absolute inset-0 bg-ink/40"
+        className="absolute inset-0 bg-ink/30 backdrop-blur-md"
         onClick={onClose}
       />
       <motion.div
@@ -32,7 +32,7 @@ export default function Modal({
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 8 }}
         transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-        className={`relative flex max-h-[85vh] w-full flex-col overflow-hidden rounded-2xl border border-line bg-paper shadow-card ${maxWidth}`}
+        className={`relative flex max-h-[85vh] w-full flex-col overflow-hidden rounded-lg border border-line bg-paper shadow-card ${maxWidth}`}
       >
         {/* Fixed header */}
         {title && (

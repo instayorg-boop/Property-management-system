@@ -312,7 +312,7 @@ export default function TenantProfile() {
     deleteTenant,
     moveOutTenant,
     reactivateTenant,
-    logPayment,
+    logPayments,
     deleteLedgerEntry,
   } = useTenants();
   const { reports } = useMaintenance();
@@ -1157,13 +1157,15 @@ export default function TenantProfile() {
             rentAmount={tenant.rentAmount}
             ledger={tenant.ledger}
             onClose={() => setShowLogPayment(false)}
-            onConfirm={(payment) => {
-              logPayment(
+            onConfirm={(payments) => {
+              logPayments(
                 tenant.id,
-                payment.amount,
-                payment.label,
-                payment.method === "mobile" ? "mobile-money" : "cash",
-                payment.date,
+                payments.map((payment) => ({
+                  amount: payment.amount,
+                  label: payment.label,
+                  method: payment.method === "mobile" ? "mobile-money" : "cash",
+                  paidAt: payment.date,
+                })),
               );
               setShowLogPayment(false);
             }}

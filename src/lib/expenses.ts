@@ -15,7 +15,7 @@ export type Expense = {
   source: "manual" | "payroll";
 };
 
-const DEFAULT_CATEGORY_NAMES = ["Maintenance", "Staff wages", "Utilities", "Other"];
+const DEFAULT_CATEGORY_NAMES = ["Utilities", "Maintenance & Repairs", "Legal Fees", "Taxes", "Other"];
 
 type CategoryRow = Pick<Tables<"expense_categories">, "id" | "name" | "active">;
 function toCategory(row: CategoryRow): Category {
