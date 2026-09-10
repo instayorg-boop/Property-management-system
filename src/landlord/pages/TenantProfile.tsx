@@ -172,7 +172,7 @@ function ConfirmDeleteLedgerEntryModal({ entry, onClose, onConfirm }: { entry: L
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="danger" onClick={onConfirm} className="bg-red-600 text-paper hover:bg-red-700">
+          <Button variant="dangerSolid" onClick={onConfirm}>
             Delete
           </Button>
         </div>

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   CaretDown,
@@ -172,32 +172,39 @@ function RoomRow({ room, onSelect }: { room: RoomView; onSelect: () => void }) {
   const alert = rentAlert(room);
 
   return (
-    <tr onClick={onSelect} className="cursor-pointer border-t border-line transition-colors hover:bg-mist">
-      <td className="px-4 py-3">
+    <tr onClick={onSelect} className="group cursor-pointer transition-colors duration-200 ease-in-out hover:bg-mist">
+      <td className="px-6 py-4">
         <p className="font-medium text-ink">{roomLabel(room.number)}</p>
         <p className="text-xs text-muted">{room.typeConfig.name}</p>
       </td>
-      <td className="px-4 py-3">
+      <td className="px-6 py-4">
         <BedMeter room={room} />
       </td>
-      <td className="px-4 py-3">
+      <td className="px-6 py-4">
         {occupants.length === 0 ? (
           <span className="text-sm text-muted">—</span>
         ) : (
           <p className="text-sm text-ink">
-            {occupants.map((o) => o.name).join(", ")}
+            {occupants.map((o, i) => (
+              <span key={o.id}>
+                {i > 0 && ", "}
+                <Link to={`/tenants/${o.id}`} onClick={(e) => e.stopPropagation()} className="hover:underline">
+                  {o.name}
+                </Link>
+              </span>
+            ))}
           </p>
         )}
       </td>
-      <td className="px-4 py-3 text-sm text-muted">{formatCurrency(room.typeConfig.rent)}/mo</td>
-      <td className="px-4 py-3">
+      <td className="px-6 py-4 text-sm text-muted">{formatCurrency(room.typeConfig.rent)}/mo</td>
+      <td className="px-6 py-4">
         <div className="flex items-center gap-1.5">
           <StatusPill status={room.status} />
           {alert && <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-600">Owing</span>}
         </div>
       </td>
-      <td className="px-4 py-3">
-        <span className="text-xs font-medium text-brand">{room.status === "vacant" ? "Assign" : "View"}</span>
+      <td className="px-6 py-4">
+        <span className="font-semibold text-ink underline-offset-2 group-hover:underline">{room.status === "vacant" ? "Assign" : "Details"}</span>
       </td>
     </tr>
   );
@@ -290,17 +297,17 @@ function RoomGroup({
             ) : (
               <div className="overflow-x-auto border-t border-line">
                 <table className="w-full text-left text-sm">
-                  <thead className="bg-mist text-xs text-muted">
+                  <thead className="border-b border-line bg-paper text-[11px] text-muted uppercase">
                     <tr>
-                      <th className="px-4 py-2.5 font-medium">Room</th>
-                      <th className="px-4 py-2.5 font-medium">Beds</th>
-                      <th className="px-4 py-2.5 font-medium">Occupant</th>
-                      <th className="px-4 py-2.5 font-medium">Rent</th>
-                      <th className="px-4 py-2.5 font-medium">Status</th>
-                      <th className="px-4 py-2.5 font-medium">Action</th>
+                      <th className="px-6 py-4 font-medium tracking-wide">Room</th>
+                      <th className="px-6 py-4 font-medium tracking-wide">Beds</th>
+                      <th className="px-6 py-4 font-medium tracking-wide">Occupant</th>
+                      <th className="px-6 py-4 font-medium tracking-wide">Rent</th>
+                      <th className="px-6 py-4 font-medium tracking-wide">Status</th>
+                      <th className="px-6 py-4 font-medium tracking-wide">Action</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-line">
                     {rooms.map((room) => (
                       <RoomRow key={room.number} room={room} onSelect={() => onSelectRoom(room)} />
                     ))}
@@ -331,7 +338,9 @@ function OccupantBlock({
     <div>
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-medium text-ink">{occupant.name}</p>
+          <button type="button" onClick={onViewRecord} className="text-sm font-medium text-ink hover:underline">
+            {occupant.name}
+          </button>
           <p className="text-xs text-muted">{occupant.phones[0] ?? "—"}</p>
         </div>
         <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted">
@@ -614,12 +623,7 @@ function ConfirmDeleteRoomTypeModal({
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            variant="danger"
-            onClick={onConfirm}
-            disabled={roomCount > 0}
-            className="bg-red-600 text-paper hover:bg-red-700"
-          >
+          <Button variant="dangerSolid" onClick={onConfirm} disabled={roomCount > 0}>
             Delete
           </Button>
         </div>
@@ -650,7 +654,7 @@ function ConfirmDeleteRoomModal({ number, onClose, onConfirm }: { number: string
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="danger" onClick={onConfirm} className="bg-red-600 text-paper hover:bg-red-700">
+          <Button variant="dangerSolid" onClick={onConfirm}>
             Delete
           </Button>
         </div>
@@ -754,7 +758,7 @@ export default function Rooms() {
 
   return (
     <>
-      <PageHeader title="Rooms" />
+      <PageHeader title="Rooms" description="Track occupancy, assign tenants, and manage room types." />
 
       <div className="space-y-5 px-4 sm:px-8 pb-10">
         {/* What the property is doing right now, in money and beds */}
@@ -1031,9 +1035,11 @@ export default function Rooms() {
             tenantName={payingTenant.name}
             room={payingTenant.room}
             outstanding={payingTenant.owedAmount || payingTenant.rentAmount}
+            rentAmount={payingTenant.rentAmount}
+            ledger={payingTenant.ledger}
             onClose={() => setPayingTenant(null)}
             onConfirm={(payment) => {
-              logPayment(payingTenant.id, payment.amount, undefined, payment.method === "mobile" ? "mobile-money" : "cash");
+              logPayment(payingTenant.id, payment.amount, payment.label, payment.method === "mobile" ? "mobile-money" : "cash", payment.date);
               setPayingTenant(null);
               setSelectedNumber(null);
             }}

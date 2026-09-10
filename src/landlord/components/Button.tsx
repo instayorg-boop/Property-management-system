@@ -1,6 +1,6 @@
 import { forwardRef, type ButtonHTMLAttributes } from "react";
 
-export type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
+export type ButtonVariant = "primary" | "secondary" | "danger" | "dangerSolid" | "ghost";
 export type ButtonSize = "sm" | "md";
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -17,6 +17,12 @@ const variantCls: Record<ButtonVariant, string> = {
   primary: "raised-btn-brand",
   secondary: "raised-btn text-ink",
   danger: "border border-line text-red-600 transition-colors hover:bg-red-50",
+  // Solid fill for an actual "confirm delete" CTA — `danger` plus a `bg-red-600 text-paper`
+  // className override used to be how call sites did this, but the two text-color utilities
+  // (danger's text-red-600 vs the override's text-paper) collide unpredictably since Tailwind's
+  // generated CSS order isn't the same as the className string's order, which could render as
+  // illegible red-on-red. This variant is the CSS itself, no override needed.
+  dangerSolid: "bg-red-600 text-paper transition-colors hover:bg-red-700",
   ghost: "text-muted transition-colors hover:bg-mist hover:text-ink",
 };
 

@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Paperclip as PaperclipIcon } from "@phosphor-icons/react";
-import SlideOver from "./SlideOver";
 import Modal from "./Modal";
 import Button from "./Button";
+import DatePicker from "./DatePicker";
 import { useExpenses, type Expense } from "../ExpensesContext";
 
 function todayISO() {
@@ -89,7 +89,7 @@ export default function ExpenseFormDrawer({
 
   return (
     <>
-    <SlideOver
+    <Modal
       onClose={onClose}
       title={editing ? "Edit expense" : "Add expense"}
       footer={
@@ -142,7 +142,7 @@ export default function ExpenseFormDrawer({
             <button
               type="button"
               onClick={() => setAddingCategory((v) => !v)}
-              className="text-xs font-medium text-brand hover:text-ink"
+              className="text-xs font-medium text-brand transition active:scale-95 hover:text-ink"
             >
               {addingCategory ? "Cancel" : "+ New category"}
             </button>
@@ -168,7 +168,7 @@ export default function ExpenseFormDrawer({
                   key={c.id}
                   type="button"
                   onClick={() => setCategoryId(c.id)}
-                  className={`rounded-lg border py-2.5 text-sm font-medium transition-colors ${
+                  className={`rounded-lg border py-2.5 text-sm font-medium transition active:scale-[0.97] ${
                     categoryId === c.id ? "border-brand bg-brand-soft text-brand" : "border-line text-muted hover:bg-mist"
                   }`}
                 >
@@ -181,12 +181,7 @@ export default function ExpenseFormDrawer({
 
         <div>
           <label className="mb-1.5 block text-xs font-medium text-muted">Date</label>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
-          />
+          <DatePicker value={date} onChange={setDate} />
         </div>
 
         <div>
@@ -199,7 +194,7 @@ export default function ExpenseFormDrawer({
               <button
                 type="button"
                 onClick={() => setHasPhoto(false)}
-                className="text-xs font-medium text-red-600 hover:underline"
+                className="text-xs font-medium text-red-600 transition active:scale-95 hover:underline"
               >
                 Remove photo
               </button>
@@ -208,7 +203,7 @@ export default function ExpenseFormDrawer({
             <button
               type="button"
               onClick={() => setHasPhoto(true)}
-              className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-line py-2.5 text-sm font-medium text-muted transition-colors hover:bg-mist"
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-line py-2.5 text-sm font-medium text-muted transition active:scale-[0.98] hover:bg-mist"
             >
               <PaperclipIcon size={14} weight="duotone" />
               Attach receipt photo (optional)
@@ -216,7 +211,7 @@ export default function ExpenseFormDrawer({
           )}
         </div>
       </div>
-    </SlideOver>
+    </Modal>
     {confirmingDelete && editing && (
       <ConfirmDeleteExpenseModal
         expense={editing}

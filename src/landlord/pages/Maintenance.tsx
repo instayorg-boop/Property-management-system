@@ -5,7 +5,7 @@ import PageHeader from "../components/PageHeader";
 import SlideOver from "../components/SlideOver";
 import SectionLabel from "../components/SectionLabel";
 import Lightbox from "../components/Lightbox";
-import { Eye, MagnifyingGlass, Paperclip, Wrench, PencilSimple, Trash, CaretDown, X, Image, CheckCircle } from "@phosphor-icons/react";
+import { MagnifyingGlass, Paperclip, Wrench, PencilSimple, Trash, CaretDown, CaretRight, X, Image, CheckCircle } from "@phosphor-icons/react";
 import { useMaintenance, type MaintenanceReport, type MaintenanceStatus } from "../MaintenanceContext";
 import { useTenants } from "../TenantsContext";
 import Modal from "../components/Modal";
@@ -15,18 +15,16 @@ import Button from "../components/Button";
 import { PendingSyncTag } from "../components/SyncStatus";
 import { usePendingMaintenanceIds } from "../../lib/offline/hooks";
 
-function EyeIcon() {
-  return <Eye size={14} weight="duotone" />;
-}
-
 function SearchIcon() {
   return <MagnifyingGlass size={16} weight="bold" />;
 }
 
 const statusLabel: Record<MaintenanceStatus, string> = { open: "Open", "in-progress": "In progress", resolved: "Resolved" };
 
+// "Open" reads as a soft coral/terracotta rather than a harsh alarm red — the whole page leans
+// warm, so even the most urgent status shouldn't feel like a system error.
 const statusStyle: Record<MaintenanceStatus, string> = {
-  open: "bg-red-50 text-red-600",
+  open: "bg-orange-50 text-orange-600",
   "in-progress": "bg-amber-50 text-amber-600",
   resolved: "bg-emerald-50 text-emerald-600",
 };
@@ -34,18 +32,10 @@ const statusStyle: Record<MaintenanceStatus, string> = {
 /** Groups render in this order regardless of which statuses actually have reports right now. */
 const STATUS_GROUPS: MaintenanceStatus[] = ["open", "in-progress", "resolved"];
 
-/** The whole group header is tinted, not just a thin accent strip — same hue family as the
- * status pills used elsewhere, just applied to the full row so it actually reads at a glance. */
-const statusHeaderStyle: Record<MaintenanceStatus, string> = {
-  open: "bg-red-50 hover:bg-red-100/70",
-  "in-progress": "bg-amber-50 hover:bg-amber-100/70",
-  resolved: "bg-emerald-50 hover:bg-emerald-100/70",
-};
-const statusHeaderText: Record<MaintenanceStatus, string> = {
-  open: "text-red-700",
-  "in-progress": "text-amber-700",
-  resolved: "text-emerald-700",
-};
+/** The group header itself stays a neutral, warm-gray container — status now lives in the small
+ * pill badge next to the label instead of washing the whole bar in color, which read as a harsh
+ * system alert rather than a calm operational list. */
+const GROUP_HEADER_STYLE = "bg-paper hover:bg-mist";
 
 const groupFilterOptions: { value: "all" | MaintenanceStatus; label: string }[] = [
   { value: "all", label: "All" },
@@ -55,10 +45,10 @@ const groupFilterOptions: { value: "all" | MaintenanceStatus; label: string }[] 
 ];
 
 /** The active filter's own text takes on that status's colour, instead of the same neutral ink
- * every tab gets — so "Open" selected actually reads red, not just "selected". */
+ * every tab gets — so "Open" selected actually reads coral, not just "selected". */
 const groupFilterActiveColor: Record<"all" | MaintenanceStatus, string> = {
   all: "text-ink",
-  open: "text-red-600",
+  open: "text-orange-600",
   "in-progress": "text-amber-600",
   resolved: "text-emerald-600",
 };
@@ -120,7 +110,7 @@ function ConfirmDeleteReportModal({ onClose, onConfirm }: { onClose: () => void;
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="danger" onClick={onConfirm} className="bg-red-600 text-paper hover:bg-red-700">
+          <Button variant="dangerSolid" onClick={onConfirm}>
             Delete
           </Button>
         </div>
@@ -234,7 +224,7 @@ function RequestDrawer({
                     type="button"
                     onClick={() => onSetStatus(s)}
                     className={`relative flex-1 rounded-md py-1.5 text-xs font-medium transition-colors ${
-                      active ? statusHeaderText[s] : "text-muted hover:text-ink"
+                      active ? groupFilterActiveColor[s] : "text-muted hover:text-ink"
                     }`}
                   >
                     {active && (
@@ -486,7 +476,7 @@ export default function Maintenance() {
 
   return (
     <>
-      <PageHeader title="Maintenance" />
+      <PageHeader title="Maintenance requests" description="Review and resolve maintenance requests from tenants." />
 
       <div className="space-y-5 px-4 sm:px-8 pb-10">
         {/* Add stands alone on its own row; search + filters sit on the row below it, not beside it. */}
@@ -568,18 +558,19 @@ export default function Maintenance() {
               const rows = grouped.get(status) ?? [];
               const isCollapsed = collapsed.has(status);
               return (
-                <div key={status} className="overflow-hidden rounded-lg border-2 border-gray-100 bg-paper">
+                <div key={status} className="overflow-hidden rounded-xl border border-line bg-paper">
                   <button
                     type="button"
                     onClick={() => toggleGroup(status)}
-                    className={`flex w-full items-center gap-2.5 px-4 py-3 text-left transition-colors ${statusHeaderStyle[status]}`}
+                    className={`flex w-full items-center gap-3 px-6 py-4 text-left transition-colors duration-200 ease-in-out ${GROUP_HEADER_STYLE}`}
                   >
-                    <span className={`text-xs font-bold tracking-wide uppercase ${statusHeaderText[status]}`}>{statusLabel[status]}</span>
-                    <span className={`text-xs font-medium ${statusHeaderText[status]} opacity-70`}>({rows.length})</span>
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold tracking-wide ${statusStyle[status]}`}>
+                      {statusLabel[status]} · {rows.length}
+                    </span>
                     <CaretDown
                       size={14}
                       weight="bold"
-                      className={`ml-auto transition-transform ${statusHeaderText[status]} ${isCollapsed ? "-rotate-90" : ""}`}
+                      className={`ml-auto shrink-0 text-muted transition-transform ${isCollapsed ? "-rotate-90" : ""}`}
                     />
                   </button>
 
@@ -605,16 +596,16 @@ export default function Maintenance() {
                                   key={r.id}
                                   type="button"
                                   onClick={() => openRequest(r)}
-                                  className="flex w-full items-start justify-between gap-3 p-4 text-left transition-colors active:bg-mist"
+                                  className="flex w-full items-start justify-between gap-3 p-6 text-left transition-colors active:bg-mist"
                                 >
                                   <div className="min-w-0">
                                     <div className="flex items-center gap-1.5">
                                       {r.unread ? (
-                                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />
+                                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
                                       ) : (
                                         <CheckCircle size={12} weight="fill" className="shrink-0 text-muted/50" />
                                       )}
-                                      <p className="truncate text-sm font-medium text-ink">{r.location}</p>
+                                      <p className="truncate text-sm font-semibold text-ink">{r.location}</p>
                                     </div>
                                     <p className="mt-0.5 line-clamp-2 text-xs text-muted">{r.description}</p>
                                     <div className="mt-1.5 flex items-center gap-2">
@@ -629,10 +620,7 @@ export default function Maintenance() {
                                       )}
                                     </div>
                                   </div>
-                                  <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-muted">
-                                    <EyeIcon />
-                                    View
-                                  </span>
+                                  <CaretRight size={16} weight="bold" className="mt-1 shrink-0 text-muted" />
                                 </button>
                               ))}
                             </div>
@@ -642,69 +630,63 @@ export default function Maintenance() {
                               <table className="w-full table-fixed text-left text-sm">
                                 <colgroup>
                                   <col className="w-36" />
-                                  <col className="w-28" />
+                                  
                                   <col />
+                                  <col className="w-28" />
                                   <col className="w-24" />
                                   <col className="w-32" />
                                   <col className="w-24" />
                                 </colgroup>
-                                <thead className="bg-mist text-xs text-muted">
+                                <thead className="border-b border-line bg-paper text-[11px] text-muted uppercase">
                                   <tr>
-                                    <th className="px-3 py-2 font-medium">Location</th>
-                                    <th className="px-3 py-2 font-medium">Reported by</th>
-                                    <th className="px-3 py-2 font-medium">Description</th>
-                                    <th className="px-3 py-2 font-medium">Photos</th>
-                                    <th className="px-3 py-2 font-medium">Date</th>
-                                    <th className="px-3 py-2 font-medium"></th>
+                                    <th className="px-6 py-4 font-medium tracking-wide">Location</th>
+                                   
+                                    <th className="px-6 py-4 font-medium tracking-wide">Description</th>
+                                    <th className="px-6 py-4 font-medium tracking-wide">Reported by</th>
+                                    <th className="px-6 py-4 font-medium tracking-wide">Photos</th>
+                                    <th className="px-6 py-4 font-medium tracking-wide">Date</th>
+                                    <th className="px-6 py-4 font-medium"></th>
                                   </tr>
                                 </thead>
-                                <tbody>
+                                <tbody className="divide-y divide-line">
                                   {rows.map((r) => (
                                     <tr
                                       key={r.id}
                                       onClick={() => openRequest(r)}
-                                      className="cursor-pointer border-t border-line transition-colors hover:bg-mist"
+                                      className="group cursor-pointer transition-colors duration-200 ease-in-out hover:bg-mist"
                                     >
-                                      <td className="px-3 py-2.5 align-top">
+                                      <td className="px-6 py-6 align-top">
                                         <div className="flex items-center gap-1.5">
                                           {r.unread ? (
-                                            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />
+                                            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
                                           ) : (
                                             <CheckCircle size={12} weight="fill" className="shrink-0 text-muted/50" />
                                           )}
-                                          <span className="truncate font-medium text-ink">{r.location}</span>
+                                          <span className=" font-semibold text-ink">{r.location}</span>
                                         </div>
                                       </td>
-                                      <td className="truncate px-3 py-2.5 align-top text-ink">{r.tenant}</td>
-                                      <td className="px-3 py-2.5 align-top text-muted">
-                                        <p className="line-clamp-2 whitespace-normal">{r.description}</p>
+                                      <td className="px-6 py-6 align-top text-muted">
+                                        <p className="whitespace-normal">{r.description}</p>
                                       </td>
-                                      <td className="px-3 py-2.5 align-top">
+                                      <td className="truncate px-6 py-6 align-top text-muted">{r.tenant}</td>
+                                     
+                                      <td className="px-6 py-6 align-top">
                                         {r.photoUrls.length > 0 ? (
                                           <span className="flex w-fit items-center gap-1 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600">
                                             <Image size={10} weight="duotone" />
-                                            {r.photoUrls.length > 1 ? `${r.photoUrls.length} photos` : "Photo"}
+                                            Photos
                                           </span>
                                         ) : (
-                                          <span className="text-xs text-muted/60">None</span>
+                                          <span className="flex w-fit items-center rounded-full bg-mist px-1.5 py-0.5 text-[10px] font-medium text-muted/60">
+                                            None
+                                          </span>
                                         )}
                                       </td>
-                                      <td className="px-3 py-2.5 align-top text-muted">
+                                      <td className="px-6 py-6 align-top text-muted">
                                         <span className="whitespace-nowrap">{formatDate(r.submittedAt)}</span>
                                       </td>
-                                      <td className="px-3 py-2.5 text-right align-top">
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            openRequest(r);
-                                          }}
-                                          aria-label={`View maintenance request for ${r.location}`}
-                                          className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-xs font-medium text-muted transition-colors hover:bg-paper hover:text-ink"
-                                        >
-                                          <EyeIcon />
-                                          View
-                                        </button>
+                                      <td className="px-6 py-6 text-right align-top">
+                                        <CaretRight size={16} weight="bold" className="inline text-muted transition-colors group-hover:text-ink" />
                                       </td>
                                     </tr>
                                   ))}
