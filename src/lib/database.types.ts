@@ -916,6 +916,54 @@ export type Database = {
           },
         ]
       }
+      tenant_documents: {
+        Row: {
+          content_type: string | null
+          created_at: string
+          file_path: string
+          id: string
+          name: string
+          property_id: string
+          size_bytes: number | null
+          tenant_id: string
+        }
+        Insert: {
+          content_type?: string | null
+          created_at?: string
+          file_path: string
+          id?: string
+          name: string
+          property_id: string
+          size_bytes?: number | null
+          tenant_id: string
+        }
+        Update: {
+          content_type?: string | null
+          created_at?: string
+          file_path?: string
+          id?: string
+          name?: string
+          property_id?: string
+          size_bytes?: number | null
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_documents_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tenant_documents_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tenants: {
         Row: {
           active: boolean
