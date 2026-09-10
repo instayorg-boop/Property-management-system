@@ -605,12 +605,13 @@ export default function Rent() {
                 <th className="px-6 py-4 font-medium tracking-wide">Tenant</th>
                 <th className="px-6 py-4 font-medium tracking-wide">Room type</th>
                 <th className="px-6 py-4 font-medium tracking-wide">Amount paid</th>
+                <th className="px-6 py-4 font-medium tracking-wide">Outstanding balance</th>
                 <th className="px-6 py-4 font-medium tracking-wide">Status</th>
                 <th className="px-6 py-4 font-medium tracking-wide">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {!tenantsReady && Array.from({ length: 4 }).map((_, i) => <SkeletonRow key={i} cols={5} />)}
+              {!tenantsReady && Array.from({ length: 4 }).map((_, i) => <SkeletonRow key={i} cols={6} />)}
               {tenantsReady && pageRows.map((row) => {
                 const t = row.tenant;
                 const needsAction = row.status !== "paid";
@@ -640,6 +641,16 @@ export default function Rent() {
                     </td>
                     <td className={`px-6 py-4 ${row.amountPaid === 0 ? "font-normal text-muted" : "font-medium text-ink"}`}>
                       {formatCurrency(row.amountPaid)}
+                    </td>
+                    <td className="px-6 py-4">
+                      {(() => {
+                        const outstanding = isCurrentMonth ? calcTotalOwed(row.tenant) : row.owedAmount;
+                        return outstanding > 0 ? (
+                          <span className="font-medium text-red-600">{formatCurrency(outstanding)}</span>
+                        ) : (
+                          <span className="text-muted">—</span>
+                        );
+                      })()}
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex flex-wrap items-center gap-1.5">
@@ -682,7 +693,7 @@ export default function Rent() {
               })}
               {tenantsReady && pageRows.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-10">
+                  <td colSpan={6} className="px-4 py-10">
                     <div className="flex flex-col items-center justify-center gap-3 text-center">
                       <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
                         <Receipt size={22} weight="duotone" />
