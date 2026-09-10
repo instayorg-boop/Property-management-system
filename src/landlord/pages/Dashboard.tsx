@@ -4,7 +4,6 @@ import { AnimatePresence, motion } from "framer-motion";
 import LogPaymentModal from "../components/LogPaymentModal";
 import TenantSearchDrawer from "../components/TenantSearchDrawer";
 import TenantPaymentDrawer from "../components/TenantPaymentDrawer";
-import TenantFormDrawer from "../components/TenantFormDrawer";
 import MoveOutModal from "../components/MoveOutModal";
 import ExpenseFormDrawer from "../components/ExpenseFormDrawer";
 import PayoutDetailDrawer, { type UpcomingPayout } from "../components/PayoutDetailDrawer";
@@ -337,7 +336,6 @@ export default function Dashboard() {
 
   const [paymentStep, setPaymentStep] = useState<PaymentStep | null>(null);
   const [payingTenant, setPayingTenant] = useState<Tenant | null>(null);
-  const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
   const [movingOutTenant, setMovingOutTenant] = useState<Tenant | null>(null);
   const [addingExpense, setAddingExpense] = useState(false);
   const [payoutOpen, setPayoutOpen] = useState(false);
@@ -846,7 +844,7 @@ export default function Dashboard() {
               setPayingTenant(null);
             }}
             onLogPayment={() => setPaymentStep("confirm")}
-            onEdit={() => setEditingTenant(payingTenant)}
+            onEdit={() => navigate(`/tenants/${payingTenant.id}/edit`)}
             onMoveOut={() => setMovingOutTenant(payingTenant)}
           />
         )}
@@ -865,7 +863,6 @@ export default function Dashboard() {
             }}
           />
         )}
-        {editingTenant && <TenantFormDrawer editing={editingTenant} onClose={() => setEditingTenant(null)} />}
         {movingOutTenant && (
           <MoveOutModal
             tenant={movingOutTenant}

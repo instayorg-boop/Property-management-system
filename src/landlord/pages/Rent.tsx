@@ -6,7 +6,6 @@ import LogPaymentModal from "../components/LogPaymentModal";
 import TenantSearchDrawer from "../components/TenantSearchDrawer";
 import TenantPaymentDrawer from "../components/TenantPaymentDrawer";
 import GenerateInvoicesOverlay from "../components/GenerateInvoicesOverlay";
-import TenantFormDrawer from "../components/TenantFormDrawer";
 import MoveOutModal from "../components/MoveOutModal";
 import { useTenants, formatCurrency, type PaymentStatus, type Tenant } from "../TenantsContext";
 import { useRoomTypeRent } from "../RoomsContext";
@@ -160,7 +159,6 @@ export default function Rent() {
 
   const [paymentStep, setPaymentStep] = useState<PaymentStep | null>(null);
   const [payingTenant, setPayingTenant] = useState<Tenant | null>(null);
-  const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
   const [movingOutTenant, setMovingOutTenant] = useState<Tenant | null>(null);
 
 
@@ -745,7 +743,7 @@ export default function Rent() {
               setPayingTenant(null);
             }}
             onLogPayment={() => setPaymentStep("confirm")}
-            onEdit={() => setEditingTenant(payingTenant)}
+            onEdit={() => navigate(`/tenants/${payingTenant.id}/edit`)}
             onMoveOut={() => setMovingOutTenant(payingTenant)}
           />
         )}
@@ -764,7 +762,6 @@ export default function Rent() {
             }}
           />
         )}
-        {editingTenant && <TenantFormDrawer editing={editingTenant} onClose={() => setEditingTenant(null)} />}
         {movingOutTenant && (
           <MoveOutModal
             tenant={movingOutTenant}

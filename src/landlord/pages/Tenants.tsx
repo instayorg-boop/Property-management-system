@@ -2,7 +2,6 @@
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import PageHeader from "../components/PageHeader";
-import TenantFormDrawer from "../components/TenantFormDrawer";
 import ConfirmDeleteTenantModal from "../components/ConfirmDeleteTenantModal";
 import { useTenants, formatCurrency } from "../TenantsContext";
 import { MagnifyingGlass, Trash, UsersThree } from "@phosphor-icons/react";
@@ -27,12 +26,10 @@ export default function Tenants() {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"active" | "moved-out">("active");
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [rowsPerPage, setRowsPerPage] = useState(DEFAULT_PAGE_SIZE);
 
-  const editing = tenants.find((t) => t.id === editingId) ?? null;
   const deleting = tenants.find((t) => t.id === deletingId) ?? null;
 
   const filtered = useMemo(() => {
@@ -325,7 +322,6 @@ export default function Tenants() {
       </div>
 
       <AnimatePresence>
-        {editing && <TenantFormDrawer editing={editing} onClose={() => setEditingId(null)} />}
         {deleting && (
           <ConfirmDeleteTenantModal
             tenant={deleting}

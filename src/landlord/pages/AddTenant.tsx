@@ -533,8 +533,8 @@ function draftHasContent(d: AddTenantDraft): boolean {
 /** Full-page "Add tenant" form — one continuous scroll (Personal → Property → Deposit → Lease
  * terms, in that reading order) rather than a gated multi-step wizard, since there isn't enough
  * on any one section to justify making the landlord click through screens for it. Editing an
- * existing tenant still uses TenantFormDrawer, which covers a much smaller field set and doesn't
- * need the room-and-payments choreography this flow has. */
+ * existing tenant uses EditTenant.tsx instead — a smaller field set (no room-and-payments
+ * choreography, since a room move happens from the Rooms page, not here). */
 export default function AddTenant() {
   const navigate = useNavigate();
   const { addTenant, updateTenant, logPayment } = useTenants();
@@ -1322,7 +1322,7 @@ export default function AddTenant() {
         <section>
           <SectionTitle
             title="Documents"
-            subtitle="Tenancy agreement, national ID, acceptance letter — anything worth keeping on file for this tenant. Optional."
+            subtitle="Tenancy agreement, national ID, acceptance letter - anything worth keeping on file for this tenant. Optional."
           />
           <div className="mt-4">
             <DocumentPicker files={documents} onChange={setDocuments} />
