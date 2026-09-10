@@ -37,18 +37,26 @@ export function getProrataInfo(tenant: Tenant, periodDate: Date): { isProrata: b
   return { isProrata: true, days, totalDays };
 }
 
-/** Late penalty accrued so far, from the configured daily rate — the one place this formula lives,
- * so invoicing and any other "what do they owe right now" view stay in sync. */
-export function calcPenalty(tenant: Tenant, dailyPenaltyRate: number): number {
-  return tenant.daysOverdue && tenant.daysOverdue > 0 ? Math.round(tenant.daysOverdue * dailyPenaltyRate) : 0;
+/** A tenant's own room rate, prorated to a daily figure against the current calendar month — e.g.
+ * K1400/mo in a 30-day month is K46.67/day. This is the daily late-penalty rate, room-type-specific
+ * rather than one flat K/day figure set globally in Settings. */
+export function dailyRentRate(tenant: Tenant, now: Date = new Date()): number {
+  return tenant.rentAmount / daysInMonth(now.getFullYear(), now.getMonth());
+}
+
+/** Late penalty accrued so far — days overdue × this tenant's own daily rent rate (see
+ * `dailyRentRate`), the one place this formula lives so invoicing and any other "what do they owe
+ * right now" view stay in sync. */
+export function calcPenalty(tenant: Tenant): number {
+  return tenant.daysOverdue && tenant.daysOverdue > 0 ? Math.round(tenant.daysOverdue * dailyRentRate(tenant)) : 0;
 }
 
 /** A tenant's true total outstanding balance right now: carried-over arrears (`owedAmount` already
  * rolls forward month to month, see the note on `calcTenantInvoice` below) plus any penalty accrued
  * since their grace period lapsed. Zero once they're paid up. */
-export function calcTotalOwed(tenant: Tenant, dailyPenaltyRate: number): number {
+export function calcTotalOwed(tenant: Tenant): number {
   if (tenant.status === "paid") return 0;
-  return tenant.owedAmount + calcPenalty(tenant, dailyPenaltyRate);
+  return tenant.owedAmount + calcPenalty(tenant);
 }
 
 export type InvoiceLineItem = { label: string; amount: number; tint?: boolean };
@@ -68,7 +76,7 @@ export type TenantInvoiceCalc = {
 /** Builds the rent/outstanding/penalty breakdown for one tenant's invoice in a given period.
  * `rentOverride` lets the landlord adjust the base rent line before generating (edit-in-place on
  * the review screen) without touching the tenant's actual agreed rent. */
-export function calcTenantInvoice(tenant: Tenant, periodDate: Date, dailyPenaltyRate: number, rentOverride?: number): TenantInvoiceCalc {
+export function calcTenantInvoice(tenant: Tenant, periodDate: Date, rentOverride?: number): TenantInvoiceCalc {
   const { isProrata, days, totalDays } = getProrataInfo(tenant, periodDate);
   const fullRent = rentOverride ?? tenant.rentAmount;
   const rentAmount = isProrata ? Math.round((fullRent / totalDays) * days) : fullRent;
@@ -78,7 +86,7 @@ export function calcTenantInvoice(tenant: Tenant, periodDate: Date, dailyPenalty
   // isn't paid up, `owedAmount` is treated as the carried-over outstanding balance from before this
   // invoice, and any penalty is derived from `daysOverdue` × the configured daily rate.
   const outstanding = tenant.status === "paid" ? 0 : tenant.owedAmount;
-  const penalty = calcPenalty(tenant, dailyPenaltyRate);
+  const penalty = calcPenalty(tenant);
   const total = rentAmount + outstanding + penalty;
 
   const rentLabel = isProrata

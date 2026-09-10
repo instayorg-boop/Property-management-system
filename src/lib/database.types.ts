@@ -468,6 +468,7 @@ export type Database = {
           method: string | null
           paid_amount: number | null
           period: string | null
+          source: string
           status: string | null
           tenant_id: string
         }
@@ -479,6 +480,7 @@ export type Database = {
           method?: string | null
           paid_amount?: number | null
           period?: string | null
+          source?: string
           status?: string | null
           tenant_id: string
         }
@@ -490,6 +492,7 @@ export type Database = {
           method?: string | null
           paid_amount?: number | null
           period?: string | null
+          source?: string
           status?: string | null
           tenant_id?: string
         }
@@ -923,7 +926,9 @@ export type Database = {
           deposit_method: string | null
           deposit_resolution_note: string | null
           deposit_status: string
+          due_day: number | null
           emergency_contacts: Json
+          grace_period_days: number | null
           guardian_name: string | null
           guardian_phone: string | null
           id: string
@@ -952,7 +957,9 @@ export type Database = {
           deposit_method?: string | null
           deposit_resolution_note?: string | null
           deposit_status?: string
+          due_day?: number | null
           emergency_contacts?: Json
+          grace_period_days?: number | null
           guardian_name?: string | null
           guardian_phone?: string | null
           id?: string
@@ -981,7 +988,9 @@ export type Database = {
           deposit_method?: string | null
           deposit_resolution_note?: string | null
           deposit_status?: string
+          due_day?: number | null
           emergency_contacts?: Json
+          grace_period_days?: number | null
           guardian_name?: string | null
           guardian_phone?: string | null
           id?: string

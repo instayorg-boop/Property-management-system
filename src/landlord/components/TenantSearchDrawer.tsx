@@ -81,8 +81,7 @@ export default function TenantSearchDrawer({
           <div className="py-6 text-center">
             <p className="text-sm text-muted">No tenants match.</p>
             <Link
-              to="/tenants"
-              state={{ openAddTenant: true }}
+              to="/tenants/new"
               className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-paper"
             >
               + Add tenant

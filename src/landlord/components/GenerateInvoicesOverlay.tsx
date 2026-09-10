@@ -20,6 +20,7 @@ import Button from "./Button";
 import {
   slugify,
   calcTenantInvoice,
+  dailyRentRate,
   computeInvoiceDates,
   isDueSoonOrPast,
   sendInvoiceViaWhatsApp,
@@ -59,7 +60,7 @@ export default function GenerateInvoicesOverlay({
   onSent: (count: number) => void;
 }) {
   const { tenants } = useTenants();
-  const { propertyName, propertyAddress, landlordName, landlordPhone, dueDay, dailyPenaltyRate, paymentMethods } = useSettings();
+  const { propertyName, propertyAddress, landlordName, landlordPhone, dueDay, paymentMethods } = useSettings();
   const { recordInvoice, hasSentInvoiceForPeriod } = useInvoices();
 
   const [groupByInstitution, setGroupByInstitution] = useState(false);
@@ -83,8 +84,8 @@ export default function GenerateInvoicesOverlay({
   const activeTenants = useMemo(() => tenants.filter((t) => t.active), [tenants]);
 
   const calcs = useMemo(
-    () => activeTenants.map((t) => calcTenantInvoice(t, periodDate, dailyPenaltyRate, rentOverrides[t.id])),
-    [activeTenants, periodDate, dailyPenaltyRate, rentOverrides]
+    () => activeTenants.map((t) => calcTenantInvoice(t, periodDate, rentOverrides[t.id])),
+    [activeTenants, periodDate, rentOverrides]
   );
 
   const rows: Row[] = useMemo(() => {
@@ -116,8 +117,13 @@ export default function GenerateInvoicesOverlay({
 
   const paymentLink = `pay.instay.co/${slugify(propertyName)}`;
 
+  // A tenant's own due-day override (set on the Add Tenant page) wins over the property default —
+  // an institution invoice bundles tenants who could have different overrides, so it falls back to
+  // the first tenant's, same tradeoff as the daily-penalty-rate disclaimer below.
+  const rowDueDay = (row: Row) => (row.kind === "individual" ? row.calc.tenant.dueDay : row.calcs[0].tenant.dueDay) ?? dueDay;
+
   const buildDocForRow = (row: Row, invoiceNumber: string): InvoiceDocData => {
-    const { issueDate, dueDate } = computeInvoiceDates(periodDate, dueDay);
+    const { issueDate, dueDate } = computeInvoiceDates(periodDate, rowDueDay(row));
     const shared = {
       invoiceNumber,
       issueDateLabel: issueDate.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
@@ -129,13 +135,13 @@ export default function GenerateInvoicesOverlay({
       landlordPhone,
       periodLabel,
       paymentLink,
-      dailyPenaltyRate,
       paymentMethods,
     };
 
     if (row.kind === "individual") {
       return {
         ...shared,
+        dailyPenaltyRate: dailyRentRate(row.calc.tenant),
         billToName: row.calc.tenant.name,
         billToSubline: `${row.calc.tenant.room} · ${propertyName}`,
         billToPhone: row.calc.tenant.phones[0] ?? "",
@@ -145,6 +151,9 @@ export default function GenerateInvoicesOverlay({
     }
     return {
       ...shared,
+      // An institution invoice can bundle tenants across different room types/rents — the first
+      // tenant's rate stands in for the disclaimer line since there's no single "correct" one.
+      dailyPenaltyRate: dailyRentRate(row.calcs[0].tenant),
       billToName: row.institution,
       billToSubline: `${row.calcs.length} tenant${row.calcs.length === 1 ? "" : "s"} · ${propertyName}`,
       lineItems: row.calcs.map((c) => ({ label: `${c.tenant.room} — ${c.tenant.name}`, amount: c.total })),
@@ -154,7 +163,7 @@ export default function GenerateInvoicesOverlay({
 
   /** Records the invoice (assigning it a real sequential number) and builds the matching PDF data. */
   const recordRow = (row: Row, status: InvoiceStatus) => {
-    const { issueDate, dueDate } = computeInvoiceDates(periodDate, dueDay);
+    const { issueDate, dueDate } = computeInvoiceDates(periodDate, rowDueDay(row));
     const tenantIds = row.kind === "individual" ? [row.calc.tenant.id] : row.calcs.map((c) => c.tenant.id);
     const invoice = recordInvoice({
       tenantId: tenantIds[0],
@@ -333,7 +342,7 @@ export default function GenerateInvoicesOverlay({
       </div>
 
       {/* Invoice table */}
-      <div className="rounded-lg border border-line">
+      <div className="rounded-xl border border-line">
         {/* Mobile: cards — an HTML table doesn't have room to breathe on a phone screen */}
         <div className="divide-y divide-line md:hidden">
           {pageRows.map((row) => {
@@ -443,13 +452,13 @@ export default function GenerateInvoicesOverlay({
         {/* Desktop / tablet: table */}
         <div className="hidden overflow-x-auto md:block">
         <table className="w-full text-left text-sm">
-          <thead className="bg-mist text-xs text-muted">
+          <thead className="border-b border-line bg-paper text-[11px] text-muted uppercase">
             <tr>
-              <th className="px-4 py-3 font-medium">{groupByInstitution ? "Institution / Tenant" : "Tenant"}</th>
-              <th className="px-4 py-3 font-medium">Room</th>
-              <th className="px-4 py-3 font-medium">Notes</th>
-              <th className="px-4 py-3 text-right font-medium">Amount</th>
-              <th className="px-4 py-3" />
+              <th className="px-6 py-4 font-medium tracking-wide">{groupByInstitution ? "Institution / Tenant" : "Tenant"}</th>
+              <th className="px-6 py-4 font-medium tracking-wide">Room</th>
+              <th className="px-6 py-4 font-medium tracking-wide">Notes</th>
+              <th className="px-6 py-4 text-right font-medium tracking-wide">Amount</th>
+              <th className="px-6 py-4" />
             </tr>
           </thead>
           <tbody>
@@ -457,18 +466,18 @@ export default function GenerateInvoicesOverlay({
               if (row.kind === "institution") {
                 return (
                   <tr key={row.institution} className="border-t border-line">
-                    <td className="px-4 py-3 font-medium text-ink">
+                    <td className="px-6 py-4 font-medium text-ink">
                       <div className="flex items-center gap-2">
                         <InstitutionIcon size={14} weight="duotone" className="text-muted" />
                         {row.institution}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-muted">{row.calcs.map((c) => c.tenant.room).join(", ")}</td>
-                    <td className="px-4 py-3 text-muted">
+                    <td className="px-6 py-4 text-muted">{row.calcs.map((c) => c.tenant.room).join(", ")}</td>
+                    <td className="px-6 py-4 text-muted">
                       {row.calcs.length} tenant{row.calcs.length === 1 ? "" : "s"} combined
                     </td>
-                    <td className="px-4 py-3 text-right font-semibold text-ink">{formatCurrency(row.total)}</td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-6 py-4 text-right font-semibold text-ink">{formatCurrency(row.total)}</td>
+                    <td className="px-6 py-4 text-right">
                       <button
                         type="button"
                         onClick={() => downloadOne(row)}
@@ -489,9 +498,9 @@ export default function GenerateInvoicesOverlay({
 
               return (
                 <tr key={t.id} className="border-t border-line">
-                  <td className="px-4 py-3 font-medium text-ink">{t.name}</td>
-                  <td className="px-4 py-3 text-muted">{t.room}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-6 py-4 font-medium text-ink">{t.name}</td>
+                  <td className="px-6 py-4 text-muted">{t.room}</td>
+                  <td className="px-6 py-4">
                     <div className="flex flex-wrap items-center gap-1.5">
                       {calc.isProrata && (
                         <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-600">Pro-rata</span>
@@ -503,7 +512,7 @@ export default function GenerateInvoicesOverlay({
                       )}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-6 py-4 text-right">
                     {isEditing ? (
                       <input
                         autoFocus
@@ -519,7 +528,7 @@ export default function GenerateInvoicesOverlay({
                       <span className="font-semibold text-ink">{formatCurrency(calc.total)}</span>
                     )}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-6 py-4">
                     <div className="flex items-center justify-end gap-1">
                       <button
                         type="button"

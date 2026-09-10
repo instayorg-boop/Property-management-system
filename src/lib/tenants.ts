@@ -6,6 +6,10 @@ export type DepositStatus = "Not collected" | "Held" | "Refunded" | "Forfeited" 
 export type DepositMethod = "mobile" | "cash" | "bank";
 export type PaymentMethod = "cash" | "mobile-money" | "bank-transfer" | "other";
 export type LedgerRow = {
+  /** Stable row id — lets a single ledger entry be targeted for deletion. Generated client-side
+   * (crypto.randomUUID()) at creation time and passed straight through to the insert, same
+   * pattern as tenant/expense ids elsewhere, rather than round-tripping to get the DB default. */
+  id: string;
   label: string;
   amount: number;
   paidAmount?: number;
@@ -17,6 +21,12 @@ export type LedgerRow = {
    * the UI, not guessed at). Real mobile-money payments get this set by lenco-webhook, never by
    * the client, so it can't be spoofed. */
   method?: PaymentMethod | null;
+  /** "lenco" = a real, gateway-verified payment (lenco-webhook / pay-portal-check-collection) —
+   * never set by the client, so it can't be spoofed. "manual" = the landlord typed this in
+   * themselves (logPayment, the initial security-deposit row). Distinct from `method`: a
+   * manually-logged "mobile money" entry and a real Lenco payment both end up with
+   * method = "mobile-money", so this is what actually gates whether an entry can be deleted. */
+  source: "manual" | "lenco";
 };
 
 export const RELATION_OPTIONS = ["Parent", "Guardian", "Spouse", "Sibling", "Friend", "Other"] as const;
@@ -61,6 +71,10 @@ export type Tenant = {
   onTimeCount: number;
   totalMonthsCount: number;
   active: boolean;
+  /** Per-tenant overrides for the property's billing defaults (Settings → Billing) — null/undefined
+   * means "use the property default", not "zero". Edited from the Add Tenant page. */
+  dueDay?: number | null;
+  gracePeriodDays?: number | null;
   institution?: string;
   moveOutDate?: string;
   depositResolutionNote?: string;
@@ -121,7 +135,7 @@ async function resolveInstitutionId(propertyId: string, name: string | undefined
 const TENANT_COLUMNS =
   "id, name, phones, emergency_contacts, move_in_date, move_out_date, rent_amount, status, " +
   "days_overdue, owed_amount, deposit_amount, deposit_date, deposit_method, deposit_status, " +
-  "deposit_resolution_note, notes, on_time_count, total_months_count, active, " +
+  "deposit_resolution_note, notes, on_time_count, total_months_count, active, due_day, grace_period_days, " +
   "rooms(number), room_types(name), institutions(name)";
 
 type TenantRow = Pick<
@@ -129,7 +143,7 @@ type TenantRow = Pick<
   | "id" | "name" | "phones" | "emergency_contacts" | "move_in_date" | "move_out_date"
   | "rent_amount" | "status" | "days_overdue" | "owed_amount" | "deposit_amount" | "deposit_date"
   | "deposit_method" | "deposit_status" | "deposit_resolution_note" | "notes" | "on_time_count"
-  | "total_months_count" | "active"
+  | "total_months_count" | "active" | "due_day" | "grace_period_days"
 > & {
   rooms: { number: string } | null;
   room_types: { name: string } | null;
@@ -180,6 +194,8 @@ function toTenant(row: TenantRow, propertyName: string, ledger: LedgerRow[]): Te
     onTimeCount: row.on_time_count,
     totalMonthsCount: row.total_months_count,
     active: row.active,
+    dueDay: row.due_day ?? undefined,
+    gracePeriodDays: row.grace_period_days ?? undefined,
     institution: row.institutions?.name ?? undefined,
     moveOutDate: row.move_out_date ?? undefined,
     depositResolutionNote: row.deposit_resolution_note ?? undefined,
@@ -189,17 +205,19 @@ function toTenant(row: TenantRow, propertyName: string, ledger: LedgerRow[]): Te
 
 type LedgerEntryRow = Pick<
   Tables<"ledger_entries">,
-  "tenant_id" | "label" | "amount" | "paid_amount" | "status" | "created_at" | "method"
+  "id" | "tenant_id" | "label" | "amount" | "paid_amount" | "status" | "created_at" | "method" | "source"
 >;
 
 function toLedgerRow(row: LedgerEntryRow): LedgerRow {
   return {
+    id: row.id,
     label: row.label,
     amount: row.amount,
     paidAmount: row.paid_amount ?? undefined,
     status: (row.status as PaymentStatus) ?? undefined,
     createdAt: row.created_at,
     method: (row.method as PaymentMethod | null) ?? null,
+    source: row.source === "lenco" ? "lenco" : "manual",
   };
 }
 
@@ -216,7 +234,7 @@ export async function listTenants(propertyId: string, propertyName: string): Pro
   const tenantIds = tenantRows.map((r) => r.id);
   const { data: ledgerRows, error: ledgerError } = await supabase
     .from("ledger_entries")
-    .select("tenant_id, label, amount, paid_amount, status, created_at, method")
+    .select("id, tenant_id, label, amount, paid_amount, status, created_at, method, source")
     .in("tenant_id", tenantIds)
     .order("created_at", { ascending: false });
   if (ledgerError) throw ledgerError;
@@ -251,6 +269,8 @@ export async function tenantPatchToRow(propertyId: string, patch: Partial<Omit<T
   if (patch.onTimeCount !== undefined) row.on_time_count = patch.onTimeCount;
   if (patch.totalMonthsCount !== undefined) row.total_months_count = patch.totalMonthsCount;
   if (patch.active !== undefined) row.active = patch.active;
+  if (patch.dueDay !== undefined) row.due_day = patch.dueDay;
+  if (patch.gracePeriodDays !== undefined) row.grace_period_days = patch.gracePeriodDays;
   if (patch.room !== undefined) row.room_id = await resolveRoomId(propertyId, patch.room);
   if (patch.roomType !== undefined) row.room_type_id = await resolveRoomTypeId(propertyId, patch.roomType);
   if (patch.institution !== undefined) row.institution_id = await resolveInstitutionId(propertyId, patch.institution);
@@ -287,17 +307,21 @@ export async function insertTenant(propertyId: string, id: string, t: Omit<Tenan
     on_time_count: t.onTimeCount,
     total_months_count: t.totalMonthsCount,
     active: t.active,
+    due_day: t.dueDay ?? null,
+    grace_period_days: t.gracePeriodDays ?? null,
   });
   if (error) throw error;
 
   if (t.ledger.length > 0) {
     const { error: ledgerError } = await supabase.from("ledger_entries").insert(
       t.ledger.map((l) => ({
+        id: l.id,
         tenant_id: id,
         label: l.label,
         amount: l.amount,
         paid_amount: l.paidAmount ?? null,
         status: l.status ?? null,
+        source: l.source,
       }))
     );
     if (ledgerError) throw ledgerError;
@@ -317,12 +341,26 @@ export async function deleteTenantRow(id: string): Promise<void> {
 
 export async function addLedgerEntry(tenantId: string, entry: LedgerRow): Promise<void> {
   const { error } = await supabase.from("ledger_entries").insert({
+    id: entry.id,
     tenant_id: tenantId,
     label: entry.label,
     amount: entry.amount,
     paid_amount: entry.paidAmount ?? null,
     status: entry.status ?? null,
     method: entry.method ?? null,
+    source: entry.source,
+    // Defaults to the DB's own now() when omitted — only set explicitly when the caller picked a
+    // specific paid-on date (LogPaymentModal), so a backdated/advance payment sorts and displays
+    // under the date it actually applies to, not whenever it happened to be typed in.
+    ...(entry.createdAt ? { created_at: entry.createdAt } : {}),
   });
+  if (error) throw error;
+}
+
+/** Removes one payment-history record. Doesn't touch the tenant's owed_amount/status/on_time
+ * fields — those are tracked independently (see logPayment), not derived from the ledger, so
+ * deleting a mistaken entry corrects the record without silently reopening a balance. */
+export async function deleteLedgerEntry(id: string): Promise<void> {
+  const { error } = await supabase.from("ledger_entries").delete().eq("id", id);
   if (error) throw error;
 }

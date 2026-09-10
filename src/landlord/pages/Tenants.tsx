@@ -1,5 +1,5 @@
-﻿import { useEffect, useMemo, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+﻿import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import PageHeader from "../components/PageHeader";
 import TenantFormDrawer from "../components/TenantFormDrawer";
@@ -24,11 +24,9 @@ const movedOutStyle = "bg-red-50 text-red-600";
 
 export default function Tenants() {
   const { tenants, isReady, deleteTenant } = useTenants();
-  const location = useLocation();
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"active" | "moved-out">("active");
-  const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -63,21 +61,9 @@ export default function Tenants() {
   const currentPage = Math.min(page, pageCount);
   const pageRows = filtered.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
 
-  // Arriving from elsewhere in the app to open the Add tenant drawer — then drop the state so
-  // navigating back here later doesn't reopen it. (Opening a specific tenant now links straight
-  // to /tenants/:id instead of routing through this page's state.)
-  useEffect(() => {
-    const state = location.state as { openAddTenant?: boolean } | null;
-    if (state?.openAddTenant) {
-      setShowAdd(true);
-      navigate(location.pathname, { replace: true, state: null });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.state]);
-
   return (
     <>
-      <PageHeader title="Tenants" />
+      <PageHeader title="Tenants" description="View and manage every tenant across your property." />
 
       <div className="space-y-4 px-4 sm:px-8 pb-10">
         {/* Top actions */}
@@ -85,14 +71,14 @@ export default function Tenants() {
           <Button variant="secondary" disabled title="Coming soon" className="cursor-not-allowed text-muted">
             Export all data
           </Button>
-          <Button variant="primary" onClick={() => setShowAdd(true)} className="hover:scale-[1.02]">
+          <Button variant="primary" onClick={() => navigate("/tenants/new")} className="hover:scale-[1.02]">
             + Add tenant
           </Button>
         </div>
 
-        <div className="rounded-lg border border-line bg-paper">
+        <div className="rounded-xl border border-line bg-paper">
           {/* Toolbar */}
-          <div className="flex flex-wrap items-center gap-2 border-b border-line p-4">
+          <div className="flex flex-wrap items-center gap-2 border-b border-line p-6">
             <div className="flex items-center gap-2.5 rounded-md bg-mist px-3.5 py-2.5 transition-colors focus-within:bg-paper focus-within:ring-2 focus-within:ring-brand/25 sm:w-64">
               <SearchIcon />
               <input
@@ -151,21 +137,21 @@ export default function Tenants() {
                 </div>
               ))}
             {isReady && pageRows.map((t) => (
-              <div key={t.id} onClick={() => navigate(`/tenants/${t.id}`)} className="p-4 transition-colors active:bg-mist">
+              <div key={t.id} onClick={() => navigate(`/tenants/${t.id}`)} className="p-6 transition-colors duration-200 ease-in-out active:bg-mist">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-ink">{t.name}</p>
-                    <p className="mt-0.5 text-xs text-muted">{t.phones[0] ?? "—"}</p>
+                    <p className="truncate font-semibold text-ink">{t.name}</p>
+                    <p className="mt-0.5 text-sm text-muted">{t.phones[0] ?? "—"}</p>
                   </div>
                   <div className="shrink-0 text-right">
                     <p className="text-sm text-ink">{t.roomType}</p>
-                    <p className="mt-0.5 text-xs text-muted">{t.room}</p>
+                    <p className="mt-0.5 text-sm text-muted">{t.room}</p>
                   </div>
                 </div>
 
-                <div className="mt-2.5 flex items-center gap-2">
+                <div className="mt-3 flex items-center gap-2">
                   <span
-                    className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                    className={`rounded-full px-2.5 py-1 text-xs font-medium ${
                       t.active ? "bg-emerald-50 text-emerald-600" : movedOutStyle
                     }`}
                   >
@@ -173,24 +159,24 @@ export default function Tenants() {
                   </span>
                 </div>
 
-                <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
+                <div className="mt-4 flex items-center justify-between border-t border-line pt-4">
                   <div>
-                    <p className="text-sm font-semibold text-ink">{formatCurrency(t.rentAmount)}</p>
-                    <p className="mt-0.5 text-[11px] text-muted">
+                    <p className="font-semibold text-ink">{formatCurrency(t.rentAmount)}</p>
+                    <p className="mt-0.5 text-xs text-muted">
                       {t.active ? `Moved in ${t.moveInDate}` : `Moved out ${t.moveOutDate ?? ""}`}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="secondary"
-                      size="sm"
+                  <div className="flex items-center gap-4">
+                    <button
+                      type="button"
                       onClick={(e) => {
                         e.stopPropagation();
                         navigate(`/tenants/${t.id}`);
                       }}
+                      className="font-semibold text-ink underline-offset-2 hover:underline"
                     >
-                      View profile
-                    </Button>
+                      Details
+                    </button>
                     <button
                       type="button"
                       aria-label="Delete"
@@ -198,7 +184,7 @@ export default function Tenants() {
                         e.stopPropagation();
                         setDeletingId(t.id);
                       }}
-                      className="rounded-lg border-2 border-gray-200 p-2 text-muted transition-colors hover:text-red-600"
+                      className="flex h-8 w-8 items-center justify-center rounded-full text-muted transition-colors hover:bg-red-50 hover:text-red-600"
                     >
                       <TrashIcon />
                     </button>
@@ -230,58 +216,56 @@ export default function Tenants() {
               non-scrolling-looking-but-still-a-container context). */}
           <div className="hidden max-h-[70vh] overflow-auto md:block">
             <table className="w-full text-left text-sm">
-              <thead className="sticky top-0 z-10 bg-mist text-[11px] text-muted">
-                <tr>
-                  <th className="px-4 py-3 font-medium uppercase tracking-wide">#</th>
-                  <th className="px-4 py-3 font-medium uppercase tracking-wide">Tenant</th>
-                  <th className="px-4 py-3 font-medium uppercase tracking-wide">Room</th>
-                  <th className="px-4 py-3 font-medium uppercase tracking-wide">Move-in date</th>
-                  <th className="px-4 py-3 font-medium uppercase tracking-wide">Rent</th>
-                  <th className="px-4 py-3 font-medium uppercase tracking-wide">Status</th>
-                  <th className="px-4 py-3 text-right font-medium uppercase tracking-wide">Action</th>
+              <thead className="sticky top-0 z-10 bg-paper text-[11px] text-muted">
+                <tr className="border-b border-line">
+                  <th className="px-6 py-4 font-medium tracking-wide uppercase">Tenant</th>
+                  <th className="px-6 py-4 font-medium tracking-wide uppercase">Room</th>
+                  <th className="px-6 py-4 font-medium tracking-wide uppercase">Move-in date</th>
+                  <th className="px-6 py-4 font-medium tracking-wide uppercase">Rent</th>
+                  <th className="px-6 py-4 font-medium tracking-wide uppercase">Status</th>
+                  <th className="px-6 py-4 text-right font-medium tracking-wide uppercase">Action</th>
                 </tr>
               </thead>
-              <tbody>
-                {!isReady && Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={7} />)}
-                {isReady && pageRows.map((t, i) => (
+              <tbody className="divide-y divide-line">
+                {!isReady && Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={6} />)}
+                {isReady && pageRows.map((t) => (
                   <tr
                     key={t.id}
                     onClick={() => navigate(`/tenants/${t.id}`)}
-                    className="cursor-pointer border-t border-line transition-colors hover:bg-mist"
+                    className="group cursor-pointer transition-colors duration-200 ease-in-out hover:bg-mist"
                   >
-                    <td className="px-4 py-3 text-muted">{(currentPage - 1) * rowsPerPage + i + 1}</td>
-                    <td className="px-4 py-3">
-                      <p className="font-medium text-ink">{t.name}</p>
-                      <p className="text-xs text-muted">{t.phones[0] ?? "—"}</p>
+                    <td className="px-6 py-4">
+                      <p className="font-semibold text-ink">{t.name}</p>
+                      <p className="mt-0.5 text-muted">{t.phones[0] ?? "—"}</p>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-6 py-4">
                       <p className="text-ink">{t.roomType}</p>
-                      <p className="text-xs text-muted">{t.room}</p>
+                      <p className="mt-0.5 text-muted">{t.room}</p>
                     </td>
-                    <td className="px-4 py-3 text-muted">{t.moveInDate}</td>
-                    <td className="px-4 py-3 text-muted">{formatCurrency(t.rentAmount)}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-6 py-4 text-muted">{t.moveInDate}</td>
+                    <td className="px-6 py-4 font-medium text-ink">{formatCurrency(t.rentAmount)}</td>
+                    <td className="px-6 py-4">
                       <span
-                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                        className={`rounded-full px-2.5 py-1 text-xs font-medium ${
                           t.active ? "bg-emerald-50 text-emerald-600" : movedOutStyle
                         }`}
                       >
                         {t.active ? "Active" : "Moved out"}
                       </span>
-                      {!t.active && t.moveOutDate && <p className="mt-0.5 text-[11px] text-muted">{t.moveOutDate}</p>}
+                      {!t.active && t.moveOutDate && <p className="mt-1 text-[11px] text-muted">{t.moveOutDate}</p>}
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-2">
-                        <Button
-                          variant="secondary"
-                          size="sm"
+                    <td className="px-6 py-4">
+                      <div className="flex items-center justify-end gap-4">
+                        <button
+                          type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             navigate(`/tenants/${t.id}`);
                           }}
+                          className="rounded-full font-semibold text-ink underline-offset-2 hover:underline"
                         >
-                          View profile
-                        </Button>
+                          Details
+                        </button>
                         <button
                           type="button"
                           aria-label="Delete"
@@ -289,7 +273,7 @@ export default function Tenants() {
                             e.stopPropagation();
                             setDeletingId(t.id);
                           }}
-                          className="transition-colors border-2 border-gray-200 p-2 rounded-lg text-muted hover:text-red-600"
+                          className="flex h-8 w-8 items-center justify-center rounded-full text-muted opacity-0 transition-colors group-hover:opacity-100 hover:bg-red-50 hover:text-red-600 focus-visible:opacity-100"
                         >
                           <TrashIcon />
                         </button>
@@ -299,7 +283,7 @@ export default function Tenants() {
                 ))}
                 {isReady && pageRows.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-10">
+                    <td colSpan={6} className="px-6 py-14">
                       <div className="flex flex-col items-center justify-center gap-3 text-center">
                         <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
                           <UsersThree size={22} weight="duotone" />
@@ -341,7 +325,6 @@ export default function Tenants() {
       </div>
 
       <AnimatePresence>
-        {showAdd && <TenantFormDrawer editing={null} onClose={() => setShowAdd(false)} />}
         {editing && <TenantFormDrawer editing={editing} onClose={() => setEditingId(null)} />}
         {deleting && (
           <ConfirmDeleteTenantModal

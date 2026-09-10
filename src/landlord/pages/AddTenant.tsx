@@ -1,0 +1,1080 @@
+import { useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  DeviceMobile,
+  Money,
+  CaretDown,
+  DoorOpen,
+  CalendarBlank,
+  X,
+  Plus,
+  Minus,
+} from "@phosphor-icons/react";
+import PageHeader from "../components/PageHeader";
+import AddRoomTypeDrawer from "../components/AddRoomTypeDrawer";
+import Button from "../components/Button";
+import Select from "../components/Select";
+import SectionLabel from "../components/SectionLabel";
+import DatePicker from "../components/DatePicker";
+import {
+  useTenants,
+  formatCurrency,
+  RELATION_OPTIONS,
+  type DepositMethod,
+  type EmergencyContact,
+  type RelationType,
+} from "../TenantsContext";
+import {
+  useRooms,
+  useVacantRoomsForAssignment,
+  type VacantRoom,
+} from "../RoomsContext";
+import { useSettings } from "../SettingsContext";
+
+/** A working copy of an emergency contact while the form is open — `relationOther` is always a
+ * string here (never undefined) so the "Other" text input can stay a controlled input. */
+type ContactDraft = {
+  id: string;
+  name: string;
+  relation: RelationType;
+  relationOther: string;
+  phones: string[];
+};
+
+function newContactId() {
+  return `ec${Date.now()}${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function newContactDraft(): ContactDraft {
+  return {
+    id: newContactId(),
+    name: "",
+    relation: "Guardian",
+    relationOther: "",
+    phones: [""],
+  };
+}
+
+function cleanContacts(drafts: ContactDraft[]): EmergencyContact[] {
+  return drafts
+    .map((c) => ({
+      id: c.id,
+      name: c.name.trim(),
+      relation: c.relation,
+      relationOther:
+        c.relation === "Other" ? c.relationOther.trim() : undefined,
+      phones: c.phones.map((p) => p.trim()).filter(Boolean),
+    }))
+    .filter((c) => c.name || c.phones.length > 0);
+}
+
+function PhoneListEditor({
+  phones,
+  onChange,
+}: {
+  phones: string[];
+  onChange: (phones: string[]) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      {phones.map((p, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <input
+            value={p}
+            onChange={(e) => {
+              const next = [...phones];
+              next[i] = e.target.value;
+              onChange(next);
+            }}
+            placeholder="e.g. 0977 123 456"
+            className="w-full flex-1 rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+          />
+          {phones.length > 1 && (
+            <button
+              type="button"
+              onClick={() => onChange(phones.filter((_, idx) => idx !== i))}
+              aria-label="Remove number"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-red-600"
+            >
+              <X size={14} weight="bold" />
+            </button>
+          )}
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={() => onChange([...phones, ""])}
+        className="flex items-center gap-1 text-xs font-medium text-brand hover:underline"
+      >
+        <Plus size={14} weight="bold" />
+        Add another number
+      </button>
+    </div>
+  );
+}
+
+function todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/** Parses a `<input type="date">` value ("YYYY-MM-DD") as a local calendar date — `new Date(string)`
+ * parses that format as UTC midnight, which can land on the wrong day in negative-UTC timezones. */
+function parseDateInputLocal(value: string): Date {
+  const [y, m, d] = value.split("-").map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
+}
+
+function daysInMonth(year: number, monthIndex0: number): number {
+  return new Date(year, monthIndex0 + 1, 0).getDate();
+}
+
+/** Pro-rata for a mid-cycle move-in: the agreed rent split across however many days are actually in
+ * that calendar month, charged only for the days from move-in through month end (inclusive). */
+function computeProrata(rentAmount: number, moveIn: Date) {
+  const totalDays = daysInMonth(moveIn.getFullYear(), moveIn.getMonth());
+  const dailyRate = rentAmount / totalDays;
+  const remainingDays = totalDays - moveIn.getDate() + 1;
+  return {
+    totalDays,
+    dailyRate,
+    remainingDays,
+    amount: dailyRate * remainingDays,
+  };
+}
+
+const depositMethods: {
+  id: DepositMethod;
+  label: string;
+  Icon: typeof Money;
+}[] = [
+  { id: "mobile", label: "Mobile money", Icon: DeviceMobile },
+  { id: "cash", label: "Cash", Icon: Money },
+];
+
+/** Searchable, vacant-only room picker — a plain grid gets unwieldy once there are more than a handful of rooms. */
+function RoomPicker({
+  rooms,
+  selected,
+  onSelect,
+}: {
+  rooms: VacantRoom[];
+  selected: VacantRoom | null;
+  onSelect: (r: VacantRoom) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const blurTimeout = useRef<number | null>(null);
+
+  const results = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return rooms;
+    return rooms.filter(
+      (r) =>
+        r.room.toLowerCase().includes(q) ||
+        r.roomType.toLowerCase().includes(q),
+    );
+  }, [rooms, query]);
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between rounded-lg border border-line px-3 py-2.5 text-left text-sm outline-none focus:border-brand"
+      >
+        <span className={selected ? "text-ink" : "text-muted"}>
+          {selected
+            ? `${selected.room} · ${selected.roomType} · K${selected.rent.toLocaleString()}`
+            : "Select a room with a bed free"}
+        </span>
+        <CaretDown size={14} weight="bold" className="shrink-0 text-muted" />
+      </button>
+
+      {open && (
+        <div className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-line bg-paper shadow-card">
+          <div className="border-b border-line p-2">
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onBlur={() => {
+                blurTimeout.current = window.setTimeout(
+                  () => setOpen(false),
+                  120,
+                );
+              }}
+              onFocus={() => {
+                if (blurTimeout.current)
+                  window.clearTimeout(blurTimeout.current);
+              }}
+              placeholder="Search room number or type"
+              className="w-full rounded-md bg-mist px-2.5 py-1.5 text-sm outline-none"
+            />
+          </div>
+          <div className="max-h-48 overflow-y-auto">
+            {results.map((r) => (
+              <button
+                key={r.room}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onSelect(r);
+                  setQuery("");
+                  setOpen(false);
+                }}
+                className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-mist"
+              >
+                <span className="text-ink">
+                  {r.room} · {r.roomType}
+                  {r.openBeds > 1 && (
+                    <span className="ml-1.5 text-xs text-muted">
+                      ({r.openBeds} beds free)
+                    </span>
+                  )}
+                </span>
+                <span className="text-muted">K{r.rent.toLocaleString()}</span>
+              </button>
+            ))}
+            {results.length === 0 && (
+              <p className="px-3 py-3 text-sm text-muted">
+                No rooms with a free bed match.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function YesNo({
+  value,
+  onChange,
+}: {
+  value: "yes" | "no" | null;
+  onChange: (v: "yes" | "no") => void;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {(["yes", "no"] as const).map((v) => (
+        <button
+          key={v}
+          type="button"
+          onClick={() => onChange(v)}
+          className={`rounded-lg border py-2.5 text-sm font-medium transition-colors ${
+            value === v
+              ? "border-brand bg-brand-soft text-brand"
+              : "border-line text-muted hover:bg-mist"
+          }`}
+        >
+          {v === "yes" ? "Yes" : "No"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** A −/value/+ control for a small bounded integer (rent due day, grace period days) — matches the
+ * reference design's stepper fields instead of a bare number input. */
+function NumberStepper({
+  value,
+  onChange,
+  min = 0,
+  max = 31,
+  suffix,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  min?: number;
+  max?: number;
+  suffix: string;
+}) {
+  return (
+    <div className="flex items-center gap-1 rounded-lg border border-line px-2 py-1.5">
+      <button
+        type="button"
+        onClick={() => onChange(Math.max(min, value - 1))}
+        aria-label="Decrease"
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-mist hover:text-ink"
+      >
+        <Minus size={12} weight="bold" />
+      </button>
+      <div className="flex-1 text-center">
+        <p className="text-sm font-semibold text-ink">{value}</p>
+        <p className="text-[10px] text-muted">{suffix}</p>
+      </div>
+      <button
+        type="button"
+        onClick={() => onChange(Math.min(max, value + 1))}
+        aria-label="Increase"
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-mist hover:text-ink"
+      >
+        <Plus size={12} weight="bold" />
+      </button>
+    </div>
+  );
+}
+
+const PREFIX_OPTIONS = ["—", "Mr", "Mrs", "Ms"];
+
+/** Full-page "Add tenant" form — one continuous scroll (Personal → Property → Deposit → Lease
+ * terms, in that reading order) rather than a gated multi-step wizard, since there isn't enough
+ * on any one section to justify making the landlord click through screens for it. Editing an
+ * existing tenant still uses TenantFormDrawer, which covers a much smaller field set and doesn't
+ * need the room-and-payments choreography this flow has. */
+export default function AddTenant() {
+  const navigate = useNavigate();
+  const { addTenant, updateTenant, logPayment } = useTenants();
+  const { propertyName, billingPeriod, dueDay, gracePeriodDays } =
+    useSettings();
+  const { roomTypeConfigs, addRoomType } = useRooms();
+  const vacantRooms = useVacantRoomsForAssignment();
+  const [addingRoomType, setAddingRoomType] = useState(false);
+
+  const [prefix, setPrefix] = useState(PREFIX_OPTIONS[0]);
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [phones, setPhones] = useState<string[]>([""]);
+  const [contacts, setContacts] = useState<ContactDraft[]>([newContactDraft()]);
+  const [notes, setNotes] = useState("");
+
+  const [selectedRoom, setSelectedRoom] = useState<VacantRoom | null>(null);
+  const [moveInDate, setMoveInDate] = useState(todayISO());
+
+  const [tenantDueDay, setTenantDueDay] = useState(dueDay);
+  const [tenantGracePeriodDays, setTenantGracePeriodDays] =
+    useState(gracePeriodDays);
+
+  const [wantsDeposit, setWantsDeposit] = useState<"yes" | "no">("no");
+  const [depositAmount, setDepositAmount] = useState(0);
+  const [depositCollectedToday, setDepositCollectedToday] = useState<
+    "yes" | "no" | null
+  >(null);
+  const [depositCollectMethod, setDepositCollectMethod] = useState<
+    "mobile" | "cash"
+  >("mobile");
+
+  const [prorataChoice, setProrataChoice] = useState<"charge" | "waive">(
+    "charge",
+  );
+  const [prorataCollectedToday, setProrataCollectedToday] = useState<
+    "yes" | "no" | null
+  >(null);
+  const [rentCollectedToday, setRentCollectedToday] = useState<
+    "yes" | "no" | null
+  >(null);
+  const [rentAmountCollected, setRentAmountCollected] = useState(0);
+  const [rentCollectMethod, setRentCollectMethod] = useState<"mobile" | "cash">(
+    "mobile",
+  );
+
+  const moveInDateObj = useMemo(
+    () => parseDateInputLocal(moveInDate),
+    [moveInDate],
+  );
+  const isMidCycle = moveInDateObj.getDate() !== 1;
+  const prorata = useMemo(
+    () =>
+      selectedRoom ? computeProrata(selectedRoom.rent, moveInDateObj) : null,
+    [selectedRoom, moveInDateObj],
+  );
+
+  const selectRoom = (r: VacantRoom) => {
+    setSelectedRoom(r);
+    setDepositAmount(r.depositAmount);
+    setRentAmountCollected(r.rent);
+    if (r.depositAmount > 0) setWantsDeposit("yes");
+  };
+
+  const updateContact = (index: number, patch: Partial<ContactDraft>) => {
+    setContacts((prev) =>
+      prev.map((c, i) => (i === index ? { ...c, ...patch } : c)),
+    );
+  };
+  const removeContact = (index: number) => {
+    setContacts((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const name = [
+    prefix !== PREFIX_OPTIONS[0] ? prefix : null,
+    firstName.trim(),
+    lastName.trim(),
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  // The room type's own daily rate — this is what the late penalty actually charges per day once
+  // this tenant's grace period lapses (see invoiceUtils' calcPenalty), not a flat rate landlord-wide.
+  const roomDailyRate = selectedRoom
+    ? selectedRoom.rent /
+      daysInMonth(new Date().getFullYear(), new Date().getMonth())
+    : null;
+
+  const canSubmit =
+    firstName.trim().length > 0 && lastName.trim().length > 0 && !!selectedRoom;
+
+  const finalizeAndCreate = () => {
+    if (!canSubmit || !selectedRoom) return;
+
+    const rentDue = isMidCycle
+      ? prorataChoice === "charge"
+        ? Math.round(prorata!.amount)
+        : 0
+      : selectedRoom.rent;
+    const rentPaidNow = isMidCycle
+      ? prorataChoice === "charge" && prorataCollectedToday === "yes"
+      : rentCollectedToday === "yes";
+    const rentAmountToLog = isMidCycle
+      ? Math.round(prorata!.amount)
+      : Math.round(rentAmountCollected);
+    const rentLedgerLabel = isMidCycle
+      ? `${moveInDateObj.toLocaleDateString("en-US", { month: "long" })} pro-rata`
+      : `${new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })} rent`;
+
+    const depositWasCollected =
+      wantsDeposit === "yes" &&
+      depositCollectedToday === "yes" &&
+      depositAmount > 0;
+
+    const created = addTenant({
+      name,
+      phones: phones.map((p) => p.trim()).filter(Boolean),
+      emergencyContacts: cleanContacts(contacts),
+      property: propertyName,
+      room: selectedRoom.room,
+      roomType: selectedRoom.roomType,
+      moveInDate: moveInDateObj.toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      }),
+      rentAmount: selectedRoom.rent,
+      status: "unpaid",
+      owedAmount: rentDue,
+      depositAmount: wantsDeposit === "yes" ? depositAmount : 0,
+      depositDate: new Date().toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      }),
+      depositMethod: depositCollectMethod,
+      depositStatus: depositWasCollected ? "Held" : "Not collected",
+      notes,
+      // Stored only when they differ from the property default — most tenants take the default,
+      // and this keeps a bulk change in Settings applying to them automatically going forward.
+      dueDay: tenantDueDay !== dueDay ? tenantDueDay : null,
+      gracePeriodDays:
+        tenantGracePeriodDays !== gracePeriodDays
+          ? tenantGracePeriodDays
+          : null,
+      onTimeCount: 0,
+      totalMonthsCount: 0,
+      active: true,
+      ledger: [],
+    });
+
+    if (depositWasCollected) {
+      updateTenant(created.id, {
+        ledger: [
+          {
+            id: crypto.randomUUID(),
+            label: "Security deposit",
+            amount: depositAmount,
+            status: "paid",
+            createdAt: new Date().toISOString(),
+            source: "manual",
+          },
+          ...created.ledger,
+        ],
+      });
+    }
+
+    if (rentPaidNow && rentAmountToLog > 0) {
+      logPayment(created.id, rentAmountToLog, rentLedgerLabel);
+    }
+
+    navigate(`/tenants/${created.id}`);
+  };
+
+  return (
+    <>
+      <PageHeader
+        title="Add tenant"
+        description="Completed at the property office in under 4 minutes."
+      />
+
+      <div className="mx-auto max-w-2xl space-y-10 px-4 pb-28 sm:px-8">
+        {/* Personal */}
+        <div className="space-y-6">
+          <section>
+            <SectionLabel className="mb-3">Personal information</SectionLabel>
+            <p className="mb-3 text-xs text-muted">
+              The tenant's name as it should appear on invoices and receipts.
+            </p>
+            <div className="space-y-4">
+              <div className="grid grid-cols-[80px_1fr_1fr] gap-3">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-muted">
+                    Prefix
+                  </label>
+                  <Select
+                    value={prefix}
+                    onChange={setPrefix}
+                    options={PREFIX_OPTIONS.map((p) => ({
+                      value: p,
+                      label: p,
+                    }))}
+                    className="w-full"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-muted">
+                    First name
+                  </label>
+                  <input
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    placeholder="e.g. Chanda"
+                    className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-muted">
+                    Last name
+                  </label>
+                  <input
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    placeholder="e.g. Mwansa"
+                    className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-muted">
+                  Phone number(s)
+                </label>
+                <PhoneListEditor phones={phones} onChange={setPhones} />
+              </div>
+            </div>
+          </section>
+
+          <section className="border-t border-line pt-6">
+            <div className="mb-3 flex items-center gap-2">
+              <SectionLabel>Emergency contact information</SectionLabel>
+              <span className="text-[11px] text-muted">— optional</span>
+            </div>
+            {contacts.length === 0 ? (
+              <button
+                type="button"
+                onClick={() => setContacts([newContactDraft()])}
+                className="flex items-center gap-1 text-xs font-medium text-brand hover:underline"
+              >
+                <Plus size={14} weight="bold" />
+                Add emergency contact
+              </button>
+            ) : (
+              <>
+                <div className="divide-y divide-line">
+                  {contacts.map((contact, i) => (
+                    <div
+                      key={contact.id}
+                      className={`space-y-3 py-4 ${i === 0 ? "pt-0" : ""}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-medium text-muted">
+                          {i === 0 ? "Primary contact" : `Contact ${i + 1}`}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => removeContact(i)}
+                          aria-label="Remove contact"
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-red-600"
+                        >
+                          <X size={14} weight="bold" />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div>
+                          <label className="mb-1.5 block text-xs font-medium text-muted">
+                            Name
+                          </label>
+                          <input
+                            value={contact.name}
+                            onChange={(e) =>
+                              updateContact(i, { name: e.target.value })
+                            }
+                            className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-xs font-medium text-muted">
+                            Relation to tenant
+                          </label>
+                          <Select
+                            value={contact.relation}
+                            onChange={(v) =>
+                              updateContact(i, { relation: v as RelationType })
+                            }
+                            options={RELATION_OPTIONS.map((r) => ({
+                              value: r,
+                              label: r,
+                            }))}
+                            className="w-full"
+                          />
+                          <AnimatePresence initial={false}>
+                            {contact.relation === "Other" && (
+                              <motion.div
+                                key="other-relation"
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: "auto", opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                transition={{
+                                  duration: 0.18,
+                                  ease: [0.22, 1, 0.36, 1],
+                                }}
+                                className="overflow-hidden"
+                              >
+                                <input
+                                  value={contact.relationOther}
+                                  onChange={(e) =>
+                                    updateContact(i, {
+                                      relationOther: e.target.value,
+                                    })
+                                  }
+                                  placeholder="Specify relation"
+                                  className="mt-2 w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+                                />
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium text-muted">
+                          Phone number(s)
+                        </label>
+                        <PhoneListEditor
+                          phones={contact.phones}
+                          onChange={(next) =>
+                            updateContact(i, { phones: next })
+                          }
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setContacts((prev) => [...prev, newContactDraft()])
+                  }
+                  className="mt-3 flex items-center gap-1 text-xs font-medium text-brand hover:underline"
+                >
+                  <Plus size={14} weight="bold" />
+                  Add another emergency contact
+                </button>
+              </>
+            )}
+          </section>
+        </div>
+
+        {/* Property */}
+        <div className="space-y-6 border-t border-line pt-10">
+          <section>
+            <SectionLabel className="mb-3">Property placement</SectionLabel>
+            <p className="mb-3 text-xs text-muted">
+              Which room will {name.trim() || "this tenant"} occupy, and from
+              when?
+            </p>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-muted">
+                  Move-in date
+                </label>
+                <DatePicker value={moveInDate} onChange={setMoveInDate} />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-muted">
+                  Room (vacant only)
+                </label>
+                {roomTypeConfigs.length === 0 ? (
+                  <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-line px-3.5 py-2.5">
+                    <div className="flex items-center gap-2.5">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-mist text-muted">
+                        <DoorOpen size={16} weight="duotone" />
+                      </span>
+                      <p className="text-xs text-muted">
+                        No room types set up.
+                      </p>
+                    </div>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setAddingRoomType(true)}
+                      className="shrink-0"
+                    >
+                      Add room type
+                    </Button>
+                  </div>
+                ) : (
+                  <RoomPicker
+                    rooms={vacantRooms}
+                    selected={selectedRoom}
+                    onSelect={selectRoom}
+                  />
+                )}
+              </div>
+            </div>
+          </section>
+
+          <section className="border-t border-line pt-6">
+            <SectionLabel className="mb-3">Rent</SectionLabel>
+            <div className="flex items-center justify-between rounded-lg bg-mist px-3.5 py-3">
+              <span className="text-sm text-muted">
+                Agreed rent, set by the room selected above
+              </span>
+              <span className="text-sm font-semibold text-ink">
+                {selectedRoom ? `${formatCurrency(selectedRoom.rent)}/mo` : "—"}
+              </span>
+            </div>
+          </section>
+        </div>
+
+        {/* Deposit */}
+        <div className="space-y-6 border-t border-line pt-10">
+          <section>
+            <SectionLabel className="mb-3">Security deposit</SectionLabel>
+            <p className="mb-3 text-xs text-muted">
+              {selectedRoom
+                ? `Does this tenant need to pay ${selectedRoom.roomType}'s security deposit upfront?`
+                : "Does this tenant need to pay a security deposit upfront? Select a room above first — the amount is set by that room type."}
+            </p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setWantsDeposit("no")}
+                className={`rounded-lg border p-4 text-left transition-colors ${
+                  wantsDeposit === "no"
+                    ? "border-brand bg-brand-soft"
+                    : "border-line hover:bg-mist"
+                }`}
+              >
+                <p
+                  className={`text-sm font-medium ${wantsDeposit === "no" ? "text-brand" : "text-ink"}`}
+                >
+                  Proceed without deposit
+                </p>
+                <p className="mt-0.5 text-xs text-muted">
+                  No deposit — proceed directly with the lease.
+                </p>
+              </button>
+              <button
+                type="button"
+                disabled={!selectedRoom}
+                onClick={() => setWantsDeposit("yes")}
+                className={`rounded-lg border p-4 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                  wantsDeposit === "yes"
+                    ? "border-brand bg-brand-soft"
+                    : "border-line hover:bg-mist"
+                }`}
+              >
+                <p
+                  className={`text-sm font-medium ${wantsDeposit === "yes" ? "text-brand" : "text-ink"}`}
+                >
+                  Charge security deposit
+                </p>
+                <p className="mt-0.5 text-xs text-muted">
+                  Collected as a separate upfront payment.
+                </p>
+              </button>
+            </div>
+          </section>
+
+          {wantsDeposit === "yes" && (
+            <section className="border-t border-line pt-6">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-muted">
+                    Deposit amount (K)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={depositAmount}
+                    onChange={(e) =>
+                      setDepositAmount(Number(e.target.value) || 0)
+                    }
+                    className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+                  />
+                  <p className="mt-1.5 text-[11px] text-muted">
+                    Defaults to {selectedRoom?.roomType}'s configured deposit —
+                    edit if this tenant's terms differ.
+                  </p>
+                </div>
+              </div>
+
+              <p className="mt-4 text-sm font-medium text-ink">
+                Was the deposit collected today?
+              </p>
+              <div className="mt-2.5">
+                <YesNo
+                  value={depositCollectedToday}
+                  onChange={setDepositCollectedToday}
+                />
+              </div>
+              {depositCollectedToday === "yes" && (
+                <div className="mt-3">
+                  <label className="mb-1.5 block text-xs font-medium text-muted">
+                    Payment method
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {depositMethods.map(({ id, label, Icon }) => (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() =>
+                          setDepositCollectMethod(id as "mobile" | "cash")
+                        }
+                        className={`flex flex-col items-center gap-1.5 rounded-lg border py-2.5 text-xs font-medium transition-colors ${
+                          depositCollectMethod === id
+                            ? "border-brand bg-brand-soft text-brand"
+                            : "border-line text-muted hover:bg-mist"
+                        }`}
+                      >
+                        <Icon size={18} weight="duotone" />
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
+        </div>
+
+        {/* Lease terms */}
+        <div className="space-y-6 border-t border-line pt-10">
+          <section>
+            <SectionLabel className="mb-3">
+              Lease &amp; billing terms
+            </SectionLabel>
+            <p className="mb-3 text-xs text-muted">
+              Pre-filled from your property's billing settings — adjust for this
+              tenant if their terms are different.
+            </p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="rounded-lg bg-mist px-3.5 py-2.5">
+                <p className="text-[11px] text-muted">Billing cycle</p>
+                <p className="mt-0.5 text-sm font-semibold text-ink">
+                  {billingPeriod}
+                </p>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-muted">
+                  Rent due day
+                </label>
+                <NumberStepper
+                  value={tenantDueDay}
+                  onChange={setTenantDueDay}
+                  min={1}
+                  max={31}
+                  suffix="Day of month"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-muted">
+                  Grace period
+                </label>
+                <NumberStepper
+                  value={tenantGracePeriodDays}
+                  onChange={setTenantGracePeriodDays}
+                  min={0}
+                  max={30}
+                  suffix="Days"
+                />
+              </div>
+            </div>
+            <p className="mt-2 text-[11px] text-muted">
+              {roomDailyRate !== null
+                ? `Late fee once the grace period lapses: ${formatCurrency(roomDailyRate)}/day, this room type's rent ÷ days in the month.`
+                : "Select a room above to see this room type's daily late-fee rate."}
+            </p>
+          </section>
+
+          <section className="border-t border-line pt-6">
+            {isMidCycle && prorata ? (
+              <div className="rounded-lg border border-line p-4">
+                <div className="flex items-center gap-2">
+                  <CalendarBlank
+                    size={16}
+                    weight="duotone"
+                    className="text-muted"
+                  />
+                  <p className="text-sm font-medium text-ink">
+                    Mid-cycle move-in
+                  </p>
+                </div>
+                <p className="mt-1.5 text-xs text-muted">
+                  Partial month: {prorata.remainingDays} of {prorata.totalDays}{" "}
+                  days at {formatCurrency(prorata.dailyRate)}/day.
+                </p>
+
+                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => setProrataChoice("charge")}
+                    className={`rounded-lg border p-3 text-left transition-colors ${
+                      prorataChoice === "charge"
+                        ? "border-brand bg-brand-soft"
+                        : "border-line hover:bg-mist"
+                    }`}
+                  >
+                    <p
+                      className={`text-sm font-medium ${prorataChoice === "charge" ? "text-brand" : "text-ink"}`}
+                    >
+                      Charge pro-rata
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted">
+                      {formatCurrency(prorata.amount)} for the partial month
+                    </p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setProrataChoice("waive")}
+                    className={`rounded-lg border p-3 text-left transition-colors ${
+                      prorataChoice === "waive"
+                        ? "border-brand bg-brand-soft"
+                        : "border-line hover:bg-mist"
+                    }`}
+                  >
+                    <p
+                      className={`text-sm font-medium ${prorataChoice === "waive" ? "text-brand" : "text-ink"}`}
+                    >
+                      Waive partial month
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted">
+                      First payment starts next month
+                    </p>
+                  </button>
+                </div>
+
+                {prorataChoice === "charge" && (
+                  <div className="mt-3">
+                    <p className="text-xs font-medium text-muted">
+                      Has the tenant already paid this?
+                    </p>
+                    <div className="mt-1.5">
+                      <YesNo
+                        value={prorataCollectedToday}
+                        onChange={setProrataCollectedToday}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div>
+                <p className="text-sm font-medium text-ink">Rent</p>
+                <p className="mt-0.5 text-xs text-muted">
+                  Was any rent collected today?
+                </p>
+                <div className="mt-2.5">
+                  <YesNo
+                    value={rentCollectedToday}
+                    onChange={setRentCollectedToday}
+                  />
+                </div>
+                {rentCollectedToday === "yes" && (
+                  <div className="mt-2.5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium text-muted">
+                        Amount (K)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={rentAmountCollected}
+                        onChange={(e) =>
+                          setRentAmountCollected(Number(e.target.value) || 0)
+                        }
+                        className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium text-muted">
+                        Payment method
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {(["mobile", "cash"] as const).map((m) => (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() => setRentCollectMethod(m)}
+                            className={`rounded-lg border py-2.5 text-xs font-medium transition-colors ${
+                              rentCollectMethod === m
+                                ? "border-brand bg-brand-soft text-brand"
+                                : "border-line text-muted hover:bg-mist"
+                            }`}
+                          >
+                            {m === "mobile" ? "Mobile money" : "Cash"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+
+          <section className="border-t border-line pt-6">
+            <SectionLabel className="mb-3">Notes</SectionLabel>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={3}
+              placeholder="Payment arrangements, special circumstances, anything worth remembering about this tenant. Landlord-only."
+              className="w-full resize-none rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+            />
+          </section>
+        </div>
+      </div>
+
+      {/* Sticky footer — a full page has no natural bottom edge to anchor the submit action to
+          otherwise, and it stays reachable while the form above scrolls under it. */}
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-paper/95 px-4 py-3 backdrop-blur sm:px-8">
+        <div className="mx-auto flex max-w-2xl gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => navigate(-1)}
+            className="flex-1 py-3 sm:flex-none sm:px-8"
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            onClick={finalizeAndCreate}
+            disabled={!canSubmit}
+            className="flex-1 py-3"
+          >
+            Add tenant
+          </Button>
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {addingRoomType && (
+          <AddRoomTypeDrawer
+            onClose={() => setAddingRoomType(false)}
+            onSave={(config, roomCount) => {
+              addRoomType(config, roomCount);
+              setAddingRoomType(false);
+            }}
+          />
+        )}
+      </AnimatePresence>
+    </>
+  );
+}

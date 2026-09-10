@@ -1,5 +1,5 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import PageHeader from "../components/PageHeader";
 import LogPaymentModal from "../components/LogPaymentModal";
@@ -12,11 +12,12 @@ import { useTenants, formatCurrency, type PaymentStatus, type Tenant } from "../
 import { useRoomTypeRent } from "../RoomsContext";
 import { useSettings } from "../SettingsContext";
 import { calcTotalOwed } from "../invoiceUtils";
-import { LinkSimple, MagnifyingGlass, Plus, CaretLeft, CaretRight, Receipt, DotsThreeVertical } from "@phosphor-icons/react";
+import { LinkSimple, MagnifyingGlass, Plus, Receipt, DotsThreeVertical } from "@phosphor-icons/react";
 import Pagination, { DEFAULT_PAGE_SIZE } from "../components/Pagination";
 import { Skeleton, SkeletonRow } from "../components/Skeleton";
 import MetricCard from "../components/MetricCard";
 import Button from "../components/Button";
+import MonthSwitcher from "../components/MonthSwitcher";
 import { PendingSyncTag } from "../components/SyncStatus";
 import { usePendingTenantIds } from "../../lib/offline/hooks";
 
@@ -115,12 +116,12 @@ function buildRentRow(t: Tenant, monthDate: Date, isCurrentMonth: boolean): Rent
 /** The short pill just names the state (Paid/Overdue/Unpaid/Partial) — the amount and day count
  * live in a separate, quieter caption line instead of being crammed into the pill itself, since
  * "Overdue · 12d — K1,440 owed" all in one small badge is a lot to read on every row of a table. */
-function statusDetail(row: RentRow, dailyPenaltyRate: number, isCurrentMonth: boolean): string | null {
+function statusDetail(row: RentRow, isCurrentMonth: boolean): string | null {
   if (row.status === "paid") return null;
   if (!row.hasRecord) return "No record this month";
   if (isCurrentMonth) {
     // Live penalty accrual only makes sense against today's date, not a browsed-to past month.
-    const totalOwed = calcTotalOwed(row.tenant, dailyPenaltyRate);
+    const totalOwed = calcTotalOwed(row.tenant);
     if (row.status === "overdue") return `${row.tenant.daysOverdue ? `${row.tenant.daysOverdue}d · ` : ""}${formatCurrency(totalOwed)} owed`;
     if (row.status === "unpaid") return `${formatCurrency(totalOwed)} owed`;
     return `${formatCurrency(totalOwed)} left`;
@@ -132,7 +133,7 @@ type PaymentStep = "search" | "ledger" | "confirm";
 
 export default function Rent() {
   const { tenants, logPayment, moveOutTenant, isReady: tenantsReady } = useTenants();
-  const { invoicesOn, collectionTargetPct, dailyPenaltyRate } = useSettings();
+  const { invoicesOn, collectionTargetPct } = useSettings();
   const roomTypeRent = useRoomTypeRent();
   const pendingTenantIds = usePendingTenantIds();
   const location = useLocation();
@@ -283,7 +284,7 @@ export default function Rent() {
 
   return (
     <>
-      <PageHeader title="Rent" />
+      <PageHeader title="Rent" description="Log payments and monitor who's paid, overdue, or behind." />
 
       <div className="space-y-5 px-4 sm:px-8 pb-10">
         {invoiceMode ? (
@@ -315,37 +316,13 @@ export default function Rent() {
             payment link are occasional, not daily, so they sit in a quiet overflow menu instead
             of competing with the primary button for attention. */}
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 rounded-lg border border-line bg-paper px-1.5 py-1">
-              <button
-                type="button"
-                onClick={() => setMonthOffset((o) => o - 1)}
-                aria-label="Previous month"
-                className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-mist hover:text-ink"
-              >
-                <CaretLeft size={14} weight="bold" />
-              </button>
-              <span className="w-36 text-center text-sm font-medium text-ink">{month}</span>
-              <button
-                type="button"
-                onClick={() => setMonthOffset((o) => Math.min(0, o + 1))}
-                disabled={monthOffset === 0}
-                aria-label="Next month"
-                className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-mist hover:text-ink disabled:opacity-30 disabled:hover:bg-transparent"
-              >
-                <CaretRight size={14} weight="bold" />
-              </button>
-            </div>
-            {monthOffset !== 0 && (
-              <button
-                type="button"
-                onClick={() => setMonthOffset(0)}
-                className="rounded-md px-2 py-1 text-xs font-medium text-brand hover:bg-brand-soft"
-              >
-                Back to this month
-              </button>
-            )}
-          </div>
+          <MonthSwitcher
+            month={month}
+            monthOffset={monthOffset}
+            onPrev={() => setMonthOffset((o) => o - 1)}
+            onNext={() => setMonthOffset((o) => Math.min(0, o + 1))}
+            onJumpToNow={() => setMonthOffset(0)}
+          />
 
           <div className="flex items-center gap-2">
             <div ref={moreMenuRef} className="relative">
@@ -462,9 +439,9 @@ export default function Rent() {
 
         {/* Tenant table — search + filter tabs share the same bordered card as the table below,
             not a separate floating row, matching the Tenants page's toolbar-attached-to-table look. */}
-        <div className="rounded-lg border border-line bg-paper">
+        <div className="rounded-xl border border-line bg-paper">
           {/* Toolbar */}
-          <div className="flex flex-col gap-3 border-b border-line p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-3 border-b border-line p-6 sm:flex-row sm:items-center sm:justify-between">
             {/* Borderless until focused — the field only asserts itself once you're typing in it */}
             <div className="flex items-center gap-2.5 rounded-md bg-mist px-3.5 py-2.5 transition-colors focus-within:bg-paper focus-within:ring-2 focus-within:ring-brand/25 sm:w-64">
               <SearchIcon />
@@ -539,13 +516,19 @@ export default function Rent() {
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-ink">{t.name}</p>
+                      <Link
+                        to={`/tenants/${t.id}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="truncate text-sm font-medium text-ink hover:underline"
+                      >
+                        {t.name}
+                      </Link>
                       <p className="mt-0.5 text-xs text-muted">{t.room}</p>
                     </div>
                     <div className="shrink-0 text-right">
                       <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[row.status]}`}>{statusLabel[row.status]}</span>
-                      {statusDetail(row, dailyPenaltyRate, isCurrentMonth) && (
-                        <p className="mt-1 text-[11px] text-muted">{statusDetail(row, dailyPenaltyRate, isCurrentMonth)}</p>
+                      {statusDetail(row, isCurrentMonth) && (
+                        <p className="mt-1 text-[11px] text-muted">{statusDetail(row, isCurrentMonth)}</p>
                       )}
                     </div>
                   </div>
@@ -570,22 +553,22 @@ export default function Rent() {
                           setPayingTenant(t);
                           setPaymentStep("confirm");
                         }}
-                        className="rounded-lg bg-brand-soft px-3 py-1.5 text-xs font-medium text-brand"
+                        className="font-semibold text-brand underline-offset-2 hover:underline"
                       >
                         Log payment
                       </button>
                     ) : (
-                      <Button
-                        variant="secondary"
-                        size="sm"
+                      <button
+                        type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           setPayingTenant(t);
                           setPaymentStep("ledger");
                         }}
+                        className="font-semibold text-ink underline-offset-2 hover:underline"
                       >
-                        View
-                      </Button>
+                        Details
+                      </button>
                     )}
                   </div>
                 </div>
@@ -612,19 +595,23 @@ export default function Rent() {
             )}
           </div>
 
-          {/* Desktop / tablet: table */}
-          <div className="hidden overflow-x-auto md:block">
+          {/* Desktop / tablet: table — bounded height with its own scroll, so the sticky header
+              has an actual scroll container to stick within (relying on the page/shell's own
+              scroll container doesn't work reliably here: overflow-x-auto below implicitly
+              resolves overflow-y to auto too, per the CSS spec, silently making this div its own
+              non-scrolling-looking-but-still-a-container context). Same pattern as Tenants.tsx. */}
+          <div className="hidden max-h-[70vh] overflow-auto md:block">
           <table className="w-full text-left text-sm">
-            <thead className="bg-mist text-xs text-muted">
+            <thead className="sticky top-0 z-10 border-b border-line bg-paper text-[11px] text-muted uppercase">
               <tr>
-                <th className="px-4 py-3 font-medium">Tenant</th>
-                <th className="px-4 py-3 font-medium">Room type</th>
-                <th className="px-4 py-3 font-medium">Amount paid</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Action</th>
+                <th className="px-6 py-4 font-medium tracking-wide">Tenant</th>
+                <th className="px-6 py-4 font-medium tracking-wide">Room type</th>
+                <th className="px-6 py-4 font-medium tracking-wide">Amount paid</th>
+                <th className="px-6 py-4 font-medium tracking-wide">Status</th>
+                <th className="px-6 py-4 font-medium tracking-wide">Action</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-line">
               {!tenantsReady && Array.from({ length: 4 }).map((_, i) => <SkeletonRow key={i} cols={5} />)}
               {tenantsReady && pageRows.map((row) => {
                 const t = row.tenant;
@@ -633,17 +620,19 @@ export default function Rent() {
                 return (
                   <tr
                     key={t.id}
-                    className={`cursor-pointer border-t border-line transition-colors hover:bg-mist ${needsAction ? "bg-mist/50" : ""}`}
+                    className={`group cursor-pointer transition-colors duration-200 ease-in-out hover:bg-mist ${needsAction ? "bg-mist/50" : ""}`}
                     onClick={() => {
                       setPayingTenant(t);
                       setPaymentStep("ledger");
                     }}
                   >
-                    <td className="px-4 py-3">
-                      <p className="font-medium text-ink">{t.name}</p>
+                    <td className="px-6 py-4">
+                      <Link to={`/tenants/${t.id}`} onClick={(e) => e.stopPropagation()} className="font-medium text-ink hover:underline">
+                        {t.name}
+                      </Link>
                       <p className="text-xs text-muted">{t.room}</p>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-6 py-4">
                       <p className="text-ink">{t.roomType}</p>
                       {discountNote ? (
                         <p className="text-xs text-amber-600">{discountNote}</p>
@@ -651,19 +640,19 @@ export default function Rent() {
                         <p className="text-xs text-muted">{formatCurrency(t.rentAmount)}/mo</p>
                       )}
                     </td>
-                    <td className={`px-4 py-3 ${row.amountPaid === 0 ? "font-normal text-muted" : "font-medium text-ink"}`}>
+                    <td className={`px-6 py-4 ${row.amountPaid === 0 ? "font-normal text-muted" : "font-medium text-ink"}`}>
                       {formatCurrency(row.amountPaid)}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-6 py-4">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[row.status]}`}>{statusLabel[row.status]}</span>
                         {pendingTenantIds.has(t.id) && <PendingSyncTag />}
                       </div>
-                      {statusDetail(row, dailyPenaltyRate, isCurrentMonth) && (
-                        <p className="mt-1 text-[11px] text-muted">{statusDetail(row, dailyPenaltyRate, isCurrentMonth)}</p>
+                      {statusDetail(row, isCurrentMonth) && (
+                        <p className="mt-1 text-[11px] text-muted">{statusDetail(row, isCurrentMonth)}</p>
                       )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-6 py-4">
                       {needsAction && isCurrentMonth ? (
                         <button
                           type="button"
@@ -672,22 +661,22 @@ export default function Rent() {
                             setPayingTenant(t);
                             setPaymentStep("confirm");
                           }}
-                          className="rounded-lg bg-brand-soft px-3 py-1.5 text-xs font-medium text-brand"
+                          className="font-semibold text-brand underline-offset-2 hover:underline"
                         >
                           Log payment
                         </button>
                       ) : (
-                        <Button
-                          variant="secondary"
-                          size="sm"
+                        <button
+                          type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             setPayingTenant(t);
                             setPaymentStep("ledger");
                           }}
+                          className="font-semibold text-ink underline-offset-2 group-hover:underline"
                         >
-                          View
-                        </Button>
+                          Details
+                        </button>
                       )}
                     </td>
                   </tr>
@@ -765,9 +754,11 @@ export default function Rent() {
             tenantName={payingTenant.name}
             room={`${payingTenant.room} · ${payingTenant.roomType}`}
             outstanding={payingTenant.owedAmount || payingTenant.rentAmount}
+            rentAmount={payingTenant.rentAmount}
+            ledger={payingTenant.ledger}
             onClose={() => setPaymentStep("ledger")}
             onConfirm={(payment) => {
-              logPayment(payingTenant.id, payment.amount, undefined, payment.method === "mobile" ? "mobile-money" : "cash");
+              logPayment(payingTenant.id, payment.amount, payment.label, payment.method === "mobile" ? "mobile-money" : "cash", payment.date);
               setPaymentStep(null);
               setPayingTenant(null);
             }}

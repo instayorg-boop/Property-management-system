@@ -339,7 +339,6 @@ export default function Dashboard() {
   const [payingTenant, setPayingTenant] = useState<Tenant | null>(null);
   const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
   const [movingOutTenant, setMovingOutTenant] = useState<Tenant | null>(null);
-  const [addingTenant, setAddingTenant] = useState(false);
   const [addingExpense, setAddingExpense] = useState(false);
   const [payoutOpen, setPayoutOpen] = useState(false);
   const [collectionRange, setCollectionRange] = useState("6");
@@ -356,7 +355,7 @@ export default function Dashboard() {
 
   const handleAction = (action: QuickAction) => {
     if (action === "log-payment") setPaymentStep("search");
-    if (action === "add-tenant") setAddingTenant(true);
+    if (action === "add-tenant") navigate("/tenants/new");
     if (action === "add-expense") setAddingExpense(true);
   };
 
@@ -626,7 +625,7 @@ export default function Dashboard() {
                     <tr
                       key={`${p.tenantId}-${p.createdAt}-${i}`}
                       onClick={() => navigate("/rent", { state: { openTenantId: p.tenantId } })}
-                      className="cursor-pointer border-t border-line transition-colors hover:bg-mist"
+                      className="cursor-pointer border-t border-line transition-colors duration-200 ease-in-out hover:bg-mist"
                     >
                       <td className="py-2.5">
                         <div className="flex items-center gap-2.5">
@@ -634,7 +633,13 @@ export default function Dashboard() {
                             {p.tenant.split(" ").map((s) => s[0]).join("")}
                           </div>
                           <div>
-                            <p className="font-medium text-ink">{p.tenant}</p>
+                            <Link
+                              to={`/tenants/${p.tenantId}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="font-medium text-ink hover:underline"
+                            >
+                              {p.tenant}
+                            </Link>
                             <p className="text-[11px] text-muted">{p.room}</p>
                           </div>
                         </div>
@@ -850,9 +855,11 @@ export default function Dashboard() {
             tenantName={payingTenant.name}
             room={`${payingTenant.room} · ${payingTenant.roomType}`}
             outstanding={payingTenant.owedAmount || payingTenant.rentAmount}
+            rentAmount={payingTenant.rentAmount}
+            ledger={payingTenant.ledger}
             onClose={() => setPaymentStep("ledger")}
             onConfirm={(payment) => {
-              logPayment(payingTenant.id, payment.amount, undefined, payment.method === "mobile" ? "mobile-money" : "cash");
+              logPayment(payingTenant.id, payment.amount, payment.label, payment.method === "mobile" ? "mobile-money" : "cash", payment.date);
               setPaymentStep(null);
               setPayingTenant(null);
             }}
@@ -872,7 +879,6 @@ export default function Dashboard() {
           />
         )}
 
-        {addingTenant && <TenantFormDrawer editing={null} onClose={() => setAddingTenant(false)} />}
         {addingExpense && <ExpenseFormDrawer editing={null} onClose={() => setAddingExpense(false)} />}
         {payoutOpen && payout && <PayoutDetailDrawer payout={payout} onClose={() => setPayoutOpen(false)} />}
       </AnimatePresence>
