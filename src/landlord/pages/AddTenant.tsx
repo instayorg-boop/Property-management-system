@@ -15,7 +15,6 @@ import PageHeader from "../components/PageHeader";
 import AddRoomTypeDrawer from "../components/AddRoomTypeDrawer";
 import Button from "../components/Button";
 import Select from "../components/Select";
-import SectionLabel from "../components/SectionLabel";
 import DatePicker from "../components/DatePicker";
 import {
   useTenants,
@@ -69,6 +68,89 @@ function cleanContacts(drafts: ContactDraft[]): EmergencyContact[] {
     .filter((c) => c.name || c.phones.length > 0);
 }
 
+// --- Shared visual primitives for this page's warmer, softer take on the design system --------
+// (SectionLabel/the standard bordered-box inputs elsewhere in the app read as "administrative" —
+// this page intentionally trades that for more whitespace, monochrome selected states instead of
+// brand blue, and pill/rounded-2xl shapes, since a landlord fills this out once per tenant and it
+// deserves to feel calmer than a settings form.)
+
+function Heading({ title, subtitle }: { title: string; subtitle?: string }) {
+  return (
+    <div>
+      <h2 className="text-[22px] font-semibold tracking-tight text-ink">
+        {title}
+      </h2>
+      {subtitle && (
+        <p className="mt-1.5 text-[15px] leading-relaxed text-muted">
+          {subtitle}
+        </p>
+      )}
+    </div>
+  );
+}
+
+const softInputCls =
+  "w-full rounded-xl border border-line bg-paper px-4 py-3.5 text-[15px] text-ink outline-none transition-shadow placeholder:text-muted/70 focus:border-ink focus:ring-1 focus:ring-ink";
+const softLabelCls = "mb-1.5 block text-[13px] text-muted";
+
+/** A large, elevated click-card for a binary/small-set choice — thin border at rest, solid dark
+ * border + soft neutral fill + a gentle lift once selected, instead of a filled brand-color box. */
+function ChoiceCard({
+  selected,
+  disabled,
+  onClick,
+  title,
+  description,
+}: {
+  selected: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  title: string;
+  description: string;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={`rounded-2xl border p-5 text-left transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-40 ${
+        selected
+          ? "border-ink bg-mist shadow-[0_2px_10px_rgba(0,0,0,0.06)]"
+          : "border-line hover:border-ink/40 hover:shadow-[0_2px_8px_rgba(0,0,0,0.04)]"
+      }`}
+    >
+      <p className="text-[15px] font-semibold text-ink">{title}</p>
+      <p className="mt-1 text-sm text-muted">{description}</p>
+    </button>
+  );
+}
+
+/** A rounded pill, not a rectangle — monochrome selected state (solid ink fill) instead of a
+ * brand-blue tint. Used for Yes/No and small option groups. */
+function Pill({
+  selected,
+  onClick,
+  children,
+}: {
+  selected: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-full border px-4 py-2.5 text-sm font-medium transition-all duration-150 ${
+        selected
+          ? "border-ink bg-ink text-white"
+          : "border-line text-ink hover:border-ink/50"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
 function PhoneListEditor({
   phones,
   onChange,
@@ -77,7 +159,7 @@ function PhoneListEditor({
   onChange: (phones: string[]) => void;
 }) {
   return (
-    <div className="space-y-2">
+    <div className="space-y-2.5">
       {phones.map((p, i) => (
         <div key={i} className="flex items-center gap-2">
           <input
@@ -88,14 +170,14 @@ function PhoneListEditor({
               onChange(next);
             }}
             placeholder="e.g. 0977 123 456"
-            className="w-full flex-1 rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+            className={`flex-1 ${softInputCls}`}
           />
           {phones.length > 1 && (
             <button
               type="button"
               onClick={() => onChange(phones.filter((_, idx) => idx !== i))}
               aria-label="Remove number"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-red-600"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-mist hover:text-red-600"
             >
               <X size={14} weight="bold" />
             </button>
@@ -105,10 +187,9 @@ function PhoneListEditor({
       <button
         type="button"
         onClick={() => onChange([...phones, ""])}
-        className="flex items-center gap-1 text-xs font-medium text-brand hover:underline"
+        className="text-sm font-semibold text-ink underline decoration-line underline-offset-4 hover:decoration-ink"
       >
-        <Plus size={14} weight="bold" />
-        Add another number
+        + Add another number
       </button>
     </div>
   );
@@ -181,7 +262,7 @@ function RoomPicker({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between rounded-lg border border-line px-3 py-2.5 text-left text-sm outline-none focus:border-brand"
+        className={`flex items-center justify-between text-left ${softInputCls}`}
       >
         <span className={selected ? "text-ink" : "text-muted"}>
           {selected
@@ -192,7 +273,7 @@ function RoomPicker({
       </button>
 
       {open && (
-        <div className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-line bg-paper shadow-card">
+        <div className="absolute z-10 mt-1.5 w-full overflow-hidden rounded-2xl border border-line bg-paper shadow-[0_8px_24px_rgba(0,0,0,0.08)]">
           <div className="border-b border-line p-2">
             <input
               autoFocus
@@ -209,7 +290,7 @@ function RoomPicker({
                   window.clearTimeout(blurTimeout.current);
               }}
               placeholder="Search room number or type"
-              className="w-full rounded-md bg-mist px-2.5 py-1.5 text-sm outline-none"
+              className="w-full rounded-lg bg-mist px-3 py-2 text-sm outline-none"
             />
           </div>
           <div className="max-h-48 overflow-y-auto">
@@ -223,7 +304,7 @@ function RoomPicker({
                   setQuery("");
                   setOpen(false);
                 }}
-                className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-mist"
+                className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm hover:bg-mist"
               >
                 <span className="text-ink">
                   {r.room} · {r.roomType}
@@ -237,7 +318,7 @@ function RoomPicker({
               </button>
             ))}
             {results.length === 0 && (
-              <p className="px-3 py-3 text-sm text-muted">
+              <p className="px-4 py-3 text-sm text-muted">
                 No rooms with a free bed match.
               </p>
             )}
@@ -256,27 +337,18 @@ function YesNo({
   onChange: (v: "yes" | "no") => void;
 }) {
   return (
-    <div className="grid grid-cols-2 gap-2">
+    <div className="flex gap-2">
       {(["yes", "no"] as const).map((v) => (
-        <button
-          key={v}
-          type="button"
-          onClick={() => onChange(v)}
-          className={`rounded-lg border py-2.5 text-sm font-medium transition-colors ${
-            value === v
-              ? "border-brand bg-brand-soft text-brand"
-              : "border-line text-muted hover:bg-mist"
-          }`}
-        >
+        <Pill key={v} selected={value === v} onClick={() => onChange(v)}>
           {v === "yes" ? "Yes" : "No"}
-        </button>
+        </Pill>
       ))}
     </div>
   );
 }
 
-/** A −/value/+ control for a small bounded integer (rent due day, grace period days) — matches the
- * reference design's stepper fields instead of a bare number input. */
+/** A circular −/+ stepper for a small bounded integer (rent due day, grace period days) — minimal
+ * round icon buttons either side of a bold number, rather than a boxed counter widget. */
 function NumberStepper({
   value,
   onChange,
@@ -291,26 +363,26 @@ function NumberStepper({
   suffix: string;
 }) {
   return (
-    <div className="flex items-center gap-1 rounded-lg border border-line px-2 py-1.5">
+    <div className="flex items-center gap-3">
       <button
         type="button"
         onClick={() => onChange(Math.max(min, value - 1))}
         aria-label="Decrease"
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-mist hover:text-ink"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-line text-ink transition-colors hover:border-ink hover:bg-mist"
       >
-        <Minus size={12} weight="bold" />
+        <Minus size={13} weight="bold" />
       </button>
-      <div className="flex-1 text-center">
-        <p className="text-sm font-semibold text-ink">{value}</p>
-        <p className="text-[10px] text-muted">{suffix}</p>
+      <div className="w-20 text-center">
+        <p className="text-lg font-semibold text-ink">{value}</p>
+        <p className="text-[11px] text-muted">{suffix}</p>
       </div>
       <button
         type="button"
         onClick={() => onChange(Math.min(max, value + 1))}
         aria-label="Increase"
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-mist hover:text-ink"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-line text-ink transition-colors hover:border-ink hover:bg-mist"
       >
-        <Plus size={12} weight="bold" />
+        <Plus size={13} weight="bold" />
       </button>
     </div>
   );
@@ -504,112 +576,106 @@ export default function AddTenant() {
         description="Completed at the property office in under 4 minutes."
       />
 
-      <div className="mx-auto max-w-2xl space-y-10 px-4 pb-28 sm:px-8">
+      <div className="mx-auto max-w-2xl space-y-16 px-4 pb-32 sm:px-8">
         {/* Personal */}
-        <div className="space-y-6">
-          <section>
-            <SectionLabel className="mb-3">Personal information</SectionLabel>
-            <p className="mb-3 text-xs text-muted">
-              The tenant's name as it should appear on invoices and receipts.
-            </p>
-            <div className="space-y-4">
-              <div className="grid grid-cols-[80px_1fr_1fr] gap-3">
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-muted">
-                    Prefix
-                  </label>
-                  <Select
-                    value={prefix}
-                    onChange={setPrefix}
-                    options={PREFIX_OPTIONS.map((p) => ({
-                      value: p,
-                      label: p,
-                    }))}
-                    className="w-full"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-muted">
-                    First name
-                  </label>
-                  <input
-                    value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
-                    placeholder="e.g. Chanda"
-                    className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-muted">
-                    Last name
-                  </label>
-                  <input
-                    value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
-                    placeholder="e.g. Mwansa"
-                    className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-muted">
-                  Phone number(s)
+        <div className="space-y-8">
+          <Heading
+            title="Personal information"
+            subtitle="The tenant's name as it should appear on invoices and receipts."
+          />
+          <div className="space-y-5">
+            {/* One rounded card, split into three cells rather than three separate boxed
+                inputs — the "guest search" grouping pattern. */}
+            <div className="grid grid-cols-[100px_1fr_1fr] divide-x divide-line overflow-hidden rounded-2xl border border-line">
+              <div className="px-3.5 py-2.5">
+                <label className="mb-0.5 block text-[11px] text-muted">
+                  Prefix
                 </label>
-                <PhoneListEditor phones={phones} onChange={setPhones} />
+                <Select
+                  value={prefix}
+                  onChange={setPrefix}
+                  options={PREFIX_OPTIONS.map((p) => ({ value: p, label: p }))}
+                  className="w-full border-none! bg-transparent! px-0! py-0! text-[15px]"
+                />
+              </div>
+              <div className="px-3.5 py-2.5">
+                <label className="mb-0.5 block text-[11px] text-muted">
+                  First name
+                </label>
+                <input
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  placeholder="Chanda"
+                  className="w-full border-none bg-transparent text-[15px] text-ink outline-none placeholder:text-muted/70"
+                />
+              </div>
+              <div className="px-3.5 py-2.5">
+                <label className="mb-0.5 block text-[11px] text-muted">
+                  Last name
+                </label>
+                <input
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  placeholder="Mwansa"
+                  className="w-full border-none bg-transparent text-[15px] text-ink outline-none placeholder:text-muted/70"
+                />
               </div>
             </div>
-          </section>
+            <div>
+              <label className={softLabelCls}>Phone number(s)</label>
+              <PhoneListEditor phones={phones} onChange={setPhones} />
+            </div>
+          </div>
 
-          <section className="border-t border-line pt-6">
-            <div className="mb-3 flex items-center gap-2">
-              <SectionLabel>Emergency contact information</SectionLabel>
-              <span className="text-[11px] text-muted">— optional</span>
+          <div>
+            <div className="mb-4 flex items-baseline gap-2">
+              <h3 className="text-[15px] font-semibold text-ink">
+                Emergency contact information
+              </h3>
+              <span className="text-[13px] text-muted">Optional</span>
             </div>
             {contacts.length === 0 ? (
               <button
                 type="button"
                 onClick={() => setContacts([newContactDraft()])}
-                className="flex items-center gap-1 text-xs font-medium text-brand hover:underline"
+                className="text-sm font-semibold text-ink underline decoration-line underline-offset-4 hover:decoration-ink"
               >
-                <Plus size={14} weight="bold" />
-                Add emergency contact
+                + Add emergency contact
               </button>
             ) : (
               <>
-                <div className="divide-y divide-line">
+                <div className="space-y-6">
                   {contacts.map((contact, i) => (
                     <div
                       key={contact.id}
-                      className={`space-y-3 py-4 ${i === 0 ? "pt-0" : ""}`}
+                      className="rounded-2xl border border-line p-5"
                     >
-                      <div className="flex items-center justify-between">
-                        <p className="text-xs font-medium text-muted">
+                      <div className="mb-4 flex items-center justify-between">
+                        <p className="text-[13px] font-medium text-muted">
                           {i === 0 ? "Primary contact" : `Contact ${i + 1}`}
                         </p>
                         <button
                           type="button"
                           onClick={() => removeContact(i)}
                           aria-label="Remove contact"
-                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-red-600"
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-mist hover:text-red-600"
                         >
                           <X size={14} weight="bold" />
                         </button>
                       </div>
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div>
-                          <label className="mb-1.5 block text-xs font-medium text-muted">
-                            Name
-                          </label>
+                          <label className={softLabelCls}>Name</label>
                           <input
                             value={contact.name}
                             onChange={(e) =>
                               updateContact(i, { name: e.target.value })
                             }
-                            className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+                            className={softInputCls}
                           />
                         </div>
                         <div>
-                          <label className="mb-1.5 block text-xs font-medium text-muted">
+                          <label className={softLabelCls}>
                             Relation to tenant
                           </label>
                           <Select
@@ -621,7 +687,7 @@ export default function AddTenant() {
                               value: r,
                               label: r,
                             }))}
-                            className="w-full"
+                            className="w-full rounded-xl! border-line! py-3.5!"
                           />
                           <AnimatePresence initial={false}>
                             {contact.relation === "Other" && (
@@ -644,17 +710,15 @@ export default function AddTenant() {
                                     })
                                   }
                                   placeholder="Specify relation"
-                                  className="mt-2 w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+                                  className={`mt-2 ${softInputCls}`}
                                 />
                               </motion.div>
                             )}
                           </AnimatePresence>
                         </div>
                       </div>
-                      <div>
-                        <label className="mb-1.5 block text-xs font-medium text-muted">
-                          Phone number(s)
-                        </label>
+                      <div className="mt-3">
+                        <label className={softLabelCls}>Phone number(s)</label>
                         <PhoneListEditor
                           phones={contact.phones}
                           onChange={(next) =>
@@ -670,166 +734,125 @@ export default function AddTenant() {
                   onClick={() =>
                     setContacts((prev) => [...prev, newContactDraft()])
                   }
-                  className="mt-3 flex items-center gap-1 text-xs font-medium text-brand hover:underline"
+                  className="mt-4 text-sm font-semibold text-ink underline decoration-line underline-offset-4 hover:decoration-ink"
                 >
-                  <Plus size={14} weight="bold" />
-                  Add another emergency contact
+                  + Add another emergency contact
                 </button>
               </>
             )}
-          </section>
+          </div>
         </div>
 
         {/* Property */}
-        <div className="space-y-6 border-t border-line pt-10">
-          <section>
-            <SectionLabel className="mb-3">Property placement</SectionLabel>
-            <p className="mb-3 text-xs text-muted">
-              Which room will {name.trim() || "this tenant"} occupy, and from
-              when?
-            </p>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-muted">
-                  Move-in date
-                </label>
-                <DatePicker value={moveInDate} onChange={setMoveInDate} />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-muted">
-                  Room (vacant only)
-                </label>
-                {roomTypeConfigs.length === 0 ? (
-                  <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-line px-3.5 py-2.5">
-                    <div className="flex items-center gap-2.5">
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-mist text-muted">
-                        <DoorOpen size={16} weight="duotone" />
-                      </span>
-                      <p className="text-xs text-muted">
-                        No room types set up.
-                      </p>
-                    </div>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => setAddingRoomType(true)}
-                      className="shrink-0"
-                    >
-                      Add room type
-                    </Button>
+        <div className="space-y-8">
+          <Heading
+            title="Property placement"
+            subtitle={`Which room will ${name.trim() || "this tenant"} occupy, and from when?`}
+          />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className={softLabelCls}>Move-in date</label>
+              <DatePicker value={moveInDate} onChange={setMoveInDate} />
+            </div>
+            <div>
+              <label className={softLabelCls}>Room (vacant only)</label>
+              {roomTypeConfigs.length === 0 ? (
+                <div className="flex items-center justify-between gap-3 rounded-2xl border border-dashed border-line px-4 py-3">
+                  <div className="flex items-center gap-2.5">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-mist text-muted">
+                      <DoorOpen size={16} weight="duotone" />
+                    </span>
+                    <p className="text-xs text-muted">No room types set up.</p>
                   </div>
-                ) : (
-                  <RoomPicker
-                    rooms={vacantRooms}
-                    selected={selectedRoom}
-                    onSelect={selectRoom}
-                  />
-                )}
-              </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setAddingRoomType(true)}
+                    className="shrink-0"
+                  >
+                    Add room type
+                  </Button>
+                </div>
+              ) : (
+                <RoomPicker
+                  rooms={vacantRooms}
+                  selected={selectedRoom}
+                  onSelect={selectRoom}
+                />
+              )}
             </div>
-          </section>
+          </div>
 
-          <section className="border-t border-line pt-6">
-            <SectionLabel className="mb-3">Rent</SectionLabel>
-            <div className="flex items-center justify-between rounded-lg bg-mist px-3.5 py-3">
-              <span className="text-sm text-muted">
-                Agreed rent, set by the room selected above
-              </span>
-              <span className="text-sm font-semibold text-ink">
-                {selectedRoom ? `${formatCurrency(selectedRoom.rent)}/mo` : "—"}
-              </span>
-            </div>
-          </section>
+          <div className="flex items-center justify-between rounded-2xl bg-mist px-5 py-4">
+            <span className="text-sm text-muted">
+              Agreed rent, set by the room selected above
+            </span>
+            <span className="text-[15px] font-semibold text-ink">
+              {selectedRoom ? `${formatCurrency(selectedRoom.rent)}/mo` : "—"}
+            </span>
+          </div>
         </div>
 
         {/* Deposit */}
-        <div className="space-y-6 border-t border-line pt-10">
-          <section>
-            <SectionLabel className="mb-3">Security deposit</SectionLabel>
-            <p className="mb-3 text-xs text-muted">
-              {selectedRoom
+        <div className="space-y-8">
+          <Heading
+            title="Security deposit"
+            subtitle={
+              selectedRoom
                 ? `Does this tenant need to pay ${selectedRoom.roomType}'s security deposit upfront?`
-                : "Does this tenant need to pay a security deposit upfront? Select a room above first — the amount is set by that room type."}
-            </p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => setWantsDeposit("no")}
-                className={`rounded-lg border p-4 text-left transition-colors ${
-                  wantsDeposit === "no"
-                    ? "border-brand bg-brand-soft"
-                    : "border-line hover:bg-mist"
-                }`}
-              >
-                <p
-                  className={`text-sm font-medium ${wantsDeposit === "no" ? "text-brand" : "text-ink"}`}
-                >
-                  Proceed without deposit
-                </p>
-                <p className="mt-0.5 text-xs text-muted">
-                  No deposit — proceed directly with the lease.
-                </p>
-              </button>
-              <button
-                type="button"
-                disabled={!selectedRoom}
-                onClick={() => setWantsDeposit("yes")}
-                className={`rounded-lg border p-4 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                  wantsDeposit === "yes"
-                    ? "border-brand bg-brand-soft"
-                    : "border-line hover:bg-mist"
-                }`}
-              >
-                <p
-                  className={`text-sm font-medium ${wantsDeposit === "yes" ? "text-brand" : "text-ink"}`}
-                >
-                  Charge security deposit
-                </p>
-                <p className="mt-0.5 text-xs text-muted">
-                  Collected as a separate upfront payment.
-                </p>
-              </button>
-            </div>
-          </section>
+                : "Does this tenant need to pay a security deposit upfront? Select a room above first — the amount is set by that room type."
+            }
+          />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <ChoiceCard
+              selected={wantsDeposit === "no"}
+              onClick={() => setWantsDeposit("no")}
+              title="Proceed without deposit"
+              description="No deposit — proceed directly with the lease."
+            />
+            <ChoiceCard
+              selected={wantsDeposit === "yes"}
+              disabled={!selectedRoom}
+              onClick={() => setWantsDeposit("yes")}
+              title="Charge security deposit"
+              description="Collected as a separate upfront payment."
+            />
+          </div>
 
           {wantsDeposit === "yes" && (
-            <section className="border-t border-line pt-6">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-muted">
-                    Deposit amount (K)
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={depositAmount}
-                    onChange={(e) =>
-                      setDepositAmount(Number(e.target.value) || 0)
-                    }
-                    className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
-                  />
-                  <p className="mt-1.5 text-[11px] text-muted">
-                    Defaults to {selectedRoom?.roomType}'s configured deposit —
-                    edit if this tenant's terms differ.
-                  </p>
-                </div>
+            <div className="space-y-5">
+              <div>
+                <label className={softLabelCls}>Deposit amount (K)</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={depositAmount}
+                  onChange={(e) =>
+                    setDepositAmount(Number(e.target.value) || 0)
+                  }
+                  className={softInputCls}
+                />
+                <p className="mt-1.5 text-[13px] text-muted">
+                  Defaults to {selectedRoom?.roomType}'s configured deposit —
+                  edit if this tenant's terms differ.
+                </p>
               </div>
 
-              <p className="mt-4 text-sm font-medium text-ink">
-                Was the deposit collected today?
-              </p>
-              <div className="mt-2.5">
-                <YesNo
-                  value={depositCollectedToday}
-                  onChange={setDepositCollectedToday}
-                />
+              <div>
+                <p className="text-[15px] font-medium text-ink">
+                  Was the deposit collected today?
+                </p>
+                <div className="mt-2.5">
+                  <YesNo
+                    value={depositCollectedToday}
+                    onChange={setDepositCollectedToday}
+                  />
+                </div>
               </div>
               {depositCollectedToday === "yes" && (
-                <div className="mt-3">
-                  <label className="mb-1.5 block text-xs font-medium text-muted">
-                    Payment method
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className={softLabelCls}>Payment method</label>
+                  <div className="flex gap-2">
                     {depositMethods.map(({ id, label, Icon }) => (
                       <button
                         key={id}
@@ -837,208 +860,169 @@ export default function AddTenant() {
                         onClick={() =>
                           setDepositCollectMethod(id as "mobile" | "cash")
                         }
-                        className={`flex flex-col items-center gap-1.5 rounded-lg border py-2.5 text-xs font-medium transition-colors ${
+                        className={`flex items-center gap-2 rounded-full border px-4 py-2.5 text-sm font-medium transition-all ${
                           depositCollectMethod === id
-                            ? "border-brand bg-brand-soft text-brand"
-                            : "border-line text-muted hover:bg-mist"
+                            ? "border-ink bg-ink text-white"
+                            : "border-line text-ink hover:border-ink/50"
                         }`}
                       >
-                        <Icon size={18} weight="duotone" />
+                        <Icon size={16} weight="duotone" />
                         {label}
                       </button>
                     ))}
                   </div>
                 </div>
               )}
-            </section>
+            </div>
           )}
         </div>
 
         {/* Lease terms */}
-        <div className="space-y-6 border-t border-line pt-10">
-          <section>
-            <SectionLabel className="mb-3">
-              Lease &amp; billing terms
-            </SectionLabel>
-            <p className="mb-3 text-xs text-muted">
-              Pre-filled from your property's billing settings — adjust for this
-              tenant if their terms are different.
-            </p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <div className="rounded-lg bg-mist px-3.5 py-2.5">
-                <p className="text-[11px] text-muted">Billing cycle</p>
-                <p className="mt-0.5 text-sm font-semibold text-ink">
-                  {billingPeriod}
-                </p>
-              </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-muted">
-                  Rent due day
-                </label>
-                <NumberStepper
-                  value={tenantDueDay}
-                  onChange={setTenantDueDay}
-                  min={1}
-                  max={31}
-                  suffix="Day of month"
-                />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-muted">
-                  Grace period
-                </label>
-                <NumberStepper
-                  value={tenantGracePeriodDays}
-                  onChange={setTenantGracePeriodDays}
-                  min={0}
-                  max={30}
-                  suffix="Days"
-                />
-              </div>
+        <div className="space-y-8">
+          <Heading
+            title="Lease & billing terms"
+            subtitle="Pre-filled from your property's billing settings — adjust for this tenant if their terms are different."
+          />
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+            <div className="rounded-2xl bg-mist px-4 py-3.5">
+              <p className="text-[11px] text-muted">Billing cycle</p>
+              <p className="mt-0.5 text-[15px] font-semibold text-ink">
+                {billingPeriod}
+              </p>
             </div>
-            <p className="mt-2 text-[11px] text-muted">
-              {roomDailyRate !== null
-                ? `Late fee once the grace period lapses: ${formatCurrency(roomDailyRate)}/day, this room type's rent ÷ days in the month.`
-                : "Select a room above to see this room type's daily late-fee rate."}
-            </p>
-          </section>
+            <div>
+              <label className={softLabelCls}>Rent due day</label>
+              <NumberStepper
+                value={tenantDueDay}
+                onChange={setTenantDueDay}
+                min={1}
+                max={31}
+                suffix="Day of month"
+              />
+            </div>
+            <div>
+              <label className={softLabelCls}>Grace period</label>
+              <NumberStepper
+                value={tenantGracePeriodDays}
+                onChange={setTenantGracePeriodDays}
+                min={0}
+                max={30}
+                suffix="Days"
+              />
+            </div>
+          </div>
+          <p className="text-[13px] text-muted">
+            {roomDailyRate !== null
+              ? `Late fee once the grace period lapses: ${formatCurrency(roomDailyRate)}/day, this room type's rent ÷ days in the month.`
+              : "Select a room above to see this room type's daily late-fee rate."}
+          </p>
 
-          <section className="border-t border-line pt-6">
-            {isMidCycle && prorata ? (
-              <div className="rounded-lg border border-line p-4">
-                <div className="flex items-center gap-2">
-                  <CalendarBlank
-                    size={16}
-                    weight="duotone"
-                    className="text-muted"
-                  />
-                  <p className="text-sm font-medium text-ink">
-                    Mid-cycle move-in
+          {isMidCycle && prorata ? (
+            <div className="rounded-2xl border border-line p-5">
+              <div className="flex items-center gap-2">
+                <CalendarBlank
+                  size={16}
+                  weight="duotone"
+                  className="text-muted"
+                />
+                <p className="text-[15px] font-semibold text-ink">
+                  Mid-cycle move-in
+                </p>
+              </div>
+              <p className="mt-1.5 text-sm text-muted">
+                Partial month: {prorata.remainingDays} of {prorata.totalDays}{" "}
+                days at {formatCurrency(prorata.dailyRate)}/day.
+              </p>
+
+              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <ChoiceCard
+                  selected={prorataChoice === "charge"}
+                  onClick={() => setProrataChoice("charge")}
+                  title="Charge pro-rata"
+                  description={`${formatCurrency(prorata.amount)} for the partial month`}
+                />
+                <ChoiceCard
+                  selected={prorataChoice === "waive"}
+                  onClick={() => setProrataChoice("waive")}
+                  title="Waive partial month"
+                  description="First payment starts next month"
+                />
+              </div>
+
+              {prorataChoice === "charge" && (
+                <div className="mt-4">
+                  <p className="text-[13px] font-medium text-muted">
+                    Has the tenant already paid this?
                   </p>
+                  <div className="mt-2">
+                    <YesNo
+                      value={prorataCollectedToday}
+                      onChange={setProrataCollectedToday}
+                    />
+                  </div>
                 </div>
-                <p className="mt-1.5 text-xs text-muted">
-                  Partial month: {prorata.remainingDays} of {prorata.totalDays}{" "}
-                  days at {formatCurrency(prorata.dailyRate)}/day.
-                </p>
-
-                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => setProrataChoice("charge")}
-                    className={`rounded-lg border p-3 text-left transition-colors ${
-                      prorataChoice === "charge"
-                        ? "border-brand bg-brand-soft"
-                        : "border-line hover:bg-mist"
-                    }`}
-                  >
-                    <p
-                      className={`text-sm font-medium ${prorataChoice === "charge" ? "text-brand" : "text-ink"}`}
-                    >
-                      Charge pro-rata
-                    </p>
-                    <p className="mt-0.5 text-xs text-muted">
-                      {formatCurrency(prorata.amount)} for the partial month
-                    </p>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setProrataChoice("waive")}
-                    className={`rounded-lg border p-3 text-left transition-colors ${
-                      prorataChoice === "waive"
-                        ? "border-brand bg-brand-soft"
-                        : "border-line hover:bg-mist"
-                    }`}
-                  >
-                    <p
-                      className={`text-sm font-medium ${prorataChoice === "waive" ? "text-brand" : "text-ink"}`}
-                    >
-                      Waive partial month
-                    </p>
-                    <p className="mt-0.5 text-xs text-muted">
-                      First payment starts next month
-                    </p>
-                  </button>
-                </div>
-
-                {prorataChoice === "charge" && (
-                  <div className="mt-3">
-                    <p className="text-xs font-medium text-muted">
-                      Has the tenant already paid this?
-                    </p>
-                    <div className="mt-1.5">
-                      <YesNo
-                        value={prorataCollectedToday}
-                        onChange={setProrataCollectedToday}
-                      />
+              )}
+            </div>
+          ) : (
+            <div>
+              <p className="text-[15px] font-medium text-ink">Rent</p>
+              <p className="mt-0.5 text-sm text-muted">
+                Was any rent collected today?
+              </p>
+              <div className="mt-2.5">
+                <YesNo
+                  value={rentCollectedToday}
+                  onChange={setRentCollectedToday}
+                />
+              </div>
+              {rentCollectedToday === "yes" && (
+                <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className={softLabelCls}>Amount (K)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={rentAmountCollected}
+                      onChange={(e) =>
+                        setRentAmountCollected(Number(e.target.value) || 0)
+                      }
+                      className={softInputCls}
+                    />
+                  </div>
+                  <div>
+                    <label className={softLabelCls}>Payment method</label>
+                    <div className="flex gap-2">
+                      {(["mobile", "cash"] as const).map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setRentCollectMethod(m)}
+                          className={`rounded-full border px-4 py-2.5 text-sm font-medium transition-all ${
+                            rentCollectMethod === m
+                              ? "border-ink bg-ink text-white"
+                              : "border-line text-ink hover:border-ink/50"
+                          }`}
+                        >
+                          {m === "mobile" ? "Mobile money" : "Cash"}
+                        </button>
+                      ))}
                     </div>
                   </div>
-                )}
-              </div>
-            ) : (
-              <div>
-                <p className="text-sm font-medium text-ink">Rent</p>
-                <p className="mt-0.5 text-xs text-muted">
-                  Was any rent collected today?
-                </p>
-                <div className="mt-2.5">
-                  <YesNo
-                    value={rentCollectedToday}
-                    onChange={setRentCollectedToday}
-                  />
                 </div>
-                {rentCollectedToday === "yes" && (
-                  <div className="mt-2.5 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div>
-                      <label className="mb-1.5 block text-xs font-medium text-muted">
-                        Amount (K)
-                      </label>
-                      <input
-                        type="number"
-                        min={0}
-                        value={rentAmountCollected}
-                        onChange={(e) =>
-                          setRentAmountCollected(Number(e.target.value) || 0)
-                        }
-                        className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1.5 block text-xs font-medium text-muted">
-                        Payment method
-                      </label>
-                      <div className="grid grid-cols-2 gap-2">
-                        {(["mobile", "cash"] as const).map((m) => (
-                          <button
-                            key={m}
-                            type="button"
-                            onClick={() => setRentCollectMethod(m)}
-                            className={`rounded-lg border py-2.5 text-xs font-medium transition-colors ${
-                              rentCollectMethod === m
-                                ? "border-brand bg-brand-soft text-brand"
-                                : "border-line text-muted hover:bg-mist"
-                            }`}
-                          >
-                            {m === "mobile" ? "Mobile money" : "Cash"}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </section>
+              )}
+            </div>
+          )}
 
-          <section className="border-t border-line pt-6">
-            <SectionLabel className="mb-3">Notes</SectionLabel>
+          <div>
+            <h3 className="mb-3 text-[15px] font-semibold text-ink">Notes</h3>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={3}
               placeholder="Payment arrangements, special circumstances, anything worth remembering about this tenant. Landlord-only."
-              className="w-full resize-none rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+              className={`resize-none ${softInputCls}`}
             />
-          </section>
+          </div>
         </div>
       </div>
 
