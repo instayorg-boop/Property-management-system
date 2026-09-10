@@ -1093,6 +1093,23 @@ export default function AddTenant() {
     navigate(`/tenants/${created.id}`);
   };
 
+  // A single continuous scroll with no discrete steps has no natural sense of "how much is
+  // left" — this tracks scroll position on the dashboard shell's own scroll container (this
+  // page has no scroll container of its own) and renders as a thin fill bar up top, so the form
+  // doesn't read as potentially endless.
+  const [scrollProgress, setScrollProgress] = useState(0);
+  useEffect(() => {
+    const scrollEl = document.querySelector("main");
+    if (!scrollEl) return;
+    const onScroll = () => {
+      const max = scrollEl.scrollHeight - scrollEl.clientHeight;
+      setScrollProgress(max > 0 ? Math.min(1, scrollEl.scrollTop / max) : 1);
+    };
+    onScroll();
+    scrollEl.addEventListener("scroll", onScroll);
+    return () => scrollEl.removeEventListener("scroll", onScroll);
+  }, []);
+
   if (isEditing && !tenantsReady) return null;
 
   if (isEditing && !editingTenant) {
@@ -1116,7 +1133,15 @@ export default function AddTenant() {
 
   return (
     <>
+      <div className="fixed inset-x-0 top-0 z-40 h-1 bg-line/60 lg:left-64">
+        <div
+          className="h-full bg-brand transition-[width] duration-150 ease-out"
+          style={{ width: `${Math.round(scrollProgress * 100)}%` }}
+        />
+      </div>
+
       <PageHeader
+        align="center"
         title={isEditing ? "Edit tenant" : "Add tenant"}
         description={
           isEditing
@@ -1125,10 +1150,8 @@ export default function AddTenant() {
         }
       />
 
-      {/* pb-28 clears the sticky footer below; the footer itself is `sticky`, not `fixed`, so it
-          stays inside this scroll container's own width — flush with the form column, never
-          spanning under the sidebar or the full viewport. */}
-      <div className="mx-auto max-w-2xl px-4 pb-28 sm:px-8">
+      {/* pb-24 clears the fixed footer below. */}
+      <div className="mx-auto max-w-2xl px-4 pb-24 sm:px-8">
         {!isEditing && (draftRestored || draftSavedAt) && (
           <div className="mb-6 flex items-center justify-between rounded-lg bg-mist px-4 py-2.5 text-xs text-muted">
             <span>
@@ -1653,28 +1676,25 @@ export default function AddTenant() {
             )}
           </div>
         </section>
+      </div>
 
-        {/* Sticky, not fixed — this footer belongs to the form's own scroll container (the main
-            content column), so it sits flush with the form width and never spans under the
-            sidebar or the full browser width. */}
-        <div className="sticky bottom-0 z-30 -mx-4 mt-10 border-t border-line bg-paper/95 px-4 py-3 backdrop-blur sm:-mx-8 sm:px-8">
-          <div className="flex gap-2">
-            <Button
-              variant="secondary"
-              onClick={() => navigate(-1)}
-              className="flex-1 py-3 sm:flex-none sm:px-8"
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              onClick={finalizeAndSave}
-              disabled={!canSubmit}
-              className="flex-1 py-3"
-            >
-              {isEditing ? "Save changes" : "Add tenant"}
-            </Button>
-          </div>
+      {/* `fixed`, not `sticky` — a sidebar-aware left offset (matching the sidebar's own lg:w-64)
+          keeps it off the sidebar without depending on being nested inside the scroll container,
+          which is what let it drift during scroll before. Compact, centered buttons instead of a
+          full-width pair — this is a two-button confirm bar, not a page-width action row. */}
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-paper/95 px-4 py-3 backdrop-blur lg:left-64">
+        <div className="flex justify-center gap-3">
+          <Button variant="secondary" size="sm" onClick={() => navigate(-1)}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={finalizeAndSave}
+            disabled={!canSubmit}
+          >
+            {isEditing ? "Save changes" : "Add tenant"}
+          </Button>
         </div>
       </div>
 
