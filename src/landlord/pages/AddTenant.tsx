@@ -20,6 +20,10 @@ import AddRoomTypeDrawer from "../components/AddRoomTypeDrawer";
 import Button from "../components/Button";
 import Select from "../components/Select";
 import DatePicker from "../components/DatePicker";
+import FieldLabel, { FieldError } from "../components/FieldLabel";
+import PhoneNumberInput, {
+  validatePhone,
+} from "../components/PhoneNumberInput";
 import {
   useTenants,
   formatCurrency,
@@ -116,7 +120,6 @@ function Divider() {
 
 const inputCls =
   "w-full rounded-lg border border-line px-3 py-2.5 text-sm text-ink placeholder-muted/70 outline-none focus:border-brand focus:ring-1 focus:ring-brand";
-const labelCls = "mb-1.5 block text-xs font-medium text-muted";
 
 /** A radio-style choice card — full-width clickable block with the option's title/description on
  * the left and an explicit radio circle on the right (filled brand-blue when selected, empty gray
@@ -212,36 +215,47 @@ function YesNo({
 function PhoneListEditor({
   phones,
   onChange,
+  showErrors,
 }: {
   phones: string[];
   onChange: (phones: string[]) => void;
+  /** Only surface per-row format errors once the form's actually been submitted — not while a
+   * number is simply mid-typing. */
+  showErrors?: boolean;
 }) {
   return (
     <div className="space-y-2">
-      {phones.map((p, i) => (
-        <div key={i} className="flex items-center gap-2">
-          <input
-            value={p}
-            onChange={(e) => {
-              const next = [...phones];
-              next[i] = e.target.value;
-              onChange(next);
-            }}
-            placeholder="e.g. 0977 123 456"
-            className={`flex-1 ${inputCls}`}
-          />
-          {phones.length > 1 && (
-            <button
-              type="button"
-              onClick={() => onChange(phones.filter((_, idx) => idx !== i))}
-              aria-label="Remove number"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-red-600"
-            >
-              <X size={14} weight="bold" />
-            </button>
-          )}
-        </div>
-      ))}
+      {phones.map((p, i) => {
+        const error = showErrors ? validatePhone(p) : null;
+        return (
+          <div key={i}>
+            <div className="flex items-center gap-2">
+              <div className="flex-1">
+                <PhoneNumberInput
+                  value={p}
+                  onChange={(next) => {
+                    const nextPhones = [...phones];
+                    nextPhones[i] = next;
+                    onChange(nextPhones);
+                  }}
+                  error={error}
+                />
+              </div>
+              {phones.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => onChange(phones.filter((_, idx) => idx !== i))}
+                  aria-label="Remove number"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-red-600"
+                >
+                  <X size={14} weight="bold" />
+                </button>
+              )}
+            </div>
+            {error && <FieldError>{error}</FieldError>}
+          </div>
+        );
+      })}
       <button
         type="button"
         onClick={() => onChange([...phones, ""])}
@@ -711,6 +725,9 @@ export default function AddTenant() {
   const [notes, setNotes] = useState(editingTenant?.notes ?? "");
   const [documents, setDocuments] = useState<File[]>([]);
   const [draftRestored, setDraftRestored] = useState(false);
+  // True once the landlord has tried to submit at least once — field errors only show up after
+  // that, not while a required field is simply still empty on first render.
+  const [submitAttempted, setSubmitAttempted] = useState(false);
   const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
   const restoringDraft = useRef(true);
 
@@ -970,11 +987,22 @@ export default function AddTenant() {
       daysInMonth(new Date().getFullYear(), new Date().getMonth())
     : null;
 
+  const hasValidPhone = phones.some(
+    (p) => p.trim().length > 0 && !validatePhone(p),
+  );
+  const phonesAllValid = phones.every((p) => !validatePhone(p));
   const canSubmit =
-    firstName.trim().length > 0 && lastName.trim().length > 0 && !!selectedRoom;
+    firstName.trim().length > 0 &&
+    lastName.trim().length > 0 &&
+    !!selectedRoom &&
+    hasValidPhone &&
+    phonesAllValid;
 
   const finalizeAndSave = () => {
-    if (!canSubmit || !selectedRoom) return;
+    if (!canSubmit || !selectedRoom) {
+      setSubmitAttempted(true);
+      return;
+    }
 
     if (isEditing && editingTenant) {
       updateTenant(editingTenant.id, {
@@ -1152,6 +1180,11 @@ export default function AddTenant() {
 
       {/* pb-24 clears the fixed footer below. */}
       <div className="mx-auto max-w-2xl px-4 pb-24 sm:px-8">
+        {submitAttempted && !canSubmit && (
+          <div className="mb-6 rounded-lg bg-red-50 px-4 py-2.5 text-xs font-medium text-red-700">
+            A few required fields still need attention — they're marked below.
+          </div>
+        )}
         {!isEditing && (draftRestored || draftSavedAt) && (
           <div className="mb-6 flex items-center justify-between rounded-lg bg-mist px-4 py-2.5 text-xs text-muted">
             <span>
@@ -1178,7 +1211,7 @@ export default function AddTenant() {
           <div className="mt-4 space-y-4">
             <div className="grid grid-cols-[100px_1fr_1fr] gap-3">
               <div>
-                <label className={labelCls}>Prefix</label>
+                <FieldLabel>Prefix</FieldLabel>
                 <Select
                   value={prefix}
                   onChange={setPrefix}
@@ -1187,27 +1220,42 @@ export default function AddTenant() {
                 />
               </div>
               <div>
-                <label className={labelCls}>First name</label>
+                <FieldLabel required>First name</FieldLabel>
                 <input
                   value={firstName}
                   onChange={(e) => setFirstName(e.target.value)}
                   placeholder="e.g. Chanda"
-                  className={inputCls}
+                  className={`${inputCls} ${submitAttempted && !firstName.trim() ? "border-red-400" : ""}`}
                 />
+                {submitAttempted && !firstName.trim() && (
+                  <FieldError>First name is required.</FieldError>
+                )}
               </div>
               <div>
-                <label className={labelCls}>Last name</label>
+                <FieldLabel required>Last name</FieldLabel>
                 <input
                   value={lastName}
                   onChange={(e) => setLastName(e.target.value)}
                   placeholder="e.g. Mwansa"
-                  className={inputCls}
+                  className={`${inputCls} ${submitAttempted && !lastName.trim() ? "border-red-400" : ""}`}
                 />
+                {submitAttempted && !lastName.trim() && (
+                  <FieldError>Last name is required.</FieldError>
+                )}
               </div>
             </div>
             <div>
-              <label className={labelCls}>Phone number(s)</label>
-              <PhoneListEditor phones={phones} onChange={setPhones} />
+              <FieldLabel required>Phone number(s)</FieldLabel>
+              <PhoneListEditor
+                phones={phones}
+                onChange={setPhones}
+                showErrors={submitAttempted}
+              />
+              {submitAttempted && !hasValidPhone && (
+                <FieldError>
+                  At least one valid phone number is required.
+                </FieldError>
+              )}
             </div>
           </div>
         </section>
@@ -1253,7 +1301,7 @@ export default function AddTenant() {
                     </div>
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div>
-                        <label className={labelCls}>Name</label>
+                        <FieldLabel>Name</FieldLabel>
                         <input
                           value={contact.name}
                           onChange={(e) =>
@@ -1263,7 +1311,7 @@ export default function AddTenant() {
                         />
                       </div>
                       <div>
-                        <label className={labelCls}>Relation to tenant</label>
+                        <FieldLabel>Relation to tenant</FieldLabel>
                         <Select
                           value={contact.relation}
                           onChange={(v) =>
@@ -1304,10 +1352,11 @@ export default function AddTenant() {
                       </div>
                     </div>
                     <div>
-                      <label className={labelCls}>Phone number(s)</label>
+                      <FieldLabel>Phone number(s)</FieldLabel>
                       <PhoneListEditor
                         phones={contact.phones}
                         onChange={(next) => updateContact(i, { phones: next })}
+                        showErrors={submitAttempted}
                       />
                     </div>
                   </div>
@@ -1342,12 +1391,12 @@ export default function AddTenant() {
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             {!isEditing && (
               <div>
-                <label className={labelCls}>Move-in date</label>
+                <FieldLabel required>Move-in date</FieldLabel>
                 <DatePicker value={moveInDate} onChange={setMoveInDate} />
               </div>
             )}
             <div className={isEditing ? "sm:col-span-2" : ""}>
-              <label className={labelCls}>Room</label>
+              <FieldLabel required>Room</FieldLabel>
               {roomTypeConfigs.length === 0 ? (
                 <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-line px-3.5 py-2.5">
                   <div className="flex items-center gap-2.5">
@@ -1371,6 +1420,9 @@ export default function AddTenant() {
                   selected={selectedRoom}
                   onSelect={selectRoom}
                 />
+              )}
+              {submitAttempted && !selectedRoom && (
+                <FieldError>A room is required.</FieldError>
               )}
             </div>
           </div>
@@ -1417,9 +1469,7 @@ export default function AddTenant() {
             <div className="mt-4 space-y-4">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
-                  <label className={labelCls}>
-                    Security deposit amount (K)
-                  </label>
+                  <FieldLabel required>Security deposit amount (K)</FieldLabel>
                   <input
                     type="number"
                     min={0}
@@ -1438,7 +1488,7 @@ export default function AddTenant() {
                 </div>
                 {isEditing && (
                   <div>
-                    <label className={labelCls}>Security deposit date</label>
+                    <FieldLabel required>Security deposit date</FieldLabel>
                     <DatePicker value={depositDate} onChange={setDepositDate} />
                   </div>
                 )}
@@ -1446,7 +1496,7 @@ export default function AddTenant() {
 
               {isEditing ? (
                 <div>
-                  <label className={labelCls}>Security deposit method</label>
+                  <FieldLabel required>Security deposit method</FieldLabel>
                   <div className="flex gap-2">
                     {depositMethods.map(({ id, label, Icon }) => (
                       <Chip
@@ -1475,7 +1525,7 @@ export default function AddTenant() {
                   </div>
                   {depositCollectedToday === "yes" && (
                     <div>
-                      <label className={labelCls}>Payment method</label>
+                      <FieldLabel required>Payment method</FieldLabel>
                       <div className="flex gap-2">
                         {depositMethods
                           .filter((m) => m.id !== "bank")
@@ -1514,7 +1564,7 @@ export default function AddTenant() {
               </p>
             </div>
             <div>
-              <label className={labelCls}>Rent due day</label>
+              <FieldLabel required>Rent due day</FieldLabel>
               <NumberStepper
                 value={tenantDueDay}
                 onChange={setTenantDueDay}
@@ -1524,7 +1574,7 @@ export default function AddTenant() {
               />
             </div>
             <div>
-              <label className={labelCls}>Grace period</label>
+              <FieldLabel required>Grace period</FieldLabel>
               <NumberStepper
                 value={tenantGracePeriodDays}
                 onChange={setTenantGracePeriodDays}
@@ -1604,7 +1654,7 @@ export default function AddTenant() {
                   {rentCollectedToday === "yes" && (
                     <div className="mt-2.5 grid grid-cols-1 gap-4 sm:grid-cols-2">
                       <div>
-                        <label className={labelCls}>Amount (K)</label>
+                        <FieldLabel required>Amount (K)</FieldLabel>
                         <input
                           type="number"
                           min={0}
@@ -1616,7 +1666,7 @@ export default function AddTenant() {
                         />
                       </div>
                       <div>
-                        <label className={labelCls}>Payment method</label>
+                        <FieldLabel required>Payment method</FieldLabel>
                         <div className="flex gap-2">
                           {(["mobile", "cash"] as const).map((m) => (
                             <Chip
@@ -1680,19 +1730,17 @@ export default function AddTenant() {
 
       {/* `fixed`, not `sticky` — a sidebar-aware left offset (matching the sidebar's own lg:w-64)
           keeps it off the sidebar without depending on being nested inside the scroll container,
-          which is what let it drift during scroll before. Compact, centered buttons instead of a
-          full-width pair — this is a two-button confirm bar, not a page-width action row. */}
+          which is what let it drift during scroll before. Compact buttons, right-aligned within
+          the same max-w-2xl column the form itself sits in — not stretched, not centered. */}
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-paper/95 px-4 py-3 backdrop-blur lg:left-64">
-        <div className="flex justify-center gap-3">
+        <div className="mx-auto flex max-w-2xl justify-end gap-3 sm:px-4">
           <Button variant="secondary" size="sm" onClick={() => navigate(-1)}>
             Cancel
           </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={finalizeAndSave}
-            disabled={!canSubmit}
-          >
+          {/* Not `disabled` — a disabled button can't be clicked, which means it can never fire
+              the validation feedback above. Always clickable; finalizeAndSave itself decides
+              whether to actually submit or just switch on the inline errors. */}
+          <Button variant="primary" size="sm" onClick={finalizeAndSave}>
             {isEditing ? "Save changes" : "Add tenant"}
           </Button>
         </div>
