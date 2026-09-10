@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   DeviceMobile,
   Money,
+  Bank,
   CaretDown,
   DoorOpen,
   CalendarBlank,
@@ -33,7 +34,12 @@ import {
   type VacantRoom,
 } from "../RoomsContext";
 import { useSettings } from "../SettingsContext";
-import { uploadTenantDocument } from "../../lib/tenantDocuments";
+import {
+  uploadTenantDocument,
+  listTenantDocuments,
+  deleteTenantDocument,
+  type TenantDocument,
+} from "../../lib/tenantDocuments";
 
 /** A working copy of an emergency contact while the form is open — `relationOther` is always a
  * string here (never undefined) so the "Other" text input can stay a controlled input. */
@@ -57,6 +63,16 @@ function newContactDraft(): ContactDraft {
     relationOther: "",
     phones: [""],
   };
+}
+
+function toContactDrafts(contacts: EmergencyContact[]): ContactDraft[] {
+  return contacts.length
+    ? contacts.map((c) => ({
+        ...c,
+        relationOther: c.relationOther ?? "",
+        phones: c.phones.length ? c.phones : [""],
+      }))
+    : [newContactDraft()];
 }
 
 function cleanContacts(drafts: ContactDraft[]): EmergencyContact[] {
@@ -165,7 +181,9 @@ function Chip({
       type="button"
       onClick={onClick}
       className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
-        selected ? "bg-brand text-white" : "bg-mist text-muted hover:bg-line hover:text-ink"
+        selected
+          ? "bg-brand text-white"
+          : "bg-mist text-muted hover:bg-line hover:text-ink"
       }`}
     >
       {children}
@@ -247,6 +265,16 @@ function parseDateInputLocal(value: string): Date {
   return new Date(y, (m || 1) - 1, d || 1);
 }
 
+/** Tenant.depositDate/moveInDate are stored as a formatted display string (e.g. "12 Jan 2025"),
+ * not ISO — DatePicker needs ISO, so this converts back, falling back to today if unparseable. */
+function toIsoSafe(display: string | undefined): string {
+  if (!display) return todayISO();
+  const parsed = new Date(display);
+  return Number.isNaN(parsed.getTime())
+    ? todayISO()
+    : parsed.toISOString().slice(0, 10);
+}
+
 function daysInMonth(year: number, monthIndex0: number): number {
   return new Date(year, monthIndex0 + 1, 0).getDate();
 }
@@ -272,9 +300,11 @@ const depositMethods: {
 }[] = [
   { id: "mobile", label: "Mobile money", Icon: DeviceMobile },
   { id: "cash", label: "Cash", Icon: Money },
+  { id: "bank", label: "Bank transfer", Icon: Bank },
 ];
 
-/** Searchable, vacant-only room picker — a plain grid gets unwieldy once there are more than a handful of rooms. */
+/** Searchable room picker — vacant rooms, plus (when editing) the tenant's own current room, since
+ * that one isn't "vacant" but still has to be pickable/shown as the existing assignment. */
 function RoomPicker({
   rooms,
   selected,
@@ -411,21 +441,33 @@ function NumberStepper({
   );
 }
 
-function formatBytes(bytes: number): string {
+function formatBytes(bytes: number | null): string {
+  if (bytes === null) return "";
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 /** Picks files to attach — tenancy agreement, national ID, acceptance letter, anything relevant.
- * There's no tenant id to upload against until the form is submitted, so files just sit here as
- * plain File objects and are actually uploaded (see finalizeAndCreate) once the tenant exists. */
+ * In "add" mode there's no tenant id to upload against yet, so files just sit here as plain File
+ * objects and are uploaded once the tenant exists (see finalizeAndSave). In "edit" mode the tenant
+ * id already exists, so onPickImmediate uploads straight away instead of staging. */
 function DocumentPicker({
-  files,
-  onChange,
+  staged,
+  onStagedChange,
+  onPickImmediate,
+  uploading,
+  existing,
+  onDeleteExisting,
+  existingLoading,
 }: {
-  files: File[];
-  onChange: (files: File[]) => void;
+  staged: File[];
+  onStagedChange: (files: File[]) => void;
+  onPickImmediate?: (files: FileList) => void;
+  uploading?: boolean;
+  existing?: TenantDocument[];
+  onDeleteExisting?: (doc: TenantDocument) => void;
+  existingLoading?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   return (
@@ -436,34 +478,95 @@ function DocumentPicker({
         multiple
         className="hidden"
         onChange={(e) => {
-          const picked = Array.from(e.target.files ?? []);
-          if (picked.length > 0) onChange([...files, ...picked]);
+          if (onPickImmediate) {
+            if (e.target.files && e.target.files.length > 0)
+              onPickImmediate(e.target.files);
+          } else {
+            const picked = Array.from(e.target.files ?? []);
+            if (picked.length > 0) onStagedChange([...staged, ...picked]);
+          }
           e.target.value = "";
         }}
       />
       <button
         type="button"
+        disabled={uploading}
         onClick={() => inputRef.current?.click()}
-        className="flex items-center gap-2 rounded-lg border border-dashed border-line px-4 py-3 text-sm font-medium text-muted transition-colors hover:border-brand hover:text-brand"
+        className="flex items-center gap-2 rounded-lg border border-dashed border-line px-4 py-3 text-sm font-medium text-muted transition-colors hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-60"
       >
         <Paperclip size={16} weight="bold" />
-        Attach a document
+        {uploading ? "Uploading…" : "Attach a document"}
       </button>
-      {files.length > 0 && (
+
+      {existingLoading && (
+        <div className="mt-3 space-y-2">
+          {Array.from({ length: 2 }).map((_, i) => (
+            <div key={i} className="h-11 animate-pulse rounded-lg bg-mist" />
+          ))}
+        </div>
+      )}
+
+      {existing && existing.length > 0 && (
         <ul className="mt-3 space-y-2">
-          {files.map((file, i) => (
+          {existing.map((doc) => (
+            <li
+              key={doc.id}
+              className="flex items-center justify-between gap-3 rounded-lg border border-line px-3 py-2"
+            >
+              <a
+                href={doc.url ?? undefined}
+                target="_blank"
+                rel="noreferrer"
+                className="flex min-w-0 items-center gap-2 text-sm text-ink hover:underline"
+              >
+                <FileText
+                  size={16}
+                  weight="duotone"
+                  className="shrink-0 text-muted"
+                />
+                <span className="truncate">{doc.name}</span>
+                <span className="shrink-0 text-xs text-muted">
+                  {formatBytes(doc.sizeBytes)}
+                </span>
+              </a>
+              {onDeleteExisting && (
+                <button
+                  type="button"
+                  onClick={() => onDeleteExisting(doc)}
+                  aria-label={`Delete ${doc.name}`}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-red-600"
+                >
+                  <Trash size={14} weight="bold" />
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {staged.length > 0 && (
+        <ul className="mt-3 space-y-2">
+          {staged.map((file, i) => (
             <li
               key={`${file.name}-${i}`}
               className="flex items-center justify-between gap-3 rounded-lg border border-line px-3 py-2"
             >
               <div className="flex min-w-0 items-center gap-2">
-                <FileText size={16} weight="duotone" className="shrink-0 text-muted" />
+                <FileText
+                  size={16}
+                  weight="duotone"
+                  className="shrink-0 text-muted"
+                />
                 <span className="truncate text-sm text-ink">{file.name}</span>
-                <span className="shrink-0 text-xs text-muted">{formatBytes(file.size)}</span>
+                <span className="shrink-0 text-xs text-muted">
+                  {formatBytes(file.size)}
+                </span>
               </div>
               <button
                 type="button"
-                onClick={() => onChange(files.filter((_, idx) => idx !== i))}
+                onClick={() =>
+                  onStagedChange(staged.filter((_, idx) => idx !== i))
+                }
                 aria-label={`Remove ${file.name}`}
                 className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-red-600"
               >
@@ -479,11 +582,31 @@ function DocumentPicker({
 
 const PREFIX_OPTIONS = ["—", "Mr", "Mrs", "Ms"];
 
-// --- Draft autosave ------------------------------------------------------------------------
-// Everything typed into this form except attached documents (File objects can't go into
+/** Splits a stored "Mr Chanda Mwansa" full name back into prefix/first/last for editing — best
+ * effort, since the split isn't reversible for every name (e.g. multi-word first names). */
+function splitName(fullName: string): {
+  prefix: string;
+  firstName: string;
+  lastName: string;
+} {
+  const parts = fullName.trim().split(/\s+/);
+  let prefix = PREFIX_OPTIONS[0];
+  if (parts.length > 1 && PREFIX_OPTIONS.includes(parts[0])) {
+    prefix = parts.shift()!;
+  }
+  return {
+    prefix,
+    firstName: parts[0] ?? "",
+    lastName: parts.slice(1).join(" "),
+  };
+}
+
+// --- Draft autosave (add mode only) ---------------------------------------------------------
+// Everything typed into a new-tenant form except attached documents (File objects can't go into
 // localStorage) and the selected room (re-matched against the live vacant-room list on restore,
 // since it could have been taken by someone else in the meantime) is saved as the landlord types,
-// so navigating away mid-form and coming back — or a crashed tab — doesn't lose the work.
+// so navigating away mid-form and coming back — or a crashed tab — doesn't lose the work. Doesn't
+// apply when editing an existing tenant — there's nothing to "recover", the record already exists.
 
 const DRAFT_KEY = "instay:addTenantDraft";
 
@@ -518,8 +641,6 @@ function readDraft(): AddTenantDraft | null {
   }
 }
 
-/** True once a draft has any content worth keeping — an all-empty draft (default state, nothing
- * typed) isn't worth persisting or showing a "restored" notice for. */
 function draftHasContent(d: AddTenantDraft): boolean {
   return !!(
     d.firstName.trim() ||
@@ -530,46 +651,97 @@ function draftHasContent(d: AddTenantDraft): boolean {
   );
 }
 
-/** Full-page "Add tenant" form — one continuous scroll (Personal → Property → Deposit → Lease
- * terms, in that reading order) rather than a gated multi-step wizard, since there isn't enough
- * on any one section to justify making the landlord click through screens for it. Editing an
- * existing tenant uses EditTenant.tsx instead — a smaller field set (no room-and-payments
- * choreography, since a room move happens from the Rooms page, not here). */
+/** Add/edit tenant — one page, one continuous scroll (Personal → Property → Deposit → Lease terms
+ * → Documents), used for both creating a new tenant (/tenants/new) and correcting an existing
+ * one's details (/tenants/:id/edit) — same fields, same layout, prefilled and calling updateTenant
+ * instead of addTenant when a tenant id is present in the route. The two payment-collection
+ * questions ("was X collected today") are create-only — they log a real ledger entry, and firing
+ * that again every time someone edits a typo would double-count real money, so those two blocks
+ * are hidden (not just disabled) while editing. Everything else is identical. */
 export default function AddTenant() {
+  const { id } = useParams<{ id: string }>();
+  const isEditing = !!id;
   const navigate = useNavigate();
-  const { addTenant, updateTenant, logPayment } = useTenants();
+  const {
+    tenants,
+    isReady: tenantsReady,
+    addTenant,
+    updateTenant,
+    logPayment,
+  } = useTenants();
+  const editingTenant = isEditing
+    ? (tenants.find((t) => t.id === id) ?? null)
+    : null;
+
   const { propertyId, propertyName, billingPeriod, dueDay, gracePeriodDays } =
     useSettings();
   const { roomTypeConfigs, addRoomType } = useRooms();
-  const vacantRooms = useVacantRoomsForAssignment();
+  const vacantRoomsRaw = useVacantRoomsForAssignment();
   const [addingRoomType, setAddingRoomType] = useState(false);
 
-  const [prefix, setPrefix] = useState(PREFIX_OPTIONS[0]);
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [phones, setPhones] = useState<string[]>([""]);
-  const [contacts, setContacts] = useState<ContactDraft[]>([newContactDraft()]);
-  const [notes, setNotes] = useState("");
+  // The tenant's own current room isn't in the vacant list (they're occupying it) — add it back
+  // in for editing so it still shows up as the selected/pickable option.
+  const vacantRooms = useMemo(() => {
+    if (!editingTenant || !editingTenant.room) return vacantRoomsRaw;
+    if (vacantRoomsRaw.some((r) => r.room === editingTenant.room))
+      return vacantRoomsRaw;
+    const ownRoom: VacantRoom = {
+      room: editingTenant.room,
+      roomType: editingTenant.roomType,
+      rent: editingTenant.rentAmount,
+      depositAmount: editingTenant.depositAmount,
+      depositRefundability: "Refundable",
+      openBeds: 1,
+    };
+    return [ownRoom, ...vacantRoomsRaw];
+  }, [vacantRoomsRaw, editingTenant]);
+
+  const initialName = editingTenant
+    ? splitName(editingTenant.name)
+    : { prefix: PREFIX_OPTIONS[0], firstName: "", lastName: "" };
+  const [prefix, setPrefix] = useState(initialName.prefix);
+  const [firstName, setFirstName] = useState(initialName.firstName);
+  const [lastName, setLastName] = useState(initialName.lastName);
+  const [phones, setPhones] = useState<string[]>(
+    editingTenant?.phones.length ? editingTenant.phones : [""],
+  );
+  const [contacts, setContacts] = useState<ContactDraft[]>(
+    toContactDrafts(editingTenant?.emergencyContacts ?? []),
+  );
+  const [notes, setNotes] = useState(editingTenant?.notes ?? "");
   const [documents, setDocuments] = useState<File[]>([]);
   const [draftRestored, setDraftRestored] = useState(false);
   const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
   const restoringDraft = useRef(true);
 
-  const [selectedRoom, setSelectedRoom] = useState<VacantRoom | null>(null);
+  const [selectedRoom, setSelectedRoom] = useState<VacantRoom | null>(
+    editingTenant
+      ? (vacantRooms.find((r) => r.room === editingTenant.room) ?? null)
+      : null,
+  );
   const [moveInDate, setMoveInDate] = useState(todayISO());
 
-  const [tenantDueDay, setTenantDueDay] = useState(dueDay);
-  const [tenantGracePeriodDays, setTenantGracePeriodDays] =
-    useState(gracePeriodDays);
+  const [tenantDueDay, setTenantDueDay] = useState(
+    editingTenant?.dueDay ?? dueDay,
+  );
+  const [tenantGracePeriodDays, setTenantGracePeriodDays] = useState(
+    editingTenant?.gracePeriodDays ?? gracePeriodDays,
+  );
 
-  const [wantsDeposit, setWantsDeposit] = useState<"yes" | "no">("no");
-  const [depositAmount, setDepositAmount] = useState(0);
+  const [wantsDeposit, setWantsDeposit] = useState<"yes" | "no">(
+    editingTenant && editingTenant.depositAmount > 0 ? "yes" : "no",
+  );
+  const [depositAmount, setDepositAmount] = useState(
+    editingTenant?.depositAmount ?? 0,
+  );
+  const [depositDate, setDepositDate] = useState(
+    toIsoSafe(editingTenant?.depositDate),
+  );
   const [depositCollectedToday, setDepositCollectedToday] = useState<
     "yes" | "no" | null
   >(null);
-  const [depositCollectMethod, setDepositCollectMethod] = useState<
-    "mobile" | "cash"
-  >("mobile");
+  const [depositCollectMethod, setDepositCollectMethod] =
+    useState<DepositMethod>(editingTenant?.depositMethod ?? "mobile");
 
   const [prorataChoice, setProrataChoice] = useState<"charge" | "waive">(
     "charge",
@@ -585,6 +757,57 @@ export default function AddTenant() {
     "mobile",
   );
 
+  // Existing documents — only relevant/fetched in edit mode, where the tenant id already exists.
+  const [existingDocs, setExistingDocs] = useState<TenantDocument[]>([]);
+  const [existingDocsLoading, setExistingDocsLoading] = useState(isEditing);
+  const [uploadingDocs, setUploadingDocs] = useState(false);
+
+  const refreshExistingDocs = () => {
+    if (!editingTenant) return;
+    setExistingDocsLoading(true);
+    listTenantDocuments(editingTenant.id)
+      .then(setExistingDocs)
+      .catch((e) => console.error("Failed to load documents", e))
+      .finally(() => setExistingDocsLoading(false));
+  };
+
+  useEffect(() => {
+    refreshExistingDocs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingTenant?.id]);
+
+  const uploadImmediately = async (files: FileList) => {
+    if (!editingTenant || !propertyId) return;
+    setUploadingDocs(true);
+    try {
+      await Promise.all(
+        Array.from(files).map((file) =>
+          uploadTenantDocument(propertyId, editingTenant.id, file),
+        ),
+      );
+      refreshExistingDocs();
+    } catch (e) {
+      window.alert(
+        e instanceof Error
+          ? e.message
+          : "Failed to upload one or more documents.",
+      );
+    } finally {
+      setUploadingDocs(false);
+    }
+  };
+
+  const deleteExisting = async (doc: TenantDocument) => {
+    try {
+      await deleteTenantDocument(doc);
+      setExistingDocs((prev) => prev.filter((d) => d.id !== doc.id));
+    } catch (e) {
+      window.alert(
+        e instanceof Error ? e.message : "Failed to delete document.",
+      );
+    }
+  };
+
   const moveInDateObj = useMemo(
     () => parseDateInputLocal(moveInDate),
     [moveInDate],
@@ -598,9 +821,11 @@ export default function AddTenant() {
 
   const selectRoom = (r: VacantRoom) => {
     setSelectedRoom(r);
-    setDepositAmount(r.depositAmount);
-    setRentAmountCollected(r.rent);
-    if (r.depositAmount > 0) setWantsDeposit("yes");
+    if (!isEditing) {
+      setDepositAmount(r.depositAmount);
+      setRentAmountCollected(r.rent);
+      if (r.depositAmount > 0) setWantsDeposit("yes");
+    }
   };
 
   const updateContact = (index: number, patch: Partial<ContactDraft>) => {
@@ -618,9 +843,6 @@ export default function AddTenant() {
     setDraftSavedAt(null);
   };
 
-  // For the "Discard draft" button specifically — clearing storage alone would leave the
-  // in-memory fields as they are, which reads as broken (the notice disappears but the form
-  // doesn't). This resets everything back to a blank form too.
   const discardDraft = () => {
     clearDraft();
     setPrefix(PREFIX_OPTIONS[0]);
@@ -645,10 +867,10 @@ export default function AddTenant() {
     setRentCollectMethod("mobile");
   };
 
-  // Restore once, on first mount — waits for vacantRooms to have loaded so a saved room can
-  // actually be re-matched, rather than racing an empty list on the very first render.
+  // Restore once, on first mount, add mode only.
   useEffect(() => {
-    if (!restoringDraft.current || vacantRooms.length === 0) return;
+    if (isEditing || !restoringDraft.current || vacantRooms.length === 0)
+      return;
     restoringDraft.current = false;
     const draft = readDraft();
     if (!draft || !draftHasContent(draft)) return;
@@ -679,12 +901,11 @@ export default function AddTenant() {
 
     setDraftRestored(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vacantRooms]);
+  }, [vacantRooms, isEditing]);
 
-  // Autosave — skipped while the restore effect above is still running so it doesn't immediately
-  // overwrite the just-loaded draft with whatever the pre-restore blank state was.
+  // Autosave, add mode only.
   useEffect(() => {
-    if (restoringDraft.current) return;
+    if (isEditing || restoringDraft.current) return;
     const draft: AddTenantDraft = {
       prefix,
       firstName,
@@ -699,7 +920,8 @@ export default function AddTenant() {
       wantsDeposit,
       depositAmount,
       depositCollectedToday,
-      depositCollectMethod,
+      depositCollectMethod:
+        depositCollectMethod === "bank" ? "mobile" : depositCollectMethod,
       prorataChoice,
       prorataCollectedToday,
       rentCollectedToday,
@@ -711,6 +933,7 @@ export default function AddTenant() {
     setDraftSavedAt(Date.now());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    isEditing,
     prefix,
     firstName,
     lastName,
@@ -750,8 +973,34 @@ export default function AddTenant() {
   const canSubmit =
     firstName.trim().length > 0 && lastName.trim().length > 0 && !!selectedRoom;
 
-  const finalizeAndCreate = () => {
+  const finalizeAndSave = () => {
     if (!canSubmit || !selectedRoom) return;
+
+    if (isEditing && editingTenant) {
+      updateTenant(editingTenant.id, {
+        name,
+        phones: phones.map((p) => p.trim()).filter(Boolean),
+        emergencyContacts: cleanContacts(contacts),
+        room: selectedRoom.room,
+        roomType: selectedRoom.roomType,
+        rentAmount: selectedRoom.rent,
+        depositAmount: wantsDeposit === "yes" ? depositAmount : 0,
+        depositDate: new Date(depositDate).toLocaleDateString("en-GB", {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        }),
+        depositMethod: depositCollectMethod,
+        notes,
+        dueDay: tenantDueDay !== dueDay ? tenantDueDay : null,
+        gracePeriodDays:
+          tenantGracePeriodDays !== gracePeriodDays
+            ? tenantGracePeriodDays
+            : null,
+      });
+      navigate(`/tenants/${editingTenant.id}`);
+      return;
+    }
 
     const rentDue = isMidCycle
       ? prorataChoice === "charge"
@@ -797,8 +1046,6 @@ export default function AddTenant() {
       depositMethod: depositCollectMethod,
       depositStatus: depositWasCollected ? "Held" : "Not collected",
       notes,
-      // Stored only when they differ from the property default — most tenants take the default,
-      // and this keeps a bulk change in Settings applying to them automatically going forward.
       dueDay: tenantDueDay !== dueDay ? tenantDueDay : null,
       gracePeriodDays:
         tenantGracePeriodDays !== gracePeriodDays
@@ -830,37 +1077,59 @@ export default function AddTenant() {
       logPayment(created.id, rentAmountToLog, rentLedgerLabel);
     }
 
-    // Uploaded in the background rather than awaited — the tenant record itself is already
-    // saved, so there's no reason to keep the landlord waiting on file uploads before they can
-    // move on. A failure here shows up as an alert on the page they've already navigated to.
     if (documents.length > 0 && propertyId) {
       const pid = propertyId;
-      void Promise.all(documents.map((file) => uploadTenantDocument(pid, created.id, file))).catch(
-        (e) => {
-          console.error("Failed to upload one or more documents", e);
-          window.alert(
-            `${name || "This tenant"} was saved, but one or more attached documents failed to upload. You can try attaching them again from the tenant's profile.`
-          );
-        }
-      );
+      void Promise.all(
+        documents.map((file) => uploadTenantDocument(pid, created.id, file)),
+      ).catch((e) => {
+        console.error("Failed to upload one or more documents", e);
+        window.alert(
+          `${name || "This tenant"} was saved, but one or more attached documents failed to upload. You can try attaching them again from the tenant's profile.`,
+        );
+      });
     }
 
     clearDraft();
     navigate(`/tenants/${created.id}`);
   };
 
+  if (isEditing && !tenantsReady) return null;
+
+  if (isEditing && !editingTenant) {
+    return (
+      <>
+        <PageHeader title="Tenant not found" />
+        <div className="px-4 sm:px-8">
+          <p className="text-sm text-muted">
+            They may have been deleted, or the link is out of date.
+          </p>
+          <Link
+            to="/tenants"
+            className="mt-3 inline-block text-sm font-medium text-brand hover:underline"
+          >
+            Back to tenants
+          </Link>
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       <PageHeader
-        title="Add tenant"
-        description="Completed at the property office in under 4 minutes."
+        title={isEditing ? "Edit tenant" : "Add tenant"}
+        description={
+          isEditing
+            ? `${editingTenant!.name} · ${editingTenant!.room || "Unassigned"}`
+            : "Completed at the property office in under 4 minutes."
+        }
       />
 
       {/* pb-28 clears the sticky footer below; the footer itself is `sticky`, not `fixed`, so it
           stays inside this scroll container's own width — flush with the form column, never
           spanning under the sidebar or the full viewport. */}
       <div className="mx-auto max-w-2xl px-4 pb-28 sm:px-8">
-        {(draftRestored || draftSavedAt) && (
+        {!isEditing && (draftRestored || draftSavedAt) && (
           <div className="mb-6 flex items-center justify-between rounded-lg bg-mist px-4 py-2.5 text-xs text-muted">
             <span>
               {draftRestored
@@ -927,7 +1196,7 @@ export default function AddTenant() {
             <h3 className="text-base font-semibold text-ink">
               Emergency contact information
             </h3>
-            <span className="text-xs text-muted"> optional</span>
+            <span className="text-xs text-muted">— optional</span>
           </div>
           {contacts.length === 0 ? (
             <button
@@ -1041,15 +1310,21 @@ export default function AddTenant() {
         <section>
           <SectionTitle
             title="Property placement"
-            subtitle={`Which room will ${name.trim() || "this tenant"} occupy, and from when?`}
+            subtitle={
+              isEditing
+                ? "Which room is this tenant assigned to?"
+                : `Which room will ${name.trim() || "this tenant"} occupy, and from when?`
+            }
           />
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label className={labelCls}>Move-in date</label>
-              <DatePicker value={moveInDate} onChange={setMoveInDate} />
-            </div>
-            <div>
-              <label className={labelCls}>Room (vacant only)</label>
+            {!isEditing && (
+              <div>
+                <label className={labelCls}>Move-in date</label>
+                <DatePicker value={moveInDate} onChange={setMoveInDate} />
+              </div>
+            )}
+            <div className={isEditing ? "sm:col-span-2" : ""}>
+              <label className={labelCls}>Room</label>
               {roomTypeConfigs.length === 0 ? (
                 <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-line px-3.5 py-2.5">
                   <div className="flex items-center gap-2.5">
@@ -1096,7 +1371,7 @@ export default function AddTenant() {
             subtitle={
               selectedRoom
                 ? `Does this tenant need to pay ${selectedRoom.roomType}'s security deposit upfront?`
-                : "Does this tenant need to pay a security deposit upfront? Select a room above first - the amount is set by that room type."
+                : "Does this tenant need to pay a security deposit upfront? Select a room above first — the amount is set by that room type."
             }
           />
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -1104,7 +1379,7 @@ export default function AddTenant() {
               selected={wantsDeposit === "no"}
               onClick={() => setWantsDeposit("no")}
               title="Proceed without deposit"
-              description="No deposit - proceed directly with the lease."
+              description="No deposit — proceed directly with the lease."
             />
             <ChoiceCard
               selected={wantsDeposit === "yes"}
@@ -1117,45 +1392,44 @@ export default function AddTenant() {
 
           {wantsDeposit === "yes" && (
             <div className="mt-4 space-y-4">
-              <div>
-                <label className={labelCls}>Security deposit amount (K)</label>
-                <input
-                  type="number"
-                  min={0}
-                  value={depositAmount}
-                  onChange={(e) =>
-                    setDepositAmount(Number(e.target.value) || 0)
-                  }
-                  className={inputCls}
-                />
-                <p className="mt-1.5 text-xs text-muted">
-                  {selectedRoom?.roomType}'s Security deposit (Rooms Page) -
-                  edit if this tenant's terms differ.
-                </p>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className={labelCls}>
+                    Security deposit amount (K)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={depositAmount}
+                    onChange={(e) =>
+                      setDepositAmount(Number(e.target.value) || 0)
+                    }
+                    className={inputCls}
+                  />
+                  {!isEditing && (
+                    <p className="mt-1.5 text-xs text-muted">
+                      Defaults to {selectedRoom?.roomType}'s configured deposit
+                      — edit if this tenant's terms differ.
+                    </p>
+                  )}
+                </div>
+                {isEditing && (
+                  <div>
+                    <label className={labelCls}>Security deposit date</label>
+                    <DatePicker value={depositDate} onChange={setDepositDate} />
+                  </div>
+                )}
               </div>
 
-              <div>
-                <p className="text-sm font-medium text-ink">
-                  Was the deposit collected today?
-                </p>
-                <div className="mt-2.5">
-                  <YesNo
-                    value={depositCollectedToday}
-                    onChange={setDepositCollectedToday}
-                  />
-                </div>
-              </div>
-              {depositCollectedToday === "yes" && (
+              {isEditing ? (
                 <div>
-                  <label className={labelCls}>Payment method</label>
+                  <label className={labelCls}>Security deposit method</label>
                   <div className="flex gap-2">
                     {depositMethods.map(({ id, label, Icon }) => (
                       <Chip
                         key={id}
                         selected={depositCollectMethod === id}
-                        onClick={() =>
-                          setDepositCollectMethod(id as "mobile" | "cash")
-                        }
+                        onClick={() => setDepositCollectMethod(id)}
                       >
                         <Icon size={14} weight="duotone" />
                         {label}
@@ -1163,6 +1437,39 @@ export default function AddTenant() {
                     ))}
                   </div>
                 </div>
+              ) : (
+                <>
+                  <div>
+                    <p className="text-sm font-medium text-ink">
+                      Was the deposit collected today?
+                    </p>
+                    <div className="mt-2.5">
+                      <YesNo
+                        value={depositCollectedToday}
+                        onChange={setDepositCollectedToday}
+                      />
+                    </div>
+                  </div>
+                  {depositCollectedToday === "yes" && (
+                    <div>
+                      <label className={labelCls}>Payment method</label>
+                      <div className="flex gap-2">
+                        {depositMethods
+                          .filter((m) => m.id !== "bank")
+                          .map(({ id, label, Icon }) => (
+                            <Chip
+                              key={id}
+                              selected={depositCollectMethod === id}
+                              onClick={() => setDepositCollectMethod(id)}
+                            >
+                              <Icon size={14} weight="duotone" />
+                              {label}
+                            </Chip>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -1174,7 +1481,7 @@ export default function AddTenant() {
         <section>
           <SectionTitle
             title="Lease & billing terms"
-            subtitle="Pre-filled from your property's billing settings - adjust for this tenant if their terms are different."
+            subtitle="Pre-filled from your property's billing settings — adjust for this tenant if their terms are different."
           />
           <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="rounded-lg bg-mist px-3.5 py-2.5">
@@ -1210,98 +1517,101 @@ export default function AddTenant() {
               : "Select a room above to see this room type's daily late-fee rate."}
           </p>
 
-          <div className="mt-6">
-            {isMidCycle && prorata ? (
-              <div className="rounded-lg border border-line p-4">
-                <div className="flex items-center gap-2">
-                  <CalendarBlank
-                    size={16}
-                    weight="duotone"
-                    className="text-muted"
-                  />
-                  <p className="text-sm font-medium text-ink">
-                    Mid-cycle move-in
-                  </p>
-                </div>
-                <p className="mt-1.5 text-xs text-muted">
-                  Partial month: {prorata.remainingDays} of {prorata.totalDays}{" "}
-                  days at {formatCurrency(prorata.dailyRate)}/day.
-                </p>
-
-                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <ChoiceCard
-                    selected={prorataChoice === "charge"}
-                    onClick={() => setProrataChoice("charge")}
-                    title="Charge pro-rata"
-                    description={`${formatCurrency(prorata.amount)} for the partial month`}
-                  />
-                  <ChoiceCard
-                    selected={prorataChoice === "waive"}
-                    onClick={() => setProrataChoice("waive")}
-                    title="Waive partial month"
-                    description="First payment starts next month"
-                  />
-                </div>
-
-                {prorataChoice === "charge" && (
-                  <div className="mt-3">
-                    <p className="text-xs font-medium text-muted">
-                      Has the tenant already paid this?
+          {!isEditing && (
+            <div className="mt-6">
+              {isMidCycle && prorata ? (
+                <div className="rounded-lg border border-line p-4">
+                  <div className="flex items-center gap-2">
+                    <CalendarBlank
+                      size={16}
+                      weight="duotone"
+                      className="text-muted"
+                    />
+                    <p className="text-sm font-medium text-ink">
+                      Mid-cycle move-in
                     </p>
-                    <div className="mt-1.5">
-                      <YesNo
-                        value={prorataCollectedToday}
-                        onChange={setProrataCollectedToday}
-                      />
-                    </div>
                   </div>
-                )}
-              </div>
-            ) : (
-              <div>
-                <p className="text-sm font-medium text-ink">Rent</p>
-                <p className="mt-0.5 text-xs text-muted">
-                  Was any rent collected today?
-                </p>
-                <div className="mt-2.5">
-                  <YesNo
-                    value={rentCollectedToday}
-                    onChange={setRentCollectedToday}
-                  />
-                </div>
-                {rentCollectedToday === "yes" && (
-                  <div className="mt-2.5 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div>
-                      <label className={labelCls}>Amount (K)</label>
-                      <input
-                        type="number"
-                        min={0}
-                        value={rentAmountCollected}
-                        onChange={(e) =>
-                          setRentAmountCollected(Number(e.target.value) || 0)
-                        }
-                        className={inputCls}
-                      />
-                    </div>
-                    <div>
-                      <label className={labelCls}>Payment method</label>
-                      <div className="flex gap-2">
-                        {(["mobile", "cash"] as const).map((m) => (
-                          <Chip
-                            key={m}
-                            selected={rentCollectMethod === m}
-                            onClick={() => setRentCollectMethod(m)}
-                          >
-                            {m === "mobile" ? "Mobile money" : "Cash"}
-                          </Chip>
-                        ))}
+                  <p className="mt-1.5 text-xs text-muted">
+                    Partial month: {prorata.remainingDays} of{" "}
+                    {prorata.totalDays} days at{" "}
+                    {formatCurrency(prorata.dailyRate)}/day.
+                  </p>
+
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <ChoiceCard
+                      selected={prorataChoice === "charge"}
+                      onClick={() => setProrataChoice("charge")}
+                      title="Charge pro-rata"
+                      description={`${formatCurrency(prorata.amount)} for the partial month`}
+                    />
+                    <ChoiceCard
+                      selected={prorataChoice === "waive"}
+                      onClick={() => setProrataChoice("waive")}
+                      title="Waive partial month"
+                      description="First payment starts next month"
+                    />
+                  </div>
+
+                  {prorataChoice === "charge" && (
+                    <div className="mt-3">
+                      <p className="text-xs font-medium text-muted">
+                        Has the tenant already paid this?
+                      </p>
+                      <div className="mt-1.5">
+                        <YesNo
+                          value={prorataCollectedToday}
+                          onChange={setProrataCollectedToday}
+                        />
                       </div>
                     </div>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <p className="text-sm font-medium text-ink">Rent</p>
+                  <p className="mt-0.5 text-xs text-muted">
+                    Was any rent collected today?
+                  </p>
+                  <div className="mt-2.5">
+                    <YesNo
+                      value={rentCollectedToday}
+                      onChange={setRentCollectedToday}
+                    />
                   </div>
-                )}
-              </div>
-            )}
-          </div>
+                  {rentCollectedToday === "yes" && (
+                    <div className="mt-2.5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <div>
+                        <label className={labelCls}>Amount (K)</label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={rentAmountCollected}
+                          onChange={(e) =>
+                            setRentAmountCollected(Number(e.target.value) || 0)
+                          }
+                          className={inputCls}
+                        />
+                      </div>
+                      <div>
+                        <label className={labelCls}>Payment method</label>
+                        <div className="flex gap-2">
+                          {(["mobile", "cash"] as const).map((m) => (
+                            <Chip
+                              key={m}
+                              selected={rentCollectMethod === m}
+                              onClick={() => setRentCollectMethod(m)}
+                            >
+                              {m === "mobile" ? "Mobile money" : "Cash"}
+                            </Chip>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
         <Divider />
@@ -1322,10 +1632,25 @@ export default function AddTenant() {
         <section>
           <SectionTitle
             title="Documents"
-            subtitle="Tenancy agreement, national ID, acceptance letter - anything worth keeping on file for this tenant. Optional."
+            subtitle="Tenancy agreement, national ID, acceptance letter — anything worth keeping on file for this tenant. Optional."
           />
           <div className="mt-4">
-            <DocumentPicker files={documents} onChange={setDocuments} />
+            {isEditing ? (
+              <DocumentPicker
+                staged={[]}
+                onStagedChange={() => {}}
+                onPickImmediate={(files) => void uploadImmediately(files)}
+                uploading={uploadingDocs}
+                existing={existingDocs}
+                existingLoading={existingDocsLoading}
+                onDeleteExisting={(doc) => void deleteExisting(doc)}
+              />
+            ) : (
+              <DocumentPicker
+                staged={documents}
+                onStagedChange={setDocuments}
+              />
+            )}
           </div>
         </section>
 
@@ -1343,11 +1668,11 @@ export default function AddTenant() {
             </Button>
             <Button
               variant="primary"
-              onClick={finalizeAndCreate}
+              onClick={finalizeAndSave}
               disabled={!canSubmit}
               className="flex-1 py-3"
             >
-              Add tenant
+              {isEditing ? "Save changes" : "Add tenant"}
             </Button>
           </div>
         </div>
