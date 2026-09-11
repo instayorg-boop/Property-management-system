@@ -202,6 +202,9 @@ export type PayoutRecord = {
   status: PayoutStatus;
   createdAt: string;
   failureReason: string | null;
+  /** The recipient this payout was sent to, for the "Method" column — null for older rows created
+   * before a recipient could be deleted independently, or if the join comes back empty. */
+  recipient: Pick<PayoutRecipient, "type" | "provider" | "account_name" | "account_number" | "phone_number"> | null;
 };
 
 /** Payout history for one property, newest first — used by PayoutDetailDrawer's "Recent payouts"
@@ -214,7 +217,7 @@ export async function listPayouts(
 ): Promise<PayoutRecord[]> {
   let query = supabase
     .from("payouts")
-    .select("id, amount, status, created_at, failure_reason")
+    .select("id, amount, status, created_at, failure_reason, payout_recipients(type, provider, account_name, account_number, phone_number)")
     .eq("property_id", propertyId)
     .order("created_at", { ascending: false });
   if (opts?.status?.length) query = query.in("status", opts.status);
@@ -229,6 +232,7 @@ export async function listPayouts(
     status: row.status as PayoutStatus,
     createdAt: row.created_at,
     failureReason: row.failure_reason,
+    recipient: Array.isArray(row.payout_recipients) ? (row.payout_recipients[0] ?? null) : row.payout_recipients,
   }));
 }
 

@@ -13,7 +13,7 @@ export default function Nav() {
       <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
         <Link to="/" className="flex items-center gap-2">
           <img src="https://rlmcuhejgfftcdshbrbe.supabase.co/storage/v1/object/public/Company%20assets/Instay_Manage_Logo-removebg-preview.png" alt="Instay Manage" className="h-10 " />
-          <p className="font-display text-white text-xl font-semibold leading-[1.08] tracking-[-0.02em]  ">Instay Manage</p>
+          <p className="font-sans text-white text-xl font-semibold leading-[1.08] tracking-[-0.02em]  ">Instay Manage</p>
         </Link>
 
         <nav className="hidden items-center gap-8 text-sm text-white md:flex">

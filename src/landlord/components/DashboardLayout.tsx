@@ -1,8 +1,8 @@
 import { useEffect, useRef } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
-import { List as MenuIcon } from "@phosphor-icons/react";
 import Sidebar from "./Sidebar";
+import TopBar from "./TopBar";
 import { ThemeProvider, useTheme } from "../ThemeContext";
 import { ToastProvider } from "../ToastContext";
 import { ExpensesProvider } from "../ExpensesContext";
@@ -83,20 +83,10 @@ function Shell() {
         <Sidebar ref={drawerRef} />
 
         <main ref={mainRef} className="flex-1 overflow-y-auto bg-paper">
-          {/* Mobile-only menu trigger, in the normal document flow (not floating) — the sidebar's
-              own header (logo + notifications) replaced the old topbar, but small screens still
-              need a way to open the off-canvas drawer, and it needs real layout space reserved
-              for it rather than floating over whatever a page happens to render at its top-left. */}
-          <div className="flex h-12 items-center border-b border-line bg-paper px-3 lg:hidden">
-            <button
-              type="button"
-              onClick={() => setOpen(true)}
-              aria-label="Open menu"
-              className="flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-ink"
-            >
-              <MenuIcon size={18} weight="bold" />
-            </button>
-          </div>
+          {/* Floating, fixed-position mobile menu trigger + notifications bell — they sit in line
+              with each page's PageHeader title row but stay put on scroll instead of scrolling
+              away with the page. The account menu lives in the sidebar, same as always. */}
+          <TopBar />
           {/*
             No AnimatePresence/exit here on purpose: waiting for the old page to fade out before
             mounting the new one (mode="wait") left a gap where the old page's height had already

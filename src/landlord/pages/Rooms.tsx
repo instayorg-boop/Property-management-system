@@ -243,7 +243,7 @@ function RoomRow({ room, onSelect }: { room: RoomView; onSelect: () => void }) {
           </p>
         )}
       </td>
-      <td className="px-6 py-4 text-sm text-muted">
+      <td className="font-display px-6 py-4 text-sm text-muted">
         {formatCurrency(room.typeConfig.rent)}/mo
       </td>
       <td className="px-6 py-4">

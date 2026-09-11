@@ -56,11 +56,11 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
       role="switch"
       aria-checked={checked}
       onClick={() => onChange(!checked)}
-      className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${checked ? "bg-brand" : "bg-line"}`}
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${checked ? "bg-brand" : "bg-line"}`}
     >
       <span
-        className={`absolute top-0.5 h-5 w-5 rounded-full bg-paper shadow transition-transform ${
-          checked ? "translate-x-5.5" : "translate-x-0.5"
+        className={`inline-block h-5 w-5 transform rounded-full bg-paper shadow transition-transform ${
+          checked ? "translate-x-[22px]" : "translate-x-[2px]"
         }`}
       />
     </button>
@@ -556,10 +556,11 @@ function tabFromSlug(slug: string | null): Tab {
 // slug is its first member's, so existing deep links ("/settings/property",
 // "/settings/online-payments" from SetupChecklist/PayoutDetailDrawer) keep working unchanged.
 const tabGroups = [
-  { label: "Property", members: ["Property"] as Tab[] },
+  { label: "Account", members: ["Property"] as Tab[] },
   { label: "Billing & rent", members: ["Billing & invoicing", "Reminders"] as Tab[] },
   { label: "Payments", members: ["Online payments", "Payment link"] as Tab[] },
-  { label: "Account", members: ["Account", "Notifications", "Subscription"] as Tab[] },
+  { label: "Notifications", members: ["Notifications"] as Tab[] },
+  { label: "System", members: ["Account", "Subscription"] as Tab[] },
 ] as const;
 
 function groupFor(t: Tab) {
@@ -602,13 +603,11 @@ export default function Settings() {
 
   const {
     // invoicesOn, setInvoicesOn, // MVP: invoicing toggle is commented out — see the note above.
-    collectionTargetPct, setCollectionTargetPct,
     propertyName, setPropertyName,
     propertyAddress, setPropertyAddress,
     billingPeriod, setBillingPeriod,
     dueDay, setDueDay,
     gracePeriodDays, setGracePeriodDays,
-    dailyPenaltyRate, setDailyPenaltyRate,
     reminderLeadDays, setReminderLeadDays,
     escalationDays, setEscalationDays,
     contactOrder, setContactOrder,
@@ -741,7 +740,7 @@ export default function Settings() {
   // view and the desktop list-plus-detail layout so it's only written once.
   const detail = (
     <>
-      {activeGroup.label === "Property" && (
+      {activeGroup.label === "Account" && (
             <>
               <Row label="Property name" desc="Used across the dashboard — tenants added on the Tenants page are assigned to this property automatically.">
                 <input
@@ -763,10 +762,38 @@ export default function Settings() {
                   className={fieldCls}
                 />
               </Row>
-              
-              
-              
-              
+              <Row label="Email address">
+                <input
+                  value={accountEmail}
+                  onChange={(e) => {
+                    setAccountEmail(e.target.value);
+                    flash();
+                  }}
+                  type="email"
+                  placeholder="you@example.com"
+                  className={fieldCls}
+                />
+              </Row>
+              <Row label="Password">
+                <button type="button" className="text-sm font-medium text-brand hover:underline">
+                  Change password
+                </button>
+              </Row>
+              <Row
+                label="Current plan"
+                desc={
+                  subscriptionRenewsAt
+                    ? `Renews ${new Date(subscriptionRenewsAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}.`
+                    : "No renewal date set."
+                }
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium text-ink">{subscriptionPlan || "—"}</span>
+                  <Button variant="primary" size="sm">
+                    Upgrade
+                  </Button>
+                </div>
+              </Row>
             </>
           )}
 
@@ -794,15 +821,6 @@ export default function Settings() {
                   className={fieldCls}
                 />
               </Row>
-              <Row label="Daily penalty rate (K)" desc="Charged per day once the grace period ends.">
-                <input
-                  type="number"
-                  min={0}
-                  value={dailyPenaltyRate}
-                  onChange={(e) => { setDailyPenaltyRate(Math.max(0, Number(e.target.value) || 0)); flash(); }}
-                  className={fieldCls}
-                />
-              </Row>
               {/* MVP: invoicing is out of scope for now. */}
               {/* <Row
                 label="Generate invoices"
@@ -810,20 +828,6 @@ export default function Settings() {
               >
                 <Toggle checked={invoicesOn} onChange={(v) => { setInvoicesOn(v); flash(); }} />
               </Row> */}
-              <Row
-                label="Collection rate target (%)"
-                desc="The goal shown against your monthly collection rate on the Rent page. Lower this during slow seasons so the trend isn't always red."
-              >
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={collectionTargetPct}
-                  onChange={(e) => { setCollectionTargetPct(Math.min(100, Math.max(0, Number(e.target.value) || 0))); flash(); }}
-                  className={fieldCls}
-                />
-              </Row>
-
               <div className="pt-2">
                 <SectionLabel>Reminders</SectionLabel>
               </div>
@@ -1241,58 +1245,33 @@ export default function Settings() {
             </>
           )} */}
 
-          {activeGroup.label === "Account" && (
+          {activeGroup.label === "System" && (
             <>
-              <Row label="Email address">
-                <input
-                  value={accountEmail}
-                  onChange={(e) => {
-                    setAccountEmail(e.target.value);
-                    flash();
-                  }}
-                  type="email"
-                  placeholder="you@example.com"
-                  className={fieldCls}
-                />
-              </Row>
-              <Row label="Password">
-                <button type="button" className="text-sm font-medium text-brand hover:underline">
-                  Change password
-                </button>
-              </Row>
               <Row label="Appearance" desc="Switch between light, dark, or match your device.">
                 <ThemeSwitcher />
-              </Row>
-              <Row
-                label="Current plan"
-                desc={
-                  subscriptionRenewsAt
-                    ? `Renews ${new Date(subscriptionRenewsAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}.`
-                    : "No renewal date set."
-                }
-              >
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-medium text-ink">{subscriptionPlan || "—"}</span>
-                  <Button variant="primary" size="sm">
-                    Upgrade
-                  </Button>
-                </div>
               </Row>
               <Row label="Sign out" desc="You'll need to sign in again on this device.">
                 <Button variant="danger" onClick={() => navigate("/sign-in")}>
                   Sign out
                 </Button>
               </Row>
+            </>
+          )}
 
-              <div className="pt-2">
-                <SectionLabel>Notifications</SectionLabel>
+          {activeGroup.label === "Notifications" && (
+            <>
+              <p className="pb-4 text-xs text-muted">Choose which events send you a push notification or email.</p>
+              <div className="grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2">
+                {notificationRows.map((n) => (
+                  <div key={n.key} className="flex items-start justify-between gap-3 rounded-lg border border-line bg-paper p-4">
+                    <div className="min-w-0">
+                      <p className="font-display text-[15px] font-bold tracking-tight text-ink">{n.label}</p>
+                      {n.desc && <p className="mt-1 text-xs text-muted">{n.desc}</p>}
+                    </div>
+                    <Toggle checked={notificationPrefs[n.key]} onChange={(v) => { setNotificationPref(n.key, v); flash(); }} />
+                  </div>
+                ))}
               </div>
-              <p className="pt-3 text-xs text-muted">Choose which events send you a push notification or email.</p>
-              {notificationRows.map((n) => (
-                <Row key={n.key} label={n.label} desc={n.desc}>
-                  <Toggle checked={notificationPrefs[n.key]} onChange={(v) => { setNotificationPref(n.key, v); flash(); }} />
-                </Row>
-              ))}
             </>
           )}
     </>

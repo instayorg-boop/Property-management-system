@@ -158,7 +158,7 @@ export default function Tenants() {
 
                 <div className="mt-4 flex items-center justify-between border-t border-line pt-4">
                   <div>
-                    <p className="font-semibold text-ink">{formatCurrency(t.rentAmount)}</p>
+                    <p className="font-display font-semibold text-ink">{formatCurrency(t.rentAmount)}</p>
                     <p className="mt-0.5 text-xs text-muted">
                       {t.active ? `Moved in ${t.moveInDate}` : `Moved out ${t.moveOutDate ?? ""}`}
                     </p>
@@ -240,7 +240,7 @@ export default function Tenants() {
                       <p className="mt-0.5 text-muted">{t.room}</p>
                     </td>
                     <td className="px-6 py-4 text-muted">{t.moveInDate}</td>
-                    <td className="px-6 py-4 font-medium text-ink">{formatCurrency(t.rentAmount)}</td>
+                    <td className="font-display px-6 py-4 font-medium text-ink">{formatCurrency(t.rentAmount)}</td>
                     <td className="px-6 py-4">
                       <span
                         className={`rounded-full px-2.5 py-1 text-xs font-medium ${

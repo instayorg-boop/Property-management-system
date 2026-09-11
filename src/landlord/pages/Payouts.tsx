@@ -14,6 +14,7 @@ import {
 import PageHeader from "../components/PageHeader";
 import Modal from "../components/Modal";
 import Select from "../components/Select";
+import DatePicker from "../components/DatePicker";
 import Pagination, { DEFAULT_PAGE_SIZE } from "../components/Pagination";
 import { SkeletonRow, Skeleton } from "../components/Skeleton";
 import Button from "../components/Button";
@@ -186,9 +187,15 @@ function formatDate(iso: string) {
 }
 
 function downloadCsv(filename: string, rows: PayoutRecord[]) {
-  const header = ["Date", "Amount", "Status", "Failure reason"];
+  const header = ["Date", "Amount", "Method", "Status", "Failure reason"];
   const lines = rows.map((r) =>
-    [formatDate(r.createdAt), r.amount, statusLabel[r.status], r.failureReason ?? ""]
+    [
+      formatDate(r.createdAt),
+      r.amount,
+      r.recipient ? recipientLabel(r.recipient as PayoutRecipient) : "",
+      statusLabel[r.status],
+      r.failureReason ?? "",
+    ]
       .map((v) => `"${String(v).replace(/"/g, '""')}"`)
       .join(",")
   );
@@ -550,19 +557,9 @@ export default function Payouts() {
                 options={statusFilters}
                 className="w-36"
               />
-              <input
-                type="date"
-                value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-                className="rounded-lg border border-line bg-paper px-2.5 py-1.5 text-xs text-ink outline-none focus:border-brand"
-              />
+              <DatePicker value={fromDate} onChange={setFromDate} className="w-36 py-1.5! text-xs!" placeholder="From" />
               <span className="text-xs text-muted">to</span>
-              <input
-                type="date"
-                value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
-                className="rounded-lg border border-line bg-paper px-2.5 py-1.5 text-xs text-ink outline-none focus:border-brand"
-              />
+              <DatePicker value={toDate} onChange={setToDate} className="w-36 py-1.5! text-xs!" placeholder="To" />
               <Button
                 variant="secondary"
                 size="sm"
@@ -581,17 +578,34 @@ export default function Payouts() {
               <tr>
                 <th className="px-4 py-3 font-medium tracking-wide">Date</th>
                 <th className="px-4 py-3 font-medium tracking-wide">Amount</th>
+                <th className="px-4 py-3 font-medium tracking-wide">Method</th>
                 <th className="px-4 py-3 font-medium tracking-wide">Status</th>
                 <th className="px-4 py-3 font-medium tracking-wide">Details</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {loading && Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} cols={4} />)}
+              {loading && Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} cols={5} />)}
               {!loading &&
                 pageRows.map((r) => (
                   <tr key={r.id}>
                     <td className="px-4 py-3 whitespace-nowrap text-muted">{formatDate(r.createdAt)}</td>
-                    <td className="px-4 py-3 font-medium whitespace-nowrap text-ink">{formatCurrency(r.amount)}</td>
+                    <td className="font-display px-4 py-3 font-medium whitespace-nowrap text-ink">{formatCurrency(r.amount)}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-muted">
+                      {r.recipient ? (
+                        <span className="flex items-center gap-1.5">
+                          {r.recipient.type === "mobile-money" && r.recipient.provider && (
+                            <img
+                              src={MOBILE_MONEY_LOGO[r.recipient.provider as keyof typeof MOBILE_MONEY_LOGO]}
+                              alt=""
+                              className="h-4 w-4 shrink-0 rounded-full object-cover"
+                            />
+                          )}
+                          {recipientLabel(r.recipient as PayoutRecipient)}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       <span className={`rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${statusStyle[r.status]}`}>
                         {statusLabel[r.status]}
@@ -602,7 +616,7 @@ export default function Payouts() {
                 ))}
               {!loading && pageRows.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-4 py-10">
+                  <td colSpan={5} className="px-4 py-10">
                     <div className="flex flex-col items-center justify-center gap-3 text-center">
                       <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
                         <Wallet size={22} weight="duotone" />

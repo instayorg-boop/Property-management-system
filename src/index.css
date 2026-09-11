@@ -2,7 +2,7 @@
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fraunces", Georgia, serif;
 
   --color-ink: #212529;
   --color-paper: #ffffff;
@@ -41,6 +41,12 @@ body {
 
 .font-display {
   font-family: var(--font-display);
+  /* Fraunces reads loose at its default tracking — tightened for a more modern, condensed
+     editorial feel instead of the airier spacing serif display faces default to. Fraunces is a
+     variable font with its own optical-size axis (auto-applied per font-size by the browser), so
+     it also sharpens up correctly at the smaller sizes .font-display gets used at (stat labels,
+     modal titles), not just big hero headlines. */
+  letter-spacing: -0.02em;
 }
 
 .bg-noise {

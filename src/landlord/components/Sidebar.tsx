@@ -16,13 +16,15 @@ import {
   UserCircle,
   SignOut,
   X,
+  DotsThreeVertical,
+  Bell as BellIcon,
 } from "@phosphor-icons/react";
 import { useSidebar } from "../SidebarContext";
 import { useMaintenance } from "../MaintenanceContext";
 import { useTenants } from "../TenantsContext";
 import { useSettings } from "../SettingsContext";
-import NotificationsPanel from "./NotificationsPanel";
 import { signOut as signOutRequest } from "../../lib/auth";
+import NotificationsPanel from "./NotificationsPanel";
 
 const icons = {
   dashboard: SquaresFour,
@@ -193,21 +195,21 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
   const { tenants } = useTenants();
   const { propertyName } = useSettings();
   const navigate = useNavigate();
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const notificationsRef = useRef<HTMLDivElement>(null);
   const [accountOpen, setAccountOpen] = useState(false);
   const accountRef = useRef<HTMLDivElement>(null);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const notificationsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!notificationsOpen && !accountOpen) return;
+    if (!accountOpen && !notificationsOpen) return;
     const onClick = (e: MouseEvent) => {
-      if (notificationsRef.current && !notificationsRef.current.contains(e.target as Node)) setNotificationsOpen(false);
       if (accountRef.current && !accountRef.current.contains(e.target as Node)) setAccountOpen(false);
+      if (notificationsRef.current && !notificationsRef.current.contains(e.target as Node)) setNotificationsOpen(false);
     };
     const onEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        setNotificationsOpen(false);
         setAccountOpen(false);
+        setNotificationsOpen(false);
       }
     };
     document.addEventListener("mousedown", onClick);
@@ -216,7 +218,7 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
       document.removeEventListener("mousedown", onClick);
       document.removeEventListener("keydown", onEscape);
     };
-  }, [notificationsOpen, accountOpen]);
+  }, [accountOpen, notificationsOpen]);
 
   // How many things need a look on each nav item — shown as a count badge, not just a dot, so it's
   // clear at a glance how much is waiting rather than just that something is.
@@ -240,16 +242,32 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
         open ? "translate-x-0" : "-translate-x-full"
       }`}
     >
-      {/* Header — logo + notifications, replacing the old full-width topbar. Lives inside the
-          sidebar's own card rather than a separate strip across the whole page. */}
-      <div ref={notificationsRef} className="relative flex items-center justify-between px-4 py-4">
+      {/* Header — logo + notifications. Fixed real estate that never collides with a page's own
+          header actions (balance pills, buttons), unlike floating it over the content area. */}
+      <div className="flex items-center justify-between px-4 py-4">
         <Link to="/dashboard" onClick={() => setOpen(false)} className="flex items-center gap-3">
           <img src="https://rlmcuhejgfftcdshbrbe.supabase.co/storage/v1/object/public/Company%20assets/Instay%20Manage%20Logo.png" alt="Instay Manage" className="h-10" />
-          <p className="font-display text-blue-700 text-xl font-bold leading-[1.08] tracking-[-0.09em]  ">Instay Manage</p>
+          <p className="font-sans text-blue-700 text-xl font-bold leading-[1.08] tracking-[-0.09em]  ">Instay Manage</p>
         </Link>
 
         <div className="flex items-center gap-1">
-          
+          <div ref={notificationsRef} className="relative">
+            <button
+              type="button"
+              onClick={() => setNotificationsOpen((v) => !v)}
+              aria-label="Notifications"
+              aria-expanded={notificationsOpen}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-ink"
+            >
+              <BellIcon size={17} weight="bold" />
+            </button>
+            {notificationsOpen && (
+              <div className="absolute top-full right-0 z-20 mt-2 max-w-[calc(100vw-1.5rem)]">
+                <NotificationsPanel onClose={() => setNotificationsOpen(false)} />
+              </div>
+            )}
+          </div>
+
           <button
             type="button"
             onClick={() => setOpen(false)}
@@ -259,16 +277,9 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
             <X size={16} weight="bold" />
           </button>
         </div>
-
-        {notificationsOpen && (
-          <div className="absolute top-full left-3 z-10 mt-1 max-w-[calc(100vw-1.5rem)]">
-            <NotificationsPanel onClose={() => setNotificationsOpen(false)} />
-          </div>
-        )}
       </div>
-     
 
-      <nav className="flex-1 space-y-3 overflow-y-auto px-3 pb-4 pt-2">
+      <nav className="flex-1  space-y-3 overflow-y-auto px-3 pb-4 pt-2">
         {groups.map((group) => (
           <div key={group.label}>
             <p className="px-3 pb-1.5 text-[11px] font-semibold tracking-wide text-muted/70 uppercase">
@@ -286,35 +297,32 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
       {/* Compact account trigger — a small icon, not a permanent list of links. Everything that
           used to be separate footer rows (Settings, Help, Log out) now lives inside the popup
           this opens, anchored above the trigger since it's at the very bottom of the sidebar. */}
-      <div ref={accountRef} className="relative   px-3 py-3">
-        <button
-          type="button"
-          onClick={() => setAccountOpen((v) => !v)}
-          aria-label="Open account menu"
-          aria-expanded={accountOpen}
-          className="group flex w-full items-center gap-3 rounded-lg px-2.5 py-2 bg-white border border-gray-200"
-        >
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-blue-700 group-hover:ring-2 group-hover:ring-blue-300 transition-all">
-            <UserCircle size={24} weight="fill" />
-          </span>
-          <div className="flex-1 text-left min-w-0 flex flex-col">
-            <span className="truncate text-[15px] font-semibold leading-tight text-ink">{propertyName}</span>
-            <span className="text-xs text-muted/80 mt-0.5">Property account</span>
-          </div>
-          <svg width="18" height="18" fill="none" viewBox="0 0 20 20" className={`ml-auto text-muted transition-transform ${accountOpen ? "rotate-180" : ""}`}>
-            <path d="M6 8l4 4 4-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </button>
-   
+      <div ref={accountRef} className="relative px-3 py-3">
+      <button
+            type="button"
+            onClick={() => setAccountOpen((v) => !v)}
+            aria-label="Open account menu"
+            aria-expanded={accountOpen}
+            className="flex items-center gap-2.5 rounded-md p-2  transition-colors bg-mist border border-gray-200  "
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full ">
+              <img src='https://i.pinimg.com/originals/1d/ec/e2/1dece2c8357bdd7cee3b15036344faf5.jpg?nii=t' className="rounded-full w-8 h-8" />
+            </span>
+            <span className="hidden min-w-0 max-w-40 flex-col items-start text-left sm:flex">
+              <span className="w-full truncate text-sm font-semibold text-ink">{propertyName}</span>
+              <span className="w-full truncate text-xs text-muted">Admin · Property account</span>
+            </span>
+            <DotsThreeVertical size={16} weight="bold" className="hidden shrink-0 text-muted sm:block" />
+          </button>
 
         {accountOpen && (
-          <div className="absolute bottom-full left-3 z-10 mb-2 w-56 overflow-hidden rounded-2xl border border-line bg-paper shadow-card">
+          <div className="absolute bottom-full left-3 z-10 mb-2 w-56 overflow-hidden rounded-lg border border-line bg-paper shadow-card">
             <div className="px-4 pt-3.5 pb-3">
               <p className="truncate text-sm font-semibold text-ink">{propertyName}</p>
               <p className="text-xs text-muted">Property account</p>
             </div>
             <div className="h-px bg-line" />
-            <div className="p-1.5">
+            <div className="p-1">
               <Link
                 to="/settings"
                 onClick={() => {
@@ -326,20 +334,10 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
                 <GearSix size={16} weight="duotone" />
                 Settings
               </Link>
-              <Link
-                to="/help"
-                onClick={() => {
-                  setAccountOpen(false);
-                  setOpen(false);
-                }}
-                className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist"
-              >
-                <Lifebuoy size={16} weight="duotone" />
-                Help & Support
-              </Link>
+              
             </div>
-            <div className="h-px bg-line" />
-            <div className="p-1.5">
+          
+            <div className="p-1">
               <button
                 type="button"
                 onClick={handleSignOut}

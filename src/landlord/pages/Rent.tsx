@@ -539,7 +539,7 @@ export default function Rent() {
                       ) : (
                         <p className="text-xs text-muted">{formatCurrency(t.rentAmount)}/mo</p>
                       )}
-                      <p className={`mt-0.5 text-sm ${row.amountPaid === 0 ? "font-normal text-muted" : "font-medium text-ink"}`}>
+                      <p className={`font-display mt-0.5 text-sm ${row.amountPaid === 0 ? "font-normal text-muted" : "font-medium text-ink"}`}>
                         {formatCurrency(row.amountPaid)} paid
                       </p>
                     </div>
@@ -635,10 +635,10 @@ export default function Rent() {
                         {t.roomType}
                       </Link>
                     </td>
-                    <td className={`px-4 py-3 whitespace-nowrap ${row.amountPaid === 0 ? "font-normal text-muted" : "font-medium text-ink"}`}>
+                    <td className={`font-display px-4 py-3 whitespace-nowrap ${row.amountPaid === 0 ? "font-normal text-muted" : "font-medium text-ink"}`}>
                       {formatCurrency(row.amountPaid)}
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
+                    <td className="font-display px-4 py-3 whitespace-nowrap">
                       {(() => {
                         const outstanding = isCurrentMonth ? calcTotalOwed(row.tenant) : row.owedAmount;
                         return outstanding > 0 ? (

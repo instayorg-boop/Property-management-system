@@ -907,7 +907,7 @@ export default function TenantProfile() {
                                       </span>
                                     )}
                                   </td>
-                                  <td className="py-3.5 text-ink">
+                                  <td className="font-display py-3.5 text-ink">
                                     {row.paidAmount !== undefined
                                       ? `${formatCurrency(row.paidAmount)} of ${formatCurrency(row.amount)}`
                                       : formatCurrency(row.amount)}
@@ -931,7 +931,7 @@ export default function TenantProfile() {
                                       : "—"}
                                   </td>
                                   <td
-                                    className={`py-3.5 font-medium ${outstanding > 0 ? "text-red-600" : "text-muted"}`}
+                                    className={`font-display py-3.5 font-medium ${outstanding > 0 ? "text-red-600" : "text-muted"}`}
                                   >
                                     {outstanding > 0
                                       ? formatCurrency(outstanding)

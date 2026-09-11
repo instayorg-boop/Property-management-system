@@ -745,7 +745,7 @@ export default function Accounting() {
                       <p className="truncate text-sm font-medium text-ink">{e.name}</p>
                       {e.description && <p className="mt-0.5 truncate text-xs text-muted">{e.description}</p>}
                     </div>
-                    <p className="shrink-0 text-sm font-medium text-ink">{formatK(e.amount)}</p>
+                    <p className="font-display shrink-0 text-sm font-medium text-ink">{formatK(e.amount)}</p>
                   </div>
                   <div className="mt-2 flex items-center gap-2">
                     <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${categoryBadgeStyle(categories, e.categoryId)}`}>
@@ -842,7 +842,7 @@ export default function Accounting() {
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-right font-medium whitespace-nowrap text-ink">{formatK(e.amount)}</td>
+                      <td className="font-display px-4 py-3 text-right font-medium whitespace-nowrap text-ink">{formatK(e.amount)}</td>
                       <td className="px-4 py-3 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1">
                           <button
