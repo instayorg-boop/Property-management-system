@@ -15,8 +15,6 @@ import { useMaintenance } from "../MaintenanceContext";
 import { useRoomsView } from "../RoomsContext";
 import { useSettings } from "../SettingsContext";
 import { getLencoBalance } from "../../lib/payoutApi";
-import { useCachedViewSyncedAt } from "../../lib/offline/hooks";
-import { LastSyncedLabel } from "../components/SyncStatus";
 import {
   ArrowRight as ArrowIcon,
   Wrench as WrenchIcon,
@@ -28,7 +26,6 @@ import {
   ChartBar as ChartBarIcon,
   Wallet as WalletIcon,
   DoorOpen as DoorIcon,
-  Sparkle as SparkleIcon,
 } from "@phosphor-icons/react";
 import MetricCard from "../components/MetricCard";
 import SectionLabel from "../components/SectionLabel";
@@ -43,13 +40,12 @@ const quickActions: { label: string; action: QuickAction; Icon: typeof CashIcon 
   { label: "Add tenant", action: "add-tenant", Icon: UserPlusIcon },
 ];
 
-function Greeting({ name, propertyId, onAction }: { name: string; propertyId: string | null; onAction: (action: QuickAction) => void }) {
+function Greeting({ onAction }: { propertyId: string | null; onAction: (action: QuickAction) => void }) {
   const hour = new Date().getHours();
   const part = hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening";
 
   const today = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
   const time = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-  const tenantsSyncedAt = useCachedViewSyncedAt("tenants", propertyId ?? undefined);
 
   const [sheetOpen, setSheetOpen] = useState(false);
 
@@ -122,45 +118,6 @@ function Greeting({ name, propertyId, onAction }: { name: string; propertyId: st
   );
 }
 
-// A category-level nudge in "Today's briefing" — a count and a straight link to the page where
-// the landlord actually resolves it, rather than an itemized list of every tenant/report.
-// A suggestion in the AI briefing panel — plain-language copy generated from real dashboard
-// counts (overdue tenants, unread maintenance reports), each pointing straight at the page where
-// it gets resolved. Not a model call — just the numbers already on this page, phrased as advice.
-type Suggestion = {
-  icon: typeof CashIcon;
-  headline: string;
-  body: string;
-  cta: string;
-  to: string;
-};
-
-function SuggestionCard({ item, index }: { item: Suggestion; index: number }) {
-  const Icon = item.icon;
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, delay: 0.15 + index * 0.12, ease: [0.16, 1, 0.3, 1] }}
-    >
-      <Link
-        to={item.to}
-        className="group flex items-start  border rounded-lg  p-3.5 backdrop-blur-sm transition-all hover:border-white bg-white hover:shadow-md"
-      >
-        
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-ink">{item.headline}</p>
-          <p className="mt-0.5 text-xs text-muted">{item.body}</p>
-          <span className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-violet-700">
-            {item.cta}
-            <ArrowIcon size={12} weight="bold" className="transition-transform group-hover:translate-x-0.5" />
-          </span>
-        </div>
-      </Link>
-    </motion.div>
-  );
-}
-
 function timeAgo(iso: string) {
   const ms = Date.now() - new Date(iso).getTime();
   const minutes = Math.round(ms / 60000);
@@ -193,7 +150,7 @@ export default function Dashboard() {
   const { expenses } = useExpenses();
   const { reports } = useMaintenance();
   const rooms = useRoomsView();
-  const { landlordName, lencoConnected, bankName, accountNumber, propertyId, isReady: settingsReady } = useSettings();
+  const { lencoConnected, bankName, accountNumber, propertyId, isReady: settingsReady } = useSettings();
   const totalCollected = useCollectedRent();
   const navigate = useNavigate();
   const dataReady = tenantsReady && settingsReady;
@@ -253,49 +210,6 @@ export default function Dashboard() {
     return rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 5);
   }, [tenants]);
 
-  // Overdue/unpaid tenants and unread maintenance reports, worst first — replaces a hardcoded
-  // briefing list. (No "lease ending soon" category: there's no lease-end date in the data model.)
-  const overdueRentCount = useMemo(
-    () => tenants.filter((t) => t.active && (t.status === "overdue" || t.status === "unpaid")).length,
-    [tenants]
-  );
-  const unreadReportCount = useMemo(() => reports.filter((r) => r.unread).length, [reports]);
-  const overdueRentTotal = useMemo(
-    () => tenants.filter((t) => t.active && (t.status === "overdue" || t.status === "unpaid")).reduce((sum, t) => sum + t.owedAmount, 0),
-    [tenants]
-  );
-
-  // Plain-language suggestions built from the same counts shown elsewhere on this page — not a
-  // model call, just the numbers phrased as advice and pointed at where they get resolved.
-  const briefing = useMemo<Suggestion[]>(() => {
-    const items: Suggestion[] = [];
-    if (overdueRentCount > 0) {
-      items.push({
-        icon: CashIcon,
-        headline:
-          overdueRentCount === 1
-            ? `1 tenant is behind on rent, totaling ${formatCurrency(overdueRentTotal)}.`
-            : `${overdueRentCount} tenants are behind on rent, totaling ${formatCurrency(overdueRentTotal)}.`,
-        body: "Start with whoever owes the most — they're the biggest hit to what you collect this month.",
-        cta: "Review overdue rent",
-        to: "/rent",
-      });
-    }
-    if (unreadReportCount > 0) {
-      items.push({
-        icon: WrenchIcon,
-        headline:
-          unreadReportCount === 1
-            ? "1 maintenance request is waiting on you."
-            : `${unreadReportCount} maintenance requests are waiting on you.`,
-        body: "Tenants can see these are still open — worth a quick look before they follow up.",
-        cta: "Open maintenance requests",
-        to: "/maintenance",
-      });
-    }
-    return items;
-  }, [overdueRentCount, overdueRentTotal, unreadReportCount]);
-
   // What's actually sitting in Lenco, ready to withdraw — real mobile-money collections minus
   // whatever's already been paid out. Deliberately NOT gross-collected-minus-fee-minus-expenses
   // (that's the Owner Payout Statement's separate accounting view): a cash payment a landlord logs
@@ -354,7 +268,7 @@ export default function Dashboard() {
 
   return (
     <>
-      <Greeting name={landlordName} propertyId={propertyId} onAction={handleAction} />
+      <Greeting propertyId={propertyId} onAction={handleAction} />
 
       {/* Stat cards — their own full-width row, not sharing space with any other panel. Card
           chrome renders immediately; only the figures inside shimmer while loading. */}
@@ -372,6 +286,7 @@ export default function Dashboard() {
               label="Total collected"
               value={`K${totalCollected.toLocaleString()}`}
               caption={totalCollected > 0 ? "Collected from active tenants" : "Logged payments will show up here"}
+              to="/rent"
             />
           )}
           {!dataReady ? (
@@ -390,6 +305,7 @@ export default function Dashboard() {
                   ? `${outstanding.count} tenant${outstanding.count === 1 ? "" : "s"} behind on rent`
                   : "Every active tenant is paid up"
               }
+              to="/rent"
             />
           )}
           {!dataReady ? (
@@ -404,9 +320,14 @@ export default function Dashboard() {
               value={`${roomsOccupied.occupied} / ${roomsOccupied.total}`}
               tone={roomsOccupied.occupied === roomsOccupied.total ? "success" : "default"}
               caption={`${roomsOccupied.total - roomsOccupied.occupied} room${roomsOccupied.total - roomsOccupied.occupied === 1 ? "" : "s"} empty`}
+              to="/rooms"
             />
           ) : (
-            <div className="rounded-lg border border-line bg-paper p-4">
+            <button
+              type="button"
+              onClick={() => navigate("/rooms")}
+              className="group rounded-lg border border-line bg-paper p-4 text-left transition-colors hover:border-ink/20 hover:bg-mist/40"
+            >
               <p className="text-sm text-muted">Rooms occupied</p>
               <div className="mt-2.5 flex items-center gap-2.5">
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-mist text-muted">
@@ -414,10 +335,13 @@ export default function Dashboard() {
                 </span>
                 <div>
                   <p className="text-sm font-medium text-ink">No rooms yet</p>
-                  <p className="text-[11px] text-muted">Add a room to get started</p>
+                  <p className="flex items-center gap-1 text-[11px] text-muted">
+                    Add a room to get started
+                    <ArrowIcon size={10} weight="bold" className="opacity-0 transition-opacity group-hover:opacity-100" />
+                  </p>
                 </div>
               </div>
-            </div>
+            </button>
           )}
           {!dataReady ? (
             <div className="rounded-lg border border-line bg-paper p-4">
@@ -430,6 +354,7 @@ export default function Dashboard() {
               label="Total tenants"
               value={`${activeTenantCount}`}
               caption={activeTenantCount > 0 ? "Across all your rooms" : "Add a tenant to get started"}
+              to="/tenants"
             />
           )}
         </div>

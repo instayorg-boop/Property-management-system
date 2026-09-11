@@ -1,32 +1,34 @@
-// Initiates a payout transfer to the landlord's registered bank account via Lenco.
+// Initiates a payout transfer to one of the landlord's registered payout recipients via Lenco —
+// a bank account or a mobile money number.
 //
 // The recipient is looked up server-side from `payout_recipients` (never trusted from the
 // request body) using the caller's own forwarded session, so RLS guarantees a landlord can only
-// ever pay out to a property they own, to whichever bank account they've actually registered via
-// Settings > Online payments (see resolve-bank-account / create-payout-recipient). `recipientId` in
-// the payload picks WHICH of the property's (possibly several) recipients to use — omit it to fall
-// back to the default one. Only `type = 'bank'` recipients can actually be paid out to right now —
-// mobile-money recipients exist in the data model (see the payout_recipients_multi migration) but
-// there's no confirmed Lenco disbursement-to-mobile-money endpoint yet, so that's rejected below
-// rather than guessed at.
+// ever pay out to a property they own, to whichever destination they've actually registered via
+// Settings > Bank & payouts. `recipientId` in the payload picks WHICH of the property's (possibly
+// several) recipients to use — omit it to fall back to the default one.
 //
-// `confirmationToken` is required and re-validated here (not just checked client-side) — it's
-// issued by verify-withdrawal-otp only after the landlord entered a code emailed to the property's
-// registered account address. This is deliberately the actual authorization boundary for moving
-// money, not just a UI step: a request that skips straight to this function without ever verifying
-// a code has no valid token to present and is rejected before anything else happens.
+// `confirmationToken` is required and re-validated here (not just checked client-side), scoped to
+// purpose "withdrawal" — it's issued by verify-withdrawal-otp only after the landlord entered a code
+// emailed to the property's registered account address. This is deliberately the actual
+// authorization boundary for moving money, not just a UI step: a request that skips straight to
+// this function without ever verifying a code has no valid token to present and is rejected before
+// anything else happens.
 //
 // A `payouts` row is written up front with status "pending" so there's a durable record even if
 // the Lenco call itself fails outright (network error, wrong endpoint, etc.) — lenco-webhook then
 // moves it to "successful"/"failed" once Lenco confirms.
 //
-// Endpoint confirmed against this account's live Lenco API reference (v2.0):
+// Endpoints confirmed against this account's live Lenco API reference (v2.0):
 //   POST https://api.lenco.co/access/v2/transfers/bank-account
 //   body: { accountId, amount, reference, narration?, transferRecipientId }
+//   POST https://api.lenco.co/access/v2/transfers/mobile-money
+//   body: { accountId, amount, reference, narration?, phone, operator, country }
 //     - accountId: the LENCO ACCOUNT to debit from (your own Lenco wallet, not the recipient) —
 //       fetched from GET /access/v2/accounts below rather than hardcoded, since we don't have a
 //       reliable way to know it ahead of time and this account only has one Lenco account anyway.
-//     - transferRecipientId: payout_recipients.lenco_recipient_id, from create-payout-recipient.
+//     - transferRecipientId: payout_recipients.lenco_recipient_id (bank only — mobile-money
+//       recipients were never registered as a Lenco transfer-recipient, so phone/operator are sent
+//       directly instead, exactly as Lenco's docs describe for when you don't have one).
 //     - reference: must be unique, alphanumeric plus -._  — payouts.id (a uuid) satisfies this.
 //
 // Deploy:  supabase functions deploy lenco-payout
@@ -113,6 +115,7 @@ Deno.serve(async (req) => {
     .from("payout_withdrawal_otp_codes")
     .update({ confirmation_token_hash: null })
     .eq("property_id", propertyId)
+    .eq("purpose", "withdrawal")
     .eq("confirmation_token_hash", confirmationTokenHash)
     .gt("confirmation_expires_at", new Date().toISOString())
     .select("id")
@@ -126,7 +129,7 @@ Deno.serve(async (req) => {
 
   let recipientQuery = supabase
     .from("payout_recipients")
-    .select("id, type, lenco_recipient_id, account_name, account_number")
+    .select("id, type, lenco_recipient_id, account_name, account_number, phone_number, provider")
     .eq("property_id", propertyId);
   recipientQuery = recipientId ? recipientQuery.eq("id", recipientId) : recipientQuery.eq("is_default", true);
   const { data: recipient, error: recipientError } = await recipientQuery.limit(1).maybeSingle();
@@ -138,16 +141,22 @@ Deno.serve(async (req) => {
     });
   }
   if (!recipient) {
-    return new Response(JSON.stringify({ error: "No payout recipient is set up for this property yet — add one in Settings > Online payments." }), {
+    return new Response(JSON.stringify({ error: "No payout recipient is set up for this property yet — add one in Settings > Bank & payouts." }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
-  if (recipient.type !== "bank" || !recipient.lenco_recipient_id) {
-    return new Response(
-      JSON.stringify({ error: "Payouts to mobile money aren't connected yet — choose a bank account for this withdrawal." }),
-      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+  if (recipient.type === "bank" && !recipient.lenco_recipient_id) {
+    return new Response(JSON.stringify({ error: "This bank recipient is missing its Lenco reference — re-add it in Settings." }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  if (recipient.type === "mobile-money" && (!recipient.phone_number || !recipient.provider)) {
+    return new Response(JSON.stringify({ error: "This mobile money recipient is missing its phone or provider — re-add it in Settings." }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   const { data: payoutRow, error: insertError } = await supabase
@@ -157,7 +166,7 @@ Deno.serve(async (req) => {
       payout_recipient_id: recipient.id,
       amount,
       status: "pending",
-      narration: payload.narration ?? `Rent payout — ${recipient.account_name}`,
+      narration: payload.narration ?? `Rent payout — ${recipient.account_name ?? recipient.phone_number}`,
     })
     .select()
     .single();
@@ -183,18 +192,34 @@ Deno.serve(async (req) => {
       );
     }
 
-    const lencoResponse = await fetch("https://api.lenco.co/access/v2/transfers/bank-account", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${lencoSecretKey}`, "Content-Type": "application/json", accept: "application/json" },
-      body: JSON.stringify({
-        accountId,
-        amount,
-        reference: payoutRow.id,
-        narration: payoutRow.narration,
-        transferRecipientId: recipient.lenco_recipient_id,
-        country: "zm",
-      }),
-    });
+    const isMobileMoney = recipient.type === "mobile-money";
+    const lencoResponse = await fetch(
+      `https://api.lenco.co/access/v2/transfers/${isMobileMoney ? "mobile-money" : "bank-account"}`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${lencoSecretKey}`, "Content-Type": "application/json", accept: "application/json" },
+        body: JSON.stringify(
+          isMobileMoney
+            ? {
+                accountId,
+                amount,
+                reference: payoutRow.id,
+                narration: payoutRow.narration,
+                phone: recipient.phone_number,
+                operator: recipient.provider,
+                country: "zm",
+              }
+            : {
+                accountId,
+                amount,
+                reference: payoutRow.id,
+                narration: payoutRow.narration,
+                transferRecipientId: recipient.lenco_recipient_id,
+                country: "zm",
+              }
+        ),
+      }
+    );
     const lencoJson = await lencoResponse.json();
 
     if (!lencoResponse.ok) {

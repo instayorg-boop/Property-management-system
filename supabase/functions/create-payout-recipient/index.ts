@@ -17,20 +17,29 @@
 // Auth: the request is made with the signed-in landlord's own session (forwarded via the
 // Authorization header), so the DB insert runs under their RLS policy — `payout_recipients_insert`
 // only allows rows where `property_id` belongs to a property they own. No service-role key is used
-// here; only the Lenco secret key needs elevated trust, and that never leaves this function.
+// for the Lenco/DB parts; only for burning the confirmationToken (see below), since
+// payout_withdrawal_otp_codes has no RLS policies at all.
+//
+// `confirmationToken` (purpose "add_recipient") is required and re-validated here, same boundary
+// lenco-payout applies to an actual withdrawal — adding a payout destination decides where future
+// money CAN go, so it gets the same "prove it's really you via a code emailed to the account" step
+// rather than just an after-the-fact alert email. Checked before the Lenco call, not after, so an
+// unauthorized attempt never even creates a Lenco transfer-recipient.
 //
 // Deploy:  supabase functions deploy create-payout-recipient
-// Invoke:  supabase.functions.invoke("create-payout-recipient", { body: { accountNumber, bankCode, accountName, propertyId } })
+// Invoke:  supabase.functions.invoke("create-payout-recipient", { body: { accountNumber, bankCode, accountName, propertyId, confirmationToken } })
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, handleOptions } from "../_shared/cors.ts";
 import { sendEmail } from "../_shared/email.ts";
+import { sha256Hex } from "../_shared/otpCrypto.ts";
 
 type CreateRecipientPayload = {
   accountNumber?: string;
   bankCode?: string;
   accountName?: string;
   propertyId?: string;
+  confirmationToken?: string;
 };
 
 Deno.serve(async (req) => {
@@ -58,12 +67,19 @@ Deno.serve(async (req) => {
   const bankCode = payload.bankCode?.trim() ?? "";
   const accountName = payload.accountName?.trim() ?? "";
   const propertyId = payload.propertyId?.trim() ?? "";
+  const confirmationToken = payload.confirmationToken?.trim() ?? "";
 
   if (!/^\d{5,20}$/.test(accountNumber) || !bankCode || !accountName || !propertyId) {
     return new Response(
       JSON.stringify({ error: "A valid accountNumber, bankCode, accountName and propertyId are all required" }),
       { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
+  }
+  if (!confirmationToken) {
+    return new Response(JSON.stringify({ error: "A confirmation is required — verify the code emailed to your account first." }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   const authHeader = req.headers.get("Authorization");
@@ -87,6 +103,27 @@ Deno.serve(async (req) => {
   const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
     global: { headers: { Authorization: authHeader } },
   });
+
+  // The actual authorization check — see this file's top comment. payout_withdrawal_otp_codes has
+  // no RLS policies at all, hence the service-role client; validates + immediately burns the token
+  // in one update so it can't be replayed.
+  const serviceClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  const confirmationTokenHash = await sha256Hex(confirmationToken);
+  const { data: burnedConfirmation } = await serviceClient
+    .from("payout_withdrawal_otp_codes")
+    .update({ confirmation_token_hash: null })
+    .eq("property_id", propertyId)
+    .eq("purpose", "add_recipient")
+    .eq("confirmation_token_hash", confirmationTokenHash)
+    .gt("confirmation_expires_at", new Date().toISOString())
+    .select("id")
+    .maybeSingle();
+  if (!burnedConfirmation) {
+    return new Response(JSON.stringify({ error: "That confirmation has expired or was already used. Request a new code." }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
   let lencoRecipientId: string;
   try {

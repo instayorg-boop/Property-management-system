@@ -15,7 +15,6 @@ import {
   Lifebuoy,
   UserCircle,
   SignOut,
-  Bell as BellIcon,
   X,
 } from "@phosphor-icons/react";
 import { useSidebar } from "../SidebarContext";

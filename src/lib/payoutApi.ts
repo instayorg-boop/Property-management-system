@@ -53,45 +53,54 @@ export async function deletePayoutRecipient(id: string): Promise<void> {
   if (error) throw error;
 }
 
-/** Step 1 of adding a mobile-money payout recipient — texts a code to the number being added. See
- * request-payout-recipient-otp's file comment for why this (not a bank-style name resolution) is
- * how a mobile-money recipient gets verified. */
-export async function requestPayoutRecipientOtp(propertyId: string, phoneNumber: string): Promise<{ maskedPhone: string; devCode?: string }> {
-  const { data, error } = await supabase.functions.invoke<{ ok?: boolean; maskedPhone?: string; devCode?: string; error?: string }>(
-    "request-payout-recipient-otp",
-    { body: { propertyId, phoneNumber } }
+/** Step 1 of adding a mobile-money payout recipient — resolves the account holder's name via Lenco,
+ * the same "confirm this is you" pattern resolveBankAccount already uses for bank accounts, now that
+ * this endpoint is confirmed (see resolve-mobile-money's file comment). */
+export async function resolveMobileMoneyAccount(phone: string, operator: "mtn" | "airtel" | "zamtel"): Promise<string> {
+  const { data, error } = await supabase.functions.invoke<{ accountName?: string; error?: string }>(
+    "resolve-mobile-money",
+    { body: { phone, operator } }
   );
-  if (error || !data?.ok || !data?.maskedPhone) {
-    throw new Error(await edgeFunctionErrorMessage(error, "Failed to send a code to that number."));
+  if (error || !data?.accountName) {
+    throw new Error(await edgeFunctionErrorMessage(error, "Couldn't resolve that number — check the number and provider."));
   }
-  return { maskedPhone: data.maskedPhone, devCode: data.devCode };
+  return data.accountName;
 }
 
-/** Step 2 — verifying the code saves the number as a new payout_recipients row (type: mobile-money)
- * and triggers the security-alert email to the account's registered address. */
-export async function verifyPayoutRecipientOtp(
-  propertyId: string,
-  phoneNumber: string,
-  code: string,
-  provider: "mtn" | "airtel" | "zamtel"
-): Promise<PayoutRecipient> {
+/** Step 2 — saves the number as a new payout_recipients row (type: mobile-money) once the landlord
+ * has confirmed the resolved name, and triggers the security-alert email to the account's
+ * registered address. */
+export async function createMobileMoneyRecipient(params: {
+  propertyId: string;
+  phoneNumber: string;
+  provider: "mtn" | "airtel" | "zamtel";
+  accountName: string;
+  confirmationToken: string;
+}): Promise<PayoutRecipient> {
   const { data, error } = await supabase.functions.invoke<{ ok?: boolean; recipient?: PayoutRecipient; error?: string }>(
-    "verify-payout-recipient-otp",
-    { body: { propertyId, phoneNumber, code, provider } }
+    "create-mobile-money-recipient",
+    { body: params }
   );
   if (error || !data?.recipient) {
-    throw new Error(await edgeFunctionErrorMessage(error, "Incorrect or expired code."));
+    throw new Error(await edgeFunctionErrorMessage(error, "Failed to save that payout method."));
   }
   return data.recipient;
 }
 
-/** Step 1 of authorizing a withdrawal — emails a code to the property's registered account address.
- * See request-withdrawal-otp's file comment for why this exists as a real second factor, not just a
- * UI speed bump. */
-export async function requestWithdrawalOtp(propertyId: string): Promise<{ maskedEmail: string; devCode?: string }> {
+export type PayoutOtpPurpose = "withdrawal" | "add_recipient";
+
+/** Step 1 of a payout-related confirmation — emails a code to the property's registered account
+ * address. Shared between two purposes: authorizing an actual withdrawal, and adding a new payout
+ * recipient (bank or mobile money) — `purpose` scopes the code (and the confirmationToken it
+ * produces) to only that action. See request-withdrawal-otp's file comment for why this exists as a
+ * real second factor, not just a UI speed bump. */
+export async function requestWithdrawalOtp(
+  propertyId: string,
+  purpose: PayoutOtpPurpose = "withdrawal"
+): Promise<{ maskedEmail: string; devCode?: string }> {
   const { data, error } = await supabase.functions.invoke<{ ok?: boolean; maskedEmail?: string; devCode?: string; error?: string }>(
     "request-withdrawal-otp",
-    { body: { propertyId } }
+    { body: { propertyId, purpose } }
   );
   if (error || !data?.ok || !data?.maskedEmail) {
     throw new Error(await edgeFunctionErrorMessage(error, "Failed to send a confirmation code."));
@@ -99,12 +108,17 @@ export async function requestWithdrawalOtp(propertyId: string): Promise<{ masked
   return { maskedEmail: data.maskedEmail, devCode: data.devCode };
 }
 
-/** Step 2 — a correct code returns a short-lived confirmationToken that sendPayout must be called
- * with; lenco-payout re-validates it server-side (see its file comment), so this isn't optional. */
-export async function verifyWithdrawalOtp(propertyId: string, code: string): Promise<{ confirmationToken: string; expiresAt: string }> {
+/** Step 2 — a correct code returns a short-lived confirmationToken that sendPayout / createPayoutRecipient
+ * / createMobileMoneyRecipient must be called with; each re-validates it (and its purpose) server-side
+ * (see their file comments), so this isn't optional. */
+export async function verifyWithdrawalOtp(
+  propertyId: string,
+  code: string,
+  purpose: PayoutOtpPurpose = "withdrawal"
+): Promise<{ confirmationToken: string; expiresAt: string }> {
   const { data, error } = await supabase.functions.invoke<{ ok?: boolean; confirmationToken?: string; expiresAt?: string; error?: string }>(
     "verify-withdrawal-otp",
-    { body: { propertyId, code } }
+    { body: { propertyId, code, purpose } }
   );
   if (error || !data?.ok || !data?.confirmationToken || !data?.expiresAt) {
     throw new Error(await edgeFunctionErrorMessage(error, "Incorrect or expired code."));
@@ -130,6 +144,7 @@ export async function createPayoutRecipient(params: {
   bankCode: string;
   accountName: string;
   propertyId: string;
+  confirmationToken: string;
 }): Promise<PayoutRecipient> {
   const { data, error } = await supabase.functions.invoke<{ ok?: boolean; recipient?: PayoutRecipient; error?: string }>(
     "create-payout-recipient",

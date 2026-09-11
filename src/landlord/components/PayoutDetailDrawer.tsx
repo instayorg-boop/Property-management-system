@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Wallet, CheckCircle, WarningCircle, CaretDown } from "@phosphor-icons/react";
+import { CheckCircle, WarningCircle, CaretDown } from "@phosphor-icons/react";
 import SlideOver from "./SlideOver";
 import Button from "./Button";
 import { useSettings } from "../SettingsContext";
@@ -55,7 +55,7 @@ function RecentPayouts({ propertyId }: { propertyId: string }) {
   const sorted = rows ? [...rows].sort((a, b) => payoutSortRank[a.status] - payoutSortRank[b.status]) : [];
 
   return (
-    <div className="mt-4 rounded-xl border border-line">
+    <div className="mt-4 rounded-lg border border-line">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
@@ -222,7 +222,7 @@ export default function PayoutDetailDrawer({
     <SlideOver
       onClose={onClose}
       title="Online payments balance"
-      description="Money collected through mobile money — ready to transfer to your bank."
+      description="Money collected automatically by system - ready to transfer to your bank."
       footer={
         lencoConnected && payout.propertyId ? (
           <div className="space-y-2">
@@ -253,7 +253,7 @@ export default function PayoutDetailDrawer({
               </p>
             ) : stillWaiting ? (
               <p className="rounded-lg border border-amber-200 bg-amber-50 py-2.5 text-center text-sm font-medium text-amber-700">
-                Still processing — check back shortly.
+                Still processing - check back shortly.
               </p>
             ) : otpStage === "entering" ? (
               <div className="space-y-2 rounded-lg border border-line p-3">
@@ -262,7 +262,7 @@ export default function PayoutDetailDrawer({
                 </p>
                 {devCode && (
                   <p className="text-xs text-amber-600">
-                    Dev mode — email isn't connected yet, your code is <span className="font-mono font-semibold">{devCode}</span>.
+                    Dev mode - email isn't connected yet, your code is <span className="font-mono font-semibold">{devCode}</span>.
                   </p>
                 )}
                 <input
@@ -315,11 +315,9 @@ export default function PayoutDetailDrawer({
     >
       {/* One compact card instead of three stacked ones — plain white, a small icon, tight rows
           with dividers rather than each fact getting its own boxed block. */}
-      <div className="rounded-xl border border-line">
+      <div className="rounded-lg border border-line">
         <div className="flex items-center gap-3 px-4 py-4">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-mist text-ink">
-            <Wallet size={16} weight="duotone" />
-          </span>
+          
           <div className="min-w-0 flex-1">
             <p className="text-xs text-muted">Balance · {payout.date}</p>
             <p className="font-display text-2xl font-semibold tracking-tight text-ink">{payout.amount}</p>
@@ -348,7 +346,7 @@ export default function PayoutDetailDrawer({
           <div className="flex items-start gap-2 border-t border-line px-4 py-3">
             <CheckCircle size={14} weight="fill" className="mt-0.5 shrink-0 text-emerald-500" />
             <p className="text-xs text-muted">
-              Transferred automatically through online payment collection — usually within one business day.
+              Instant transfer to your bank or mobile money account.
             </p>
           </div>
         )}

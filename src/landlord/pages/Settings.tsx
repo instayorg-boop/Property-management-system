@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { QRCodeSVG } from "qrcode.react";
@@ -6,7 +6,6 @@ import {
   Copy as CopyIconBase,
   QrCode as QrIconBase,
   Plus as PlusIconBase,
-  Check as CheckIconBase,
   CheckCircle as CheckCircleIcon,
   Laptop as LaptopIcon,
   Wallet as WalletIcon,
@@ -20,20 +19,18 @@ import SectionLabel from "../components/SectionLabel";
 import ThemeSwitcher from "../components/ThemeSwitcher";
 import Button from "../components/Button";
 import BankSelect from "../components/BankSelect";
-import { useSettings, type NotificationPrefs, type PaymentMethod } from "../SettingsContext";
+import { useSettings, type NotificationPrefs } from "../SettingsContext";
 import { formatCurrency } from "../TenantsContext";
-import { usePayoutSummary } from "../usePayoutSummary";
+import { useWithdrawFlow, recipientLabel } from "../useWithdrawFlow";
 import {
   listBanks,
   resolveBankAccount,
   createPayoutRecipient,
-  sendPayout,
-  checkPayoutStatus,
   listPayoutRecipients,
   setDefaultPayoutRecipient,
   deletePayoutRecipient,
-  requestPayoutRecipientOtp,
-  verifyPayoutRecipientOtp,
+  resolveMobileMoneyAccount,
+  createMobileMoneyRecipient,
   requestWithdrawalOtp,
   verifyWithdrawalOtp,
   type Bank,
@@ -50,10 +47,6 @@ function QrIcon() {
 
 function PlusIcon() {
   return <PlusIconBase size={14} weight="bold" />;
-}
-
-function CheckIcon() {
-  return <CheckIconBase size={12} weight="bold" />;
 }
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
@@ -99,95 +92,28 @@ const fieldCls =
 // panel still answers "is there a fee" instead of silently leaving the question open.
 const TRANSFER_FEE = 0;
 
-type WithdrawStep = "idle" | "confirm" | "otp-sending" | "otp" | "sending" | "success" | "error";
-
-function recipientLabel(r: PayoutRecipient): string {
-  if (r.type === "mobile-money") return `${(r.provider ?? "").toUpperCase()} •••• ${(r.phone_number ?? "").slice(-4)}`;
-  return `${r.account_name ?? "Bank"} •••• ${(r.account_number ?? "").slice(-4)}`;
-}
-
 /** "Available to withdraw" block for the connected-bank view of Bank & payouts — an inline
  * confirmation panel (not a drawer, unlike PayoutDetailDrawer) that replaces its own content with
  * a success state on completion, matching the step-based feel of the bank-setup wizard above it
- * without sharing its `payoutStep` state (that state is for bank setup, not withdrawals). Requires
- * an email-OTP confirmation before the transfer actually fires — see request/verify-withdrawal-otp's
- * comments for why that's a real authorization step, not just UI friction. */
+ * without sharing its `payoutStep` state (that state is for bank setup, not withdrawals). The
+ * actual withdraw logic (email-OTP confirmation, polling, etc.) lives in useWithdrawFlow, shared
+ * with the dedicated Payouts page — this component only owns how it's laid out inside Settings. */
 function WithdrawBlock({ recipients }: { recipients: PayoutRecipient[] }) {
-  const { payout, lastPayout } = usePayoutSummary();
-  const [step, setStep] = useState<WithdrawStep>("idle");
-  const [error, setError] = useState<string | null>(null);
-  const [recipientId, setRecipientId] = useState<string | null>(null);
-  const [maskedEmail, setMaskedEmail] = useState<string | null>(null);
-  const [devCode, setDevCode] = useState<string | null>(null);
-  const [otpCode, setOtpCode] = useState("");
-  const pollTimer = useRef<number | null>(null);
-
-  useEffect(() => () => {
-    if (pollTimer.current) window.clearTimeout(pollTimer.current);
-  }, []);
-
-  const bankRecipients = recipients.filter((r) => r.type === "bank");
-  const selectedRecipient = recipients.find((r) => r.id === recipientId) ?? bankRecipients.find((r) => r.is_default) ?? bankRecipients[0];
-
-  const lastSuccessfulDate =
-    lastPayout && lastPayout.status === "successful"
-      ? new Date(lastPayout.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
-      : "No payouts yet";
-
-  const poll = (payoutId: string, attempt: number) => {
-    checkPayoutStatus(payoutId)
-      .then(({ status, failureReason }) => {
-        if (status === "successful") {
-          setStep("success");
-          return;
-        }
-        if (status === "failed") {
-          setError(failureReason ?? "Transfer failed.");
-          setStep("error");
-          return;
-        }
-        if (attempt >= 20) {
-          // Still processing after ~60s — Lenco/the webhook will settle it eventually; don't leave
-          // the panel spinning forever, just stop polling and let the pill/drawer pick it up later.
-          setStep("success");
-          return;
-        }
-        pollTimer.current = window.setTimeout(() => poll(payoutId, attempt + 1), 3000);
-      })
-      .catch(() => {
-        pollTimer.current = window.setTimeout(() => poll(payoutId, attempt + 1), 3000);
-      });
-  };
-
-  const startConfirmation = async () => {
-    if (!payout?.propertyId) return;
-    setStep("otp-sending");
-    setError(null);
-    setDevCode(null);
-    try {
-      const { maskedEmail: masked, devCode: dev } = await requestWithdrawalOtp(payout.propertyId);
-      setMaskedEmail(masked);
-      setDevCode(dev ?? null);
-      setStep("otp");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to send a confirmation code.");
-      setStep("error");
-    }
-  };
-
-  const submit = async () => {
-    if (!payout?.propertyId || !payout.rawAmount || otpCode.trim().length !== 6 || !selectedRecipient) return;
-    setStep("sending");
-    setError(null);
-    try {
-      const { confirmationToken } = await verifyWithdrawalOtp(payout.propertyId, otpCode.trim());
-      const { payoutId } = await sendPayout(payout.propertyId, payout.rawAmount, confirmationToken, selectedRecipient.id);
-      poll(payoutId, 0);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to send the transfer.");
-      setStep("error");
-    }
-  };
+  const {
+    payout,
+    step,
+    setStep,
+    error,
+    setRecipientId,
+    selectedRecipient,
+    maskedEmail,
+    devCode,
+    otpCode,
+    setOtpCode,
+    lastSuccessfulDate,
+    startConfirmation,
+    submit,
+  } = useWithdrawFlow(recipients);
 
   if (!payout) {
     return (
@@ -265,15 +191,15 @@ function WithdrawBlock({ recipients }: { recipients: PayoutRecipient[] }) {
             </div>
             <div className="px-4 py-2.5">
               <span className="text-xs text-muted">Destination</span>
-              {bankRecipients.length > 1 ? (
+              {recipients.length > 1 ? (
                 <div className="mt-1.5 space-y-1.5">
-                  {bankRecipients.map((r) => (
+                  {recipients.map((r) => (
                     <button
                       key={r.id}
                       type="button"
                       onClick={() => setRecipientId(r.id)}
                       className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
-                        (selectedRecipient?.id ?? bankRecipients[0]?.id) === r.id
+                        (selectedRecipient?.id ?? recipients[0]?.id) === r.id
                           ? "border-brand bg-brand-soft text-brand"
                           : "border-line text-ink hover:bg-mist"
                       }`}
@@ -315,7 +241,7 @@ function WithdrawBlock({ recipients }: { recipients: PayoutRecipient[] }) {
     <Row label="Available to withdraw" desc={`Last payout: ${lastSuccessfulDate}`}>
       <div className="flex items-center gap-3">
         <span className="text-sm font-medium text-ink">{payout.amount}</span>
-        <Button variant="secondary" disabled={bankRecipients.length === 0} onClick={() => setStep("confirm")}>
+        <Button variant="secondary" disabled={recipients.length === 0} onClick={() => setStep("confirm")}>
           Withdraw
         </Button>
       </div>
@@ -323,59 +249,76 @@ function WithdrawBlock({ recipients }: { recipients: PayoutRecipient[] }) {
   );
 }
 
-type AddMobileMoneyStep = "closed" | "form" | "sending" | "otp" | "verifying";
+type AddMobileMoneyStep = "closed" | "form" | "sending" | "confirm" | "otp-sending" | "otp" | "saving";
 const MOBILE_PROVIDERS = [
   { value: "mtn", label: "MTN" },
   { value: "airtel", label: "Airtel" },
   { value: "zamtel", label: "Zamtel" },
 ] as const;
 
-/** Adds a mobile money number as a payout recipient — phone + provider, then an SMS code proves the
- * landlord actually controls that number (see request/verify-payout-recipient-otp's comments for
- * why this replaces a bank-style name resolution here). Inline, not a drawer or a new route, same
- * "sleek, matches the rest of Settings" brief as everything else on this page. */
+/** Adds a mobile money number as a payout recipient — phone + provider, then Lenco resolves the
+ * account holder's name (resolve-mobile-money) so the landlord confirms "is this you?" before it's
+ * saved, the same two-step shape the bank flow above already uses (BankSelect + resolveBankAccount
+ * -> createPayoutRecipient). Inline, not a drawer or a new route, matching the rest of Settings. */
 function AddMobileMoneyRecipient({ propertyId, onAdded }: { propertyId: string; onAdded: () => void }) {
   const [step, setStep] = useState<AddMobileMoneyStep>("closed");
   const [phone, setPhone] = useState("");
   const [provider, setProvider] = useState<(typeof MOBILE_PROVIDERS)[number]["value"]>("mtn");
-  const [maskedPhone, setMaskedPhone] = useState<string | null>(null);
-  const [devCode, setDevCode] = useState<string | null>(null);
-  const [code, setCode] = useState("");
+  const [resolvedName, setResolvedName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [maskedEmail, setMaskedEmail] = useState<string | null>(null);
+  const [devCode, setDevCode] = useState<string | null>(null);
+  const [otpCode, setOtpCode] = useState("");
 
   const reset = () => {
     setStep("closed");
     setPhone("");
-    setCode("");
+    setResolvedName(null);
     setError(null);
-    setDevCode(null);
+    setOtpCode("");
   };
 
-  const sendCode = async () => {
+  const resolve = async () => {
     if (phone.trim().length < 9) return;
     setStep("sending");
     setError(null);
+    setResolvedName(null);
     try {
-      const { maskedPhone: masked, devCode: dev } = await requestPayoutRecipientOtp(propertyId, phone.trim());
-      setMaskedPhone(masked);
-      setDevCode(dev ?? null);
-      setStep("otp");
+      const accountName = await resolveMobileMoneyAccount(phone.trim(), provider);
+      setResolvedName(accountName);
+      setStep("confirm");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to send a code.");
+      setError(err instanceof Error ? err.message : "Couldn't resolve that number.");
       setStep("form");
     }
   };
 
-  const verify = async () => {
-    if (code.trim().length !== 6) return;
-    setStep("verifying");
+  const startConfirmation = async () => {
+    if (!resolvedName) return;
+    setStep("otp-sending");
     setError(null);
     try {
-      await verifyPayoutRecipientOtp(propertyId, phone.trim(), code.trim(), provider);
+      const { maskedEmail: masked, devCode: dev } = await requestWithdrawalOtp(propertyId, "add_recipient");
+      setMaskedEmail(masked);
+      setDevCode(dev ?? null);
+      setStep("otp");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to send a confirmation code.");
+      setStep("confirm");
+    }
+  };
+
+  const confirm = async () => {
+    if (!resolvedName || otpCode.length !== 6) return;
+    setStep("saving");
+    setError(null);
+    try {
+      const { confirmationToken } = await verifyWithdrawalOtp(propertyId, otpCode, "add_recipient");
+      await createMobileMoneyRecipient({ propertyId, phoneNumber: phone.trim(), provider, accountName: resolvedName, confirmationToken });
       reset();
       onAdded();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Incorrect or expired code.");
+      setError(err instanceof Error ? err.message : "Failed to save that payout method.");
       setStep("otp");
     }
   };
@@ -395,38 +338,58 @@ function AddMobileMoneyRecipient({ propertyId, onAdded }: { propertyId: string; 
 
   return (
     <div className="mt-3 max-w-sm rounded-lg border border-line p-4">
-      {step === "otp" || step === "verifying" ? (
+      {step === "confirm" ? (
         <>
-          <p className="text-sm font-medium text-ink">Enter the code sent to {maskedPhone}</p>
+          <p className="text-sm font-medium text-ink">Confirm this is you</p>
+          <div className="mt-2 rounded-lg bg-mist px-3 py-2.5">
+            <p className="text-xs text-muted">Account holder</p>
+            <p className="text-sm font-semibold text-ink">{resolvedName}</p>
+          </div>
+          {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+          <div className="mt-3 flex gap-2">
+            <Button variant="secondary" className="flex-1" onClick={() => setStep("form")}>
+              Back
+            </Button>
+            <Button variant="primary" className="flex-1" onClick={startConfirmation}>
+              Continue
+            </Button>
+          </div>
+        </>
+      ) : step === "otp-sending" || step === "otp" || step === "saving" ? (
+        <>
+          <p className="text-sm font-medium text-ink">Confirm it's you</p>
+          <p className="mt-1 text-xs text-muted">
+            {step === "otp-sending" ? "Sending a code…" : `We emailed a 6-digit code to ${maskedEmail}. It expires in 5 minutes.`}
+          </p>
           {devCode && (
             <p className="mt-1 text-xs text-amber-600">
-              Dev mode — SMS isn't connected yet, your code is <span className="font-mono font-semibold">{devCode}</span>.
+              Dev mode — email isn't connected yet, your code is <span className="font-mono font-semibold">{devCode}</span>.
             </p>
           )}
           <input
             autoFocus
-            value={code}
-            onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-            onKeyDown={(e) => e.key === "Enter" && code.length === 6 && verify()}
+            value={otpCode}
+            onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            onKeyDown={(e) => e.key === "Enter" && otpCode.length === 6 && confirm()}
             inputMode="numeric"
             placeholder="000000"
-            disabled={step === "verifying"}
+            disabled={step !== "otp"}
             className="mt-3 w-full rounded-lg border border-line bg-paper px-3 py-2.5 text-center text-lg font-semibold tracking-[0.3em] text-ink outline-none focus:border-brand"
           />
           {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
           <div className="mt-3 flex gap-2">
-            <Button variant="secondary" className="flex-1" onClick={reset}>
-              Cancel
+            <Button variant="secondary" className="flex-1" disabled={step === "saving"} onClick={() => setStep("confirm")}>
+              Back
             </Button>
-            <Button variant="primary" className="flex-1" disabled={code.length !== 6 || step === "verifying"} onClick={verify}>
-              {step === "verifying" ? "Verifying…" : "Verify"}
+            <Button variant="primary" className="flex-1" disabled={step !== "otp" || otpCode.length !== 6} onClick={confirm}>
+              {step === "saving" ? "Saving…" : "Confirm & save"}
             </Button>
           </div>
         </>
       ) : (
         <>
           <p className="text-sm font-medium text-ink">Add a mobile money number</p>
-          <p className="mt-1 text-xs text-muted">We'll text a code to confirm it's yours before saving it.</p>
+          <p className="mt-1 text-xs text-muted">We'll look up the account holder's name so you can confirm it before saving.</p>
           <div className="mt-3 space-y-2.5">
             <div className="flex gap-2">
               {MOBILE_PROVIDERS.map((p) => (
@@ -455,8 +418,8 @@ function AddMobileMoneyRecipient({ propertyId, onAdded }: { propertyId: string; 
             <Button variant="secondary" className="flex-1" onClick={reset}>
               Cancel
             </Button>
-            <Button variant="primary" className="flex-1" disabled={phone.trim().length < 9 || step === "sending"} onClick={sendCode}>
-              {step === "sending" ? "Sending…" : "Send code"}
+            <Button variant="primary" className="flex-1" disabled={phone.trim().length < 9 || step === "sending"} onClick={resolve}>
+              {step === "sending" ? "Looking up…" : "Continue"}
             </Button>
           </div>
         </>
@@ -507,9 +470,7 @@ function PayoutMethodsList({
                 <DeviceMobileIcon size={16} weight="duotone" className="shrink-0 text-muted" />
                 <div>
                   <p className="text-sm font-medium text-ink">{recipientLabel(r)}</p>
-                  <p className="text-[11px] text-muted">
-                    {r.is_default ? "Default" : "Not yet connected for payouts"}
-                  </p>
+                  <p className="text-[11px] text-muted">{r.is_default ? "Default" : "Available for withdrawals"}</p>
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-1">
@@ -644,11 +605,6 @@ export default function Settings() {
     collectionTargetPct, setCollectionTargetPct,
     propertyName, setPropertyName,
     propertyAddress, setPropertyAddress,
-    propertyType, setPropertyType,
-    landlordName, setLandlordName,
-    landlordPhone, setLandlordPhone,
-    paymentMethods, setPaymentMethods,
-    properties, addProperty,
     billingPeriod, setBillingPeriod,
     dueDay, setDueDay,
     gracePeriodDays, setGracePeriodDays,
@@ -671,7 +627,6 @@ export default function Settings() {
 
   const [linkCopied, setLinkCopied] = useState(false);
   const [showQr, setShowQr] = useState(false);
-  const [newPropertyName, setNewPropertyName] = useState("");
   const [toast, setToast] = useState<string | null>(null);
 
   // Online payments setup — a 3-step wizard (0 = not started) that runs whether this is the
@@ -690,6 +645,13 @@ export default function Settings() {
   const [savingRecipient, setSavingRecipient] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [recipients, setRecipients] = useState<PayoutRecipient[]>([]);
+  // Email-OTP confirmation gate on saving a new bank recipient — same "add_recipient" purpose and
+  // flow AddMobileMoneyRecipient uses below, kept separate here only because this state lives
+  // alongside the rest of the bank wizard's own step state.
+  const [bankOtpStage, setBankOtpStage] = useState<"idle" | "sending" | "entering">("idle");
+  const [bankOtpMaskedEmail, setBankOtpMaskedEmail] = useState<string | null>(null);
+  const [bankOtpDevCode, setBankOtpDevCode] = useState<string | null>(null);
+  const [bankOtpCode, setBankOtpCode] = useState("");
 
   const refreshRecipients = () => {
     if (!propertyId) return;
@@ -701,6 +663,8 @@ export default function Settings() {
   useEffect(() => {
     setPayoutStep(0);
     setEditingBank(false);
+    setBankOtpStage("idle");
+    setBankOtpCode("");
   }, [tab]);
 
   useEffect(() => {
@@ -756,21 +720,6 @@ export default function Settings() {
   const flash = (msg = "Saved") => {
     setToast(msg);
     window.setTimeout(() => setToast((t) => (t === msg ? null : t)), 1200);
-  };
-
-  const togglePaymentMethod = (type: PaymentMethod["type"], enabled: boolean) => {
-    if (enabled) {
-      if (paymentMethods.some((m) => m.type === type)) return;
-      setPaymentMethods([...paymentMethods, { type }]);
-    } else {
-      setPaymentMethods(paymentMethods.filter((m) => m.type !== type));
-    }
-    flash();
-  };
-
-  const updatePaymentMethod = (type: PaymentMethod["type"], patch: Partial<PaymentMethod>) => {
-    setPaymentMethods(paymentMethods.map((m) => (m.type === type ? { ...m, ...patch } : m)));
-    flash();
   };
 
   const propertySlug = slugify(propertyName) || "property";
@@ -1085,7 +1034,7 @@ export default function Settings() {
                         </>
                       )}
 
-                      {payoutStep === 2 && formBank && (
+                      {payoutStep === 2 && formBank && bankOtpStage === "idle" && (
                         <>
                           <p className="mt-1 font-display text-lg font-semibold text-ink">Confirm your details</p>
                           <p className="mt-1 text-sm text-muted">Double-check these are correct — this is where every payout will be sent.</p>
@@ -1113,21 +1062,84 @@ export default function Settings() {
                               className="flex-1 py-2.5"
                               disabled={savingRecipient}
                               onClick={async () => {
+                                if (!propertyId) return;
+                                setSavingRecipient(true);
+                                setSaveError(null);
+                                try {
+                                  const { maskedEmail, devCode } = await requestWithdrawalOtp(propertyId, "add_recipient");
+                                  setBankOtpMaskedEmail(maskedEmail);
+                                  setBankOtpDevCode(devCode ?? null);
+                                  setBankOtpStage("entering");
+                                } catch (err) {
+                                  setSaveError(err instanceof Error ? err.message : "Failed to send a confirmation code.");
+                                } finally {
+                                  setSavingRecipient(false);
+                                }
+                              }}
+                            >
+                              {savingRecipient ? "Sending…" : "Continue"}
+                            </Button>
+                          </div>
+                        </>
+                      )}
+
+                      {payoutStep === 2 && formBank && bankOtpStage === "entering" && (
+                        <>
+                          <p className="mt-1 font-display text-lg font-semibold text-ink">Confirm it's you</p>
+                          <p className="mt-1 text-sm text-muted">
+                            We emailed a 6-digit code to {bankOtpMaskedEmail}. It expires in 5 minutes.
+                          </p>
+                          {bankOtpDevCode && (
+                            <p className="mt-1 text-xs text-amber-600">
+                              Dev mode — email isn't connected yet, your code is <span className="font-mono font-semibold">{bankOtpDevCode}</span>.
+                            </p>
+                          )}
+                          <input
+                            autoFocus
+                            value={bankOtpCode}
+                            onChange={(e) => setBankOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                            inputMode="numeric"
+                            placeholder="000000"
+                            disabled={savingRecipient}
+                            className="mt-4 w-full rounded-lg border border-line bg-paper px-3 py-2.5 text-center text-lg font-semibold tracking-[0.3em] text-ink outline-none focus:border-brand"
+                          />
+                          {saveError && <p className="mt-3 text-xs text-red-600">{saveError}</p>}
+                          <div className="mt-5 flex gap-2">
+                            <Button
+                              variant="secondary"
+                              className="flex-1 py-2.5"
+                              disabled={savingRecipient}
+                              onClick={() => {
+                                setBankOtpStage("idle");
+                                setBankOtpCode("");
+                              }}
+                            >
+                              Back
+                            </Button>
+                            <Button
+                              variant="primary"
+                              className="flex-1 py-2.5"
+                              disabled={savingRecipient || bankOtpCode.length !== 6}
+                              onClick={async () => {
                                 if (!propertyId || !formBank) return;
                                 setSavingRecipient(true);
                                 setSaveError(null);
                                 try {
+                                  const { confirmationToken } = await verifyWithdrawalOtp(propertyId, bankOtpCode, "add_recipient");
                                   await createPayoutRecipient({
                                     accountNumber: formAccountNumber,
                                     bankCode: formBank.code,
                                     accountName: formAccountHolderName,
                                     propertyId,
+                                    confirmationToken,
                                   });
                                   setBankName(formBank.name);
                                   setAccountNumber(formAccountNumber);
                                   setAccountHolderName(formAccountHolderName);
                                   setLencoConnected(true);
                                   refreshRecipients();
+                                  setBankOtpStage("idle");
+                                  setBankOtpCode("");
                                   if (editingBank) {
                                     setEditingBank(false);
                                     setPayoutStep(0);
@@ -1142,7 +1154,7 @@ export default function Settings() {
                                 }
                               }}
                             >
-                              {savingRecipient ? "Saving…" : editingBank ? "Save changes" : "Confirm & connect"}
+                              {savingRecipient ? "Saving…" : "Confirm & connect"}
                             </Button>
                           </div>
                         </>

@@ -1,6 +1,4 @@
-import Nav from "../components/Nav";
 import Hero from "../components/Hero";
-import ProblemSection from "../components/ProblemSection";
 import FeatureShowcase from "../components/FeatureShowcase";
 import IntegrationsSection from "../components/IntegrationsSection";
 import ScaleSection from "../components/ScaleSection";

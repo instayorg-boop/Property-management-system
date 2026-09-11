@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useSettings } from "./SettingsContext";
 import { useToast } from "./ToastContext";
 import { supabase } from "../lib/supabaseClient";
@@ -76,6 +76,27 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [isReady, setIsReady] = useState(false);
 
+  // Mirrors `tenants`, but updated synchronously — plain JS, not React state timing. Several of
+  // this file's functions call each other back-to-back inside one caller's event handler (e.g.
+  // AddTenant.tsx: addTenant, then updateTenant for a deposit entry, then logPayment for rent, all
+  // in one submit). React's useState only runs a functional updater synchronously for the FIRST
+  // state update queued in a given tick — a second or third `setTenants(prev => ...)` in that same
+  // tick gets queued but its updater doesn't actually run until the next render, so any code that
+  // tries to read the computed result right after calling it (to decide whether to fire a Supabase
+  // write) sees `undefined` and silently skips that write. commitTenants sidesteps this entirely by
+  // computing the next array from this ref (always accurate, no batching involved) instead of from
+  // React's `prev`, so a chain of calls in one tick composes correctly regardless of render timing.
+  const tenantsRef = useRef<Tenant[]>([]);
+  useEffect(() => {
+    tenantsRef.current = tenants;
+  }, [tenants]);
+  function commitTenants(compute: (prev: Tenant[]) => Tenant[]): Tenant[] {
+    const next = compute(tenantsRef.current);
+    tenantsRef.current = next;
+    setTenants(next);
+    return next;
+  }
+
   useEffect(() => {
     if (!propertyId) return;
     let cancelled = false;
@@ -143,27 +164,33 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
 
   const addTenant = (t: Omit<Tenant, "id">): Tenant => {
     const tenant: Tenant = { ...t, id: crypto.randomUUID() };
-    setTenants((prev) => [tenant, ...prev]);
+    commitTenants((prev) => [tenant, ...prev]);
     if (propertyId) {
       void insertTenant(propertyId, tenant.id, t)
         .then(() => showToast(`${t.name || "Tenant"} added`, "success"))
         .catch((e) => {
           console.error("Failed to save tenant", e);
-          setTenants((prev) => prev.filter((x) => x.id !== tenant.id));
+          commitTenants((prev) => prev.filter((x) => x.id !== tenant.id));
           showToast(`Couldn't save ${t.name || "this tenant"} — please try again.`, "error");
         });
     } else {
       // propertyId isn't loaded yet, so this save has nowhere to go — don't let it disappear silently on reload.
-      setTenants((prev) => prev.filter((x) => x.id !== tenant.id));
+      commitTenants((prev) => prev.filter((x) => x.id !== tenant.id));
       showToast(`Couldn't save ${t.name || "this tenant"} — the app is still loading. Please wait a moment and try again.`, "error");
     }
     return tenant;
   };
 
   const updateTenant = (id: string, patch: Partial<Omit<Tenant, "id">>) => {
-    setTenants((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+    commitTenants((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
     if (!propertyId) return;
     const { ledger, ...rowPatch } = patch;
+    // A caller that only passes `ledger` (e.g. AddTenant.tsx logging a security deposit right
+    // after creating the tenant — no other tenant field changes) leaves rowPatch genuinely empty.
+    // Supabase/PostgREST rejects an UPDATE with no columns to set, so that used to throw and show
+    // "Couldn't save that change" even though there was nothing to save on the tenant row itself —
+    // only skip the row update, never the ledger insert, when rowPatch has nothing in it.
+    const hasRowPatch = Object.keys(rowPatch).length > 0;
 
     if (!navigator.onLine) {
       // Covers "update tenant/unit records" and "add tenant notes" (notes is just another field
@@ -173,6 +200,7 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
       if (ledger && ledger.length > 0) {
         console.warn("Tenant update included a ledger entry while offline — that part was not queued.", { id });
       }
+      if (!hasRowPatch) return;
       void tenantPatchToRow(propertyId, rowPatch).then((row) =>
         enqueueAction({
           id: crypto.randomUUID(),
@@ -186,11 +214,13 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const writes: Promise<void>[] = [updateTenantRow(propertyId, id, rowPatch)];
+    const writes: Promise<void>[] = [];
+    if (hasRowPatch) writes.push(updateTenantRow(propertyId, id, rowPatch));
     // Every caller that passes `ledger` here does so to prepend exactly one new row (there's no
     // "replace the whole ledger" call site) — persist that one row the same way logPayment does,
     // instead of silently dropping it like this used to.
     if (ledger && ledger.length > 0) writes.push(addLedgerEntry(id, ledger[0]));
+    if (writes.length === 0) return;
     void Promise.all(writes).catch((e) => {
       console.error("Failed to update tenant", e);
       showToast("Couldn't save that change — please try again.", "error");
@@ -198,7 +228,7 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
   };
 
   const deleteTenant = (id: string) => {
-    setTenants((prev) => prev.filter((t) => t.id !== id));
+    commitTenants((prev) => prev.filter((t) => t.id !== id));
     void deleteTenantRow(id).catch((e) => {
       console.error("Failed to delete tenant", e);
       showToast("Couldn't delete that tenant — please try again.", "error");
@@ -209,7 +239,7 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
     id: string,
     details: { moveOutDate: string; depositStatus: DepositStatus; depositResolutionNote: string }
   ) => {
-    setTenants((prev) =>
+    commitTenants((prev) =>
       prev.map((t) => (t.id === id ? { ...t, active: false, ...details } : t))
     );
     // The Rooms page derives occupancy from active tenants' `room` field (see RoomsContext's
@@ -222,7 +252,7 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
   };
 
   const reactivateTenant = (id: string, newMoveInDate: string) => {
-    setTenants((prev) =>
+    commitTenants((prev) =>
       prev.map((t) =>
         t.id === id
           ? { ...t, active: true, moveInDate: newMoveInDate, moveOutDate: undefined, depositResolutionNote: undefined }
@@ -255,7 +285,7 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
     if (payments.length === 0) return;
     let updated: Tenant | undefined;
     let newEntries: LedgerRow[] = [];
-    setTenants((prev) =>
+    commitTenants((prev) =>
       prev.map((t) => {
         if (t.id !== id) return t;
         let current = t;
@@ -379,7 +409,7 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
       showToast("Reconnect to delete this entry.", "info");
       return;
     }
-    setTenants((prev) =>
+    commitTenants((prev) =>
       prev.map((t) => (t.id === tenantId ? { ...t, ledger: t.ledger.filter((row) => row.id !== entryId) } : t))
     );
     void deleteLedgerEntryRow(entryId).catch((e) => {

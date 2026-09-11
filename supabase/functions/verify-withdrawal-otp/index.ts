@@ -1,12 +1,14 @@
 // Verifies the code sent by request-withdrawal-otp and, on success, issues a short-lived
-// confirmationToken. This token — not just "a correct code was entered at some point" — is what
-// lenco-payout requires and re-validates server-side before it will move any money, so a client
-// that calls lenco-payout directly without ever going through this verification still can't trigger
-// a real transfer. The token is single-use: lenco-payout clears confirmation_token_hash the moment
-// it's spent.
+// confirmationToken scoped to the same `purpose` it was requested for ("withdrawal" or
+// "add_recipient", default). This token — not just "a correct code was entered at some point" — is
+// what lenco-payout / create-payout-recipient / create-mobile-money-recipient each require and
+// re-validate server-side (matching both the token AND the purpose) before doing anything sensitive,
+// so a client that calls one of those directly, or reuses a token issued for the other purpose,
+// still can't trigger the action. The token is single-use: the consuming function clears
+// confirmation_token_hash the moment it's spent.
 //
 // Deploy:  supabase functions deploy verify-withdrawal-otp
-// Invoke:  supabase.functions.invoke("verify-withdrawal-otp", { body: { propertyId, code } })
+// Invoke:  supabase.functions.invoke("verify-withdrawal-otp", { body: { propertyId, code, purpose? } })
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, handleOptions } from "../_shared/cors.ts";
@@ -14,8 +16,9 @@ import { sha256Hex, randomSessionToken } from "../_shared/otpCrypto.ts";
 
 const MAX_VERIFY_ATTEMPTS = 5;
 const CONFIRMATION_TTL_MINUTES = 3;
+const PURPOSES = ["withdrawal", "add_recipient"];
 
-type VerifyPayload = { propertyId?: string; code?: string };
+type VerifyPayload = { propertyId?: string; code?: string; purpose?: string };
 
 Deno.serve(async (req) => {
   const preflight = handleOptions(req);
@@ -40,8 +43,9 @@ Deno.serve(async (req) => {
 
   const propertyId = payload.propertyId?.trim() ?? "";
   const code = payload.code?.trim() ?? "";
-  if (!propertyId || !/^\d{6}$/.test(code)) {
-    return new Response(JSON.stringify({ error: "propertyId and a 6-digit code are required" }), {
+  const purpose = payload.purpose?.trim() || "add_recipient";
+  if (!propertyId || !/^\d{6}$/.test(code) || !PURPOSES.includes(purpose)) {
+    return new Response(JSON.stringify({ error: "propertyId, a 6-digit code, and a valid purpose are required" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -72,6 +76,7 @@ Deno.serve(async (req) => {
     .from("payout_withdrawal_otp_codes")
     .select("id, code_hash, attempt_count")
     .eq("property_id", propertyId)
+    .eq("purpose", purpose)
     .is("consumed_at", null)
     .gt("expires_at", new Date().toISOString())
     .order("created_at", { ascending: false })
@@ -92,7 +97,7 @@ Deno.serve(async (req) => {
     });
   }
 
-  const submittedHash = await sha256Hex(`${code}:${propertyId}`);
+  const submittedHash = await sha256Hex(`${code}:${propertyId}:${purpose}`);
   if (submittedHash !== otpRow.code_hash) {
     await supabase.from("payout_withdrawal_otp_codes").update({ attempt_count: otpRow.attempt_count + 1 }).eq("id", otpRow.id);
     return new Response(JSON.stringify({ error: "Incorrect code." }), {

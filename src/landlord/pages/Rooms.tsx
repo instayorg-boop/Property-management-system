@@ -13,7 +13,6 @@ import {
   MagnifyingGlass,
   SquaresFour,
   Rows,
-  CurrencyCircleDollar,
 } from "@phosphor-icons/react";
 import PageHeader from "../components/PageHeader";
 import SlideOver from "../components/SlideOver";

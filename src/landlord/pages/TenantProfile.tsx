@@ -443,9 +443,28 @@ export default function TenantProfile() {
         }
       : null;
 
-  const allRows: (LedgerRow & { synthetic?: boolean })[] = currentPeriodRow
-    ? [currentPeriodRow, ...tenant.ledger]
-    : tenant.ledger;
+  // Same idea as currentPeriodRow, but for the deposit: it never gets a ledger row of its own
+  // until it's actually collected (see AddTenant.tsx — a "Security deposit" row only gets written
+  // when depositWasCollected), so an uncollected one was otherwise invisible in Transactions,
+  // with nothing to look back at besides the tag up top. amount is the deposit itself, not
+  // tenant.owedAmount — it's tracked entirely separately from rent (see depositStatus/depositAmount).
+  const depositDueRow: (LedgerRow & { synthetic: true }) | null =
+    tenant.depositAmount > 0 && tenant.depositStatus === "Not collected"
+      ? {
+          id: "deposit-due",
+          label: "Security deposit",
+          amount: tenant.depositAmount,
+          status: "unpaid",
+          source: "manual",
+          synthetic: true,
+        }
+      : null;
+
+  const allRows: (LedgerRow & { synthetic?: boolean })[] = [
+    ...(currentPeriodRow ? [currentPeriodRow] : []),
+    ...(depositDueRow ? [depositDueRow] : []),
+    ...tenant.ledger,
+  ];
   const filteredLedger = allRows.filter(
     (row) =>
       historyFilter === "All" ||
@@ -454,8 +473,10 @@ export default function TenantProfile() {
 
   /** What's still left on one row specifically — 0 for a fully paid row, the live tenant balance
    * for the synthesized current-period row (which can include carried-over arrears, not just this
-   * month's rent), and amount-minus-paid for a partial one. */
+   * month's rent), the deposit amount itself for the synthesized deposit-due row, and
+   * amount-minus-paid for a partial one. */
   function rowOutstanding(row: LedgerRow & { synthetic?: boolean }): number {
+    if (row.id === "deposit-due") return row.amount;
     if (row.synthetic) return tenant!.owedAmount;
     if (row.status === "partial")
       return Math.max(0, row.amount - (row.paidAmount ?? 0));
@@ -526,6 +547,14 @@ export default function TenantProfile() {
               ) : (
                 <span className="rounded-full bg-red-50 px-2.5 py-0.5 text-[11px] font-semibold text-red-600">
                   Moved out {tenant.moveOutDate ?? ""}
+                </span>
+              )}
+              {/* Its own tag, separate from "Outstanding balance" — a deposit that hasn't been
+                  collected is never folded into that figure (it's rent-only, see owedAmount), so
+                  without this a landlord had no way to see it was still owed at a glance. */}
+              {tenant.depositAmount > 0 && tenant.depositStatus === "Not collected" && (
+                <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700">
+                  Deposit not collected · {formatCurrency(tenant.depositAmount)}
                 </span>
               )}
             </div>
@@ -872,6 +901,11 @@ export default function TenantProfile() {
                                 >
                                   <td className="py-3.5 font-medium text-ink">
                                     {row.label}
+                                    {row.label === "Security deposit" && (
+                                      <span className="ml-2 rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-600">
+                                        Security deposit
+                                      </span>
+                                    )}
                                   </td>
                                   <td className="py-3.5 text-ink">
                                     {row.paidAmount !== undefined
@@ -904,7 +938,24 @@ export default function TenantProfile() {
                                       : "—"}
                                   </td>
                                   <td className="py-3.5">
-                                    {row.synthetic ? (
+                                    {row.id === "deposit-due" ? (
+                                      <div className="flex items-center justify-end">
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            navigate(`/tenants/${tenant.id}/edit`)
+                                          }
+                                          aria-label="Mark deposit collected"
+                                          title="Mark deposit collected"
+                                          className="flex h-6 w-6 items-center justify-center rounded text-muted transition-colors hover:bg-mist hover:text-ink"
+                                        >
+                                          <PencilSimple
+                                            size={14}
+                                            weight="bold"
+                                          />
+                                        </button>
+                                      </div>
+                                    ) : row.synthetic ? (
                                       <div className="flex items-center justify-end">
                                         <button
                                           type="button"

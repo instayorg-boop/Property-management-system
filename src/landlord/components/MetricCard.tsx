@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { TrendUp, TrendDown } from "@phosphor-icons/react";
+import { useNavigate } from "react-router-dom";
+import { TrendUp, TrendDown, ArrowRight } from "@phosphor-icons/react";
 
 export type MetricTone = "default" | "success" | "danger" | "warning";
 
@@ -38,6 +39,7 @@ export default function MetricCard({
   iconClassName,
   compact,
   flat,
+  to,
 }: {
   icon?: ReactNode;
   label: string;
@@ -56,12 +58,21 @@ export default function MetricCard({
   /** No icon, no insight line — just label + trend on top, a big number, and one caption line. The
    * shortest layout; use for a row of stat cards where the number should carry the weight. */
   flat?: boolean;
+  /** Route to navigate to on click — makes the whole card a button with hover/focus affordance. */
+  to?: string;
 }) {
   const t = toneStyles[tone];
+  const navigate = useNavigate();
 
   if (flat) {
     return (
-      <div className="rounded-lg border border-line bg-paper p-4">
+      <div
+        role={to ? "button" : undefined}
+        tabIndex={to ? 0 : undefined}
+        onClick={to ? () => navigate(to) : undefined}
+        onKeyDown={to ? (e) => (e.key === "Enter" || e.key === " ") && navigate(to) : undefined}
+        className={`group rounded-lg border border-line bg-paper p-4 ${to ? "cursor-pointer transition-colors hover:border-ink/20 hover:bg-mist/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand" : ""}`}
+      >
         <div className="flex items-center justify-between gap-2">
           <p className="text-sm font-medium text-ink/70">{label}</p>
           {trend && (
@@ -72,7 +83,12 @@ export default function MetricCard({
           )}
         </div>
         <p className={`font-display mt-1.5 text-2xl font-semibold tracking-tight ${toneFlatValue[tone]}`}>{value}</p>
-        {caption && <p className="mt-1 text-xs text-muted">{caption}</p>}
+        {caption && (
+          <p className="mt-1 flex items-center gap-1 text-xs text-muted">
+            {caption}
+            {to && <ArrowRight size={11} weight="bold" className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />}
+          </p>
+        )}
       </div>
     );
   }

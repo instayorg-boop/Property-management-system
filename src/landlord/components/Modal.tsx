@@ -9,6 +9,7 @@ export default function Modal({
   description,
   footer,
   maxWidth = "max-w-md",
+  disableBackdropClose = false,
 }: {
   onClose: () => void;
   children: ReactNode;
@@ -16,6 +17,9 @@ export default function Modal({
   description?: ReactNode;
   footer?: ReactNode;
   maxWidth?: string;
+  /** For a flow that shouldn't be dismissed by an accidental click outside it (e.g. mid-transfer) —
+   * only the X button closes it then. Off by default so every other Modal caller is unaffected. */
+  disableBackdropClose?: boolean;
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -25,7 +29,7 @@ export default function Modal({
         exit={{ opacity: 0, backdropFilter: "blur(0px)" }}
         transition={{ duration: 0.2 }}
         className="absolute inset-0 bg-ink/30 backdrop-blur-md"
-        onClick={onClose}
+        onClick={disableBackdropClose ? undefined : onClose}
       />
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: 8 }}
