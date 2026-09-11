@@ -9,7 +9,7 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: null,
-      includeAssets: ['favicon.svg'],
+      includeAssets: ['favicon-16.png', 'favicon-32.png', 'apple-touch-icon.png'],
       manifest: {
         name: 'Instay — Property Management',
         short_name: 'Instay',
@@ -19,8 +19,9 @@ export default defineConfig({
         background_color: '#ffffff',
         theme_color: '#111827',
         icons: [
-          { src: '/favicon.svg', sizes: '192x192', type: 'image/svg+xml', purpose: 'any' },
-          { src: '/favicon.svg', sizes: '512x512', type: 'image/svg+xml', purpose: 'any' },
+          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: '/icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
       workbox: {
