@@ -33,6 +33,7 @@ import TenantProfile from "./landlord/pages/TenantProfile";
 import Rooms from "./landlord/pages/Rooms";
 import Maintenance from "./landlord/pages/Maintenance";
 import Accounting from "./landlord/pages/Accounting";
+import PayoutHistory from "./landlord/pages/PayoutHistory";
 // MVP: staff/payroll is out of scope for now — commented out, not deleted, so it's a quick
 // re-enable later. Matching nav entries are commented out in Sidebar.tsx.
 // import StaffEmployees from "./landlord/pages/StaffEmployees";
@@ -89,6 +90,8 @@ export default function App() {
             <Route path="/rooms" element={<Rooms />} />
             <Route path="/maintenance" element={<Maintenance />} />
             <Route path="/accounting" element={<Accounting />} />
+            {/* Deliberately not in Sidebar.tsx — reachable only via PayoutDetailDrawer's "View all" link. */}
+            <Route path="/accounting/payouts" element={<PayoutHistory />} />
             <Route path="/expenses" element={<Navigate to="/accounting" replace />} />
             {/* MVP: staff/payroll — see the note by the imports above. */}
             {/* <Route path="/staff" element={<Navigate to="/staff/employees" replace />} /> */}

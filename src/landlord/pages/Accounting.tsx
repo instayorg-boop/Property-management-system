@@ -5,6 +5,7 @@ import PageHeader from "../components/PageHeader";
 import Modal from "../components/Modal";
 import ExpenseFormDrawer from "../components/ExpenseFormDrawer";
 import Lightbox from "../components/Lightbox";
+import PayoutPill from "../components/PayoutPill";
 import Pagination, { DEFAULT_PAGE_SIZE } from "../components/Pagination";
 import { useExpenses, type Expense, type Category } from "../ExpensesContext";
 import { useTenants, formatCurrency } from "../TenantsContext";
@@ -606,7 +607,11 @@ export default function Accounting() {
 
   return (
     <>
-      <PageHeader title="Accounting" description="Track expenses, income, and your property's cash flow." />
+      <PageHeader
+        title="Accounting"
+        description="Track expenses, income, and your property's cash flow."
+        actions={<PayoutPill />}
+      />
 
       <div className="space-y-5 px-4 sm:px-8 pb-10">
         {/* Month switcher + primary actions */}

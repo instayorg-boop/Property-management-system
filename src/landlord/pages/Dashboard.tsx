@@ -56,18 +56,13 @@ function Greeting({ name, propertyId, onAction }: { name: string; propertyId: st
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 bg-paper px-4 pt-5 pb-6 sm:px-8">
       <div>
-        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
-          Good {part}
-          {name ? `, ${name}` : ""}
+        <h1 className="font-display text-2xl font-semibold tracking-tighter text-ink">
+          Good {part} 👋🏼
         </h1>
         <p className="mt-0.5 text-sm text-muted">
           {today} · {time}
         </p>
-        {propertyId && (
-          <div className="mt-1">
-            <LastSyncedLabel lastSyncedAt={tenantsSyncedAt} />
-          </div>
-        )}
+       
       </div>
 
       {/* Desktop: full quick-action row */}
@@ -330,7 +325,7 @@ export default function Dashboard() {
       date: `As of ${now.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`,
       status: lencoConnected ? "Ready to transfer" : "Connect a bank account to receive this",
       bankAccount: lencoConnected && bankName ? `${bankName}${accountNumber ? ` · •••• ${accountNumber.slice(-4)}` : ""}` : "Not connected",
-      schedule: lencoConnected ? "Automatic via Lenco" : "Not set up yet",
+      schedule: lencoConnected ? "Automatic online collection" : "Not set up yet",
     };
   }, [lencoAvailable, lencoConnected, bankName, accountNumber, propertyId]);
 
@@ -446,7 +441,7 @@ export default function Dashboard() {
           {dataReady && <SetupChecklist />}
 
           {/* Rent income vs expenses chart */}
-          <div className="rounded-lg border-2 border-gray-100 bg-paper p-5">
+          <div className="rounded-lg border border-gray-200 bg-paper p-5">
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-sm font-medium text-ink">Rent income vs expenses</p>
@@ -627,9 +622,7 @@ export default function Dashboard() {
                     >
                       <td className="py-2.5">
                         <div className="flex items-center gap-2.5">
-                          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-mist text-[10px] font-semibold text-muted">
-                            {p.tenant.split(" ").map((s) => s[0]).join("")}
-                          </div>
+                          
                           <div>
                             <Link
                               to={`/tenants/${p.tenantId}`}
@@ -667,68 +660,7 @@ export default function Dashboard() {
 
         {/* Right column */}
         <div className="space-y-4">
-          {/* AI briefing — priority, so it stays at the top of this column. Plain-language
-              suggestions built from real dashboard counts, framed as an assistant talking. */}
-          <div className="relative overflow-hidden rounded-lg bg-linear-to-br from-[#241a4d] via-[#2d2166] to-[#1a1440] p-5 shadow-[0_8px_30px_-8px_rgba(76,29,149,0.5)]">
-            {/* Ambient glow blobs — the panel's "AI" atmosphere */}
-            <div className="pointer-events-none absolute -top-16 -right-10 h-48 w-48 rounded-full bg-violet-500/30 blur-3xl" />
-            <div className="pointer-events-none absolute -bottom-20 -left-10 h-48 w-48 rounded-full bg-indigo-500/20 blur-3xl" />
-
-            <div className="relative">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white/90 ring-1 ring-white/15">
-                <motion.span
-                  animate={{ opacity: [0.5, 1, 0.5], scale: [0.9, 1.05, 0.9] }}
-                  transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
-                  className="flex"
-                >
-                  <SparkleIcon size={12} weight="fill" className="text-violet-300" />
-                </motion.span>
-                AI suggestions
-              </span>
-
-              {!dataReady ? (
-                <div className="mt-4 space-y-2">
-                  <motion.div
-                    animate={{ opacity: [0.5, 0.9, 0.5] }}
-                    transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
-                    className="h-4 w-3/4 rounded bg-white/15"
-                  />
-                  <motion.div
-                    animate={{ opacity: [0.5, 0.9, 0.5] }}
-                    transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut", delay: 0.15 }}
-                    className="mt-3 h-14 w-full rounded-xl bg-white/10"
-                  />
-                  <motion.div
-                    animate={{ opacity: [0.5, 0.9, 0.5] }}
-                    transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut", delay: 0.3 }}
-                    className="h-14 w-full rounded-xl bg-white/10"
-                  />
-                </div>
-              ) : briefing.length === 0 ? (
-                <>
-                  <p className="mt-3 font-display text-lg font-semibold tracking-tight text-white">
-                    Everything looks on track.
-                  </p>
-                  <p className="mt-1 text-xs text-white/60">No overdue rent or unread maintenance requests right now — I'll flag it here the moment something needs you.</p>
-                </>
-              ) : (
-                <>
-                  <p className="mt-3 font-display text-lg font-semibold tracking-tight text-white">
-                    Here's what I'd tackle first.
-                  </p>
-                  <p className="mt-1 text-xs text-white/60">Based on what's happening across your property right now.</p>
-                </>
-              )}
-
-              {briefing.length > 0 && (
-                <div className="mt-4 space-y-2">
-                  {briefing.map((item, i) => (
-                    <SuggestionCard key={item.to} item={item} index={i} />
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+          
 
           {/* Online payments balance */}
           <div className="rounded-lg border border-line bg-paper p-5">

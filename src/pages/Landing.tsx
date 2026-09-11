@@ -10,10 +10,10 @@ import Footer from "../components/Footer";
 export default function Landing() {
   return (
     <div className="min-h-screen bg-paper">
-      <Nav />
+    
       <main>
         <Hero />
-        <ProblemSection />
+        
         <FeatureShowcase />
         <IntegrationsSection />
         <ScaleSection />

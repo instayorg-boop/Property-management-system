@@ -1,50 +1,45 @@
 import { Link } from "react-router-dom";
+import Nav from "./Nav";
 
 export default function Hero() {
   return (
-    <section className="relative overflow-hidden">
-      <div
-        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[560px] opacity-70"
-        style={{
-          background:
-            "radial-gradient(600px 300px at 50% -10%, rgba(20,83,45,0.10), transparent 60%)",
-        }}
-      />
-      <div className="mx-auto grid max-w-6xl items-center gap-8 px-6 pt-8 pb-16 lg:grid-cols-2 lg:gap-2 lg:pt-16 lg:pb-16">
-        <div className="text-center lg:text-left">
-          <h1 className="mx-auto max-w-5xl font-display text-[2.6rem] font-semibold leading-[1.08] tracking-tight sm:text-6xl lg:mx-0 lg:text-5xl">
-            All in one property management system
-          </h1>
+    
+    <section className="relative h-screen overflow-hidden bg-white  pb-24 lg:pb-32">
+<Nav/>
+  
 
-          <p className="mx-auto mt-5 max-w-xl text-balance text-base text-muted sm:text-lg lg:mx-0">
-            Accounting, rent collection, maintenance, staff, invoices and more, connected in one platform so your team can stop switching between multiple disconnected tools saving hours weekly.
-          </p>
+  <div className="relative z-10 mx-auto flex max-w-5xl flex-col items-center px-6 pt-12 text-center lg:pt-20">
+    {/* Title */}
+    <h1 className="max-w-2xl font-display  text-[2.6rem] font-semibold leading-[1.08] tracking-[-0.09em] text-white sm:text-6xl">
+      All in one property management system
+    </h1>
 
-          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row lg:justify-start">
-            <Link
-              to="/get-started"
-              className="w-full rounded-lg bg-brand px-6 py-3 text-sm font-medium text-paper transition-transform hover:scale-[1.02] sm:w-auto"
-            >
-              Get started free
-            </Link>
-            <Link
-              to="/how-it-works"
-              className="w-full rounded-lg border border-line px-6 py-3 text-sm font-medium text-ink transition-colors hover:bg-mist sm:w-auto"
-            >
-              Watch product tour
-            </Link>
-          </div>
-        </div>
+    {/* Description */}
+    <p className="mt-5 max-w-2xl text-balance text-base text-white sm:text-lg">
+    Manage property accounting, rent collection and maintenance in one place - saving your team hours every week.
+    </p>
 
-        {/* Product mock */}
-        <div className="mx-auto w-full max-w-lg lg:mx-0 lg:max-w-none">
-          <img
-            src="https://framerusercontent.com/images/DO3QbDKULsSgR1e9sOw6NQAkyZQ.png?scale-down-to=2048&width=5559&height=3306"
-            alt="Instay dashboard"
-            className="w-full"
-          />
-        </div>
-      </div>
-    </section>
+    {/* Call to Actions */}
+    <div className="mt-8 flex flex-col items-center justify-center sm:flex-row w-full sm:w-auto">
+      <Link
+        to="/get-started"
+        className="w-full rounded-lg bg-brand px-6 py-3 text-sm font-medium text-paper transition-transform hover:scale-[1.02] sm:w-auto"
+      >
+        Book Free Demo
+      </Link>
+    </div>
+
+    
+  </div>
+
+  {/* Full Background Scene Layer */}
+  <div className="pointer-events-none absolute inset-0 z-0 h-full w-full overflow-hidden">
+    <img
+      src="https://rlmcuhejgfftcdshbrbe.supabase.co/storage/v1/object/public/Company%20assets/Untitled%20design%20(6).png"
+      alt="Background pattern"
+      className="h-full w-full object-cover object-center  "
+    />
+  </div>
+</section>
   );
 }

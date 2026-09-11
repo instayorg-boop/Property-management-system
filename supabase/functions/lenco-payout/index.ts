@@ -3,7 +3,18 @@
 // The recipient is looked up server-side from `payout_recipients` (never trusted from the
 // request body) using the caller's own forwarded session, so RLS guarantees a landlord can only
 // ever pay out to a property they own, to whichever bank account they've actually registered via
-// Settings > Online payments (see resolve-bank-account / create-payout-recipient).
+// Settings > Online payments (see resolve-bank-account / create-payout-recipient). `recipientId` in
+// the payload picks WHICH of the property's (possibly several) recipients to use — omit it to fall
+// back to the default one. Only `type = 'bank'` recipients can actually be paid out to right now —
+// mobile-money recipients exist in the data model (see the payout_recipients_multi migration) but
+// there's no confirmed Lenco disbursement-to-mobile-money endpoint yet, so that's rejected below
+// rather than guessed at.
+//
+// `confirmationToken` is required and re-validated here (not just checked client-side) — it's
+// issued by verify-withdrawal-otp only after the landlord entered a code emailed to the property's
+// registered account address. This is deliberately the actual authorization boundary for moving
+// money, not just a UI step: a request that skips straight to this function without ever verifying
+// a code has no valid token to present and is rejected before anything else happens.
 //
 // A `payouts` row is written up front with status "pending" so there's a durable record even if
 // the Lenco call itself fails outright (network error, wrong endpoint, etc.) — lenco-webhook then
@@ -19,12 +30,19 @@
 //     - reference: must be unique, alphanumeric plus -._  — payouts.id (a uuid) satisfies this.
 //
 // Deploy:  supabase functions deploy lenco-payout
-// Invoke:  supabase.functions.invoke("lenco-payout", { body: { propertyId, amount, narration? } })
+// Invoke:  supabase.functions.invoke("lenco-payout", { body: { propertyId, amount, confirmationToken, narration?, recipientId? } })
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, handleOptions } from "../_shared/cors.ts";
+import { sha256Hex } from "../_shared/otpCrypto.ts";
 
-type LencoPayoutPayload = { propertyId?: string; amount?: number; narration?: string };
+type LencoPayoutPayload = {
+  propertyId?: string;
+  amount?: number;
+  narration?: string;
+  recipientId?: string;
+  confirmationToken?: string;
+};
 
 Deno.serve(async (req) => {
   const preflight = handleOptions(req);
@@ -49,9 +67,17 @@ Deno.serve(async (req) => {
 
   const propertyId = payload.propertyId?.trim() ?? "";
   const amount = payload.amount;
+  const confirmationToken = payload.confirmationToken?.trim() ?? "";
+  const recipientId = payload.recipientId?.trim() || null;
   if (!propertyId || !amount || amount <= 0) {
     return new Response(JSON.stringify({ error: "propertyId and a positive amount are required" }), {
       status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  if (!confirmationToken) {
+    return new Response(JSON.stringify({ error: "A withdrawal confirmation is required — verify the code emailed to your account first." }), {
+      status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
@@ -77,13 +103,33 @@ Deno.serve(async (req) => {
     global: { headers: { Authorization: authHeader } },
   });
 
-  const { data: recipient, error: recipientError } = await supabase
-    .from("payout_recipients")
-    .select("id, lenco_recipient_id, account_name, account_number")
+  // The actual authorization check — see this file's top comment. Uses the service-role client
+  // because payout_withdrawal_otp_codes has no RLS policies at all (only a service-role key or a
+  // SECURITY DEFINER function can touch it), and validates + immediately burns the token in one
+  // update so a token can't be replayed even if this request is somehow retried.
+  const serviceClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  const confirmationTokenHash = await sha256Hex(confirmationToken);
+  const { data: burnedConfirmation } = await serviceClient
+    .from("payout_withdrawal_otp_codes")
+    .update({ confirmation_token_hash: null })
     .eq("property_id", propertyId)
-    .order("created_at", { ascending: false })
-    .limit(1)
+    .eq("confirmation_token_hash", confirmationTokenHash)
+    .gt("confirmation_expires_at", new Date().toISOString())
+    .select("id")
     .maybeSingle();
+  if (!burnedConfirmation) {
+    return new Response(JSON.stringify({ error: "That confirmation has expired or was already used. Request a new code." }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  let recipientQuery = supabase
+    .from("payout_recipients")
+    .select("id, type, lenco_recipient_id, account_name, account_number")
+    .eq("property_id", propertyId);
+  recipientQuery = recipientId ? recipientQuery.eq("id", recipientId) : recipientQuery.eq("is_default", true);
+  const { data: recipient, error: recipientError } = await recipientQuery.limit(1).maybeSingle();
 
   if (recipientError) {
     return new Response(JSON.stringify({ error: "Failed to look up payout recipient", detail: recipientError.message }), {
@@ -96,6 +142,12 @@ Deno.serve(async (req) => {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+  }
+  if (recipient.type !== "bank" || !recipient.lenco_recipient_id) {
+    return new Response(
+      JSON.stringify({ error: "Payouts to mobile money aren't connected yet — choose a bank account for this withdrawal." }),
+      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   }
 
   const { data: payoutRow, error: insertError } = await supabase

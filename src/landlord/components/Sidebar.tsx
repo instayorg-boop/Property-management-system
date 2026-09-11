@@ -244,20 +244,13 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
       {/* Header — logo + notifications, replacing the old full-width topbar. Lives inside the
           sidebar's own card rather than a separate strip across the whole page. */}
       <div ref={notificationsRef} className="relative flex items-center justify-between px-4 py-4">
-        <Link to="/dashboard" onClick={() => setOpen(false)} className="flex items-center">
-          <img src="https://cdn.brandfetch.io/idkuvXnjOH/theme/dark/logo.svg?c=1dxbfHSJFAPEGdCLU4o5B" alt="Instay Manage" className="h-7" />
+        <Link to="/dashboard" onClick={() => setOpen(false)} className="flex items-center gap-3">
+          <img src="https://rlmcuhejgfftcdshbrbe.supabase.co/storage/v1/object/public/Company%20assets/Instay%20Manage%20Logo.png" alt="Instay Manage" className="h-10" />
+          <p className="font-display text-blue-700 text-xl font-bold leading-[1.08] tracking-[-0.09em]  ">Instay Manage</p>
         </Link>
 
         <div className="flex items-center gap-1">
-          <button
-            type="button"
-            aria-label="Notifications"
-            onClick={() => setNotificationsOpen((v) => !v)}
-            className="relative flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-ink"
-          >
-            <BellIcon size={17} weight="duotone" />
-            <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-brand" />
-          </button>
+          
           <button
             type="button"
             onClick={() => setOpen(false)}
@@ -274,9 +267,9 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
           </div>
         )}
       </div>
-      <div className="border-b border-line" />
+     
 
-      <nav className="flex-1 space-y-3 overflow-y-auto px-3 py-4">
+      <nav className="flex-1 space-y-3 overflow-y-auto px-3 pb-4 pt-2">
         {groups.map((group) => (
           <div key={group.label}>
             <p className="px-3 pb-1.5 text-[11px] font-semibold tracking-wide text-muted/70 uppercase">
@@ -294,19 +287,26 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
       {/* Compact account trigger — a small icon, not a permanent list of links. Everything that
           used to be separate footer rows (Settings, Help, Log out) now lives inside the popup
           this opens, anchored above the trigger since it's at the very bottom of the sidebar. */}
-      <div ref={accountRef} className="relative border-t border-line px-3 py-3">
+      <div ref={accountRef} className="relative   px-3 py-3">
         <button
           type="button"
           onClick={() => setAccountOpen((v) => !v)}
-          aria-label="Account menu"
+          aria-label="Open account menu"
           aria-expanded={accountOpen}
-          className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-mist"
+          className="group flex w-full items-center gap-3 rounded-lg px-2.5 py-2 bg-white border border-gray-200"
         >
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-mist text-muted">
-            <UserCircle size={20} weight="fill" />
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-blue-700 group-hover:ring-2 group-hover:ring-blue-300 transition-all">
+            <UserCircle size={24} weight="fill" />
           </span>
-          <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">{propertyName}</span>
+          <div className="flex-1 text-left min-w-0 flex flex-col">
+            <span className="truncate text-[15px] font-semibold leading-tight text-ink">{propertyName}</span>
+            <span className="text-xs text-muted/80 mt-0.5">Property account</span>
+          </div>
+          <svg width="18" height="18" fill="none" viewBox="0 0 20 20" className={`ml-auto text-muted transition-transform ${accountOpen ? "rotate-180" : ""}`}>
+            <path d="M6 8l4 4 4-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
         </button>
+   
 
         {accountOpen && (
           <div className="absolute bottom-full left-3 z-10 mb-2 w-56 overflow-hidden rounded-2xl border border-line bg-paper shadow-card">

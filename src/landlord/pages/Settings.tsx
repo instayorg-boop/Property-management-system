@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { QRCodeSVG } from "qrcode.react";
@@ -11,6 +11,8 @@ import {
   Laptop as LaptopIcon,
   Wallet as WalletIcon,
   Coins as CoinsIcon,
+  DeviceMobile as DeviceMobileIcon,
+  Trash as TrashIcon,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 import PageHeader from "../components/PageHeader";
@@ -19,7 +21,24 @@ import ThemeSwitcher from "../components/ThemeSwitcher";
 import Button from "../components/Button";
 import BankSelect from "../components/BankSelect";
 import { useSettings, type NotificationPrefs, type PaymentMethod } from "../SettingsContext";
-import { listBanks, resolveBankAccount, createPayoutRecipient, type Bank } from "../../lib/payoutApi";
+import { formatCurrency } from "../TenantsContext";
+import { usePayoutSummary } from "../usePayoutSummary";
+import {
+  listBanks,
+  resolveBankAccount,
+  createPayoutRecipient,
+  sendPayout,
+  checkPayoutStatus,
+  listPayoutRecipients,
+  setDefaultPayoutRecipient,
+  deletePayoutRecipient,
+  requestPayoutRecipientOtp,
+  verifyPayoutRecipientOtp,
+  requestWithdrawalOtp,
+  verifyWithdrawalOtp,
+  type Bank,
+  type PayoutRecipient,
+} from "../../lib/payoutApi";
 
 function CopyIcon() {
   return <CopyIconBase size={14} weight="duotone" />;
@@ -74,6 +93,480 @@ function Row({ label, desc, children }: { label: string; desc?: string; children
 
 const fieldCls =
   "w-full max-w-xs rounded-lg border-none bg-mist px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand/30";
+
+// Lenco doesn't currently charge a transfer fee on this account, and there's no fee field
+// anywhere in the payouts data model yet — shown explicitly rather than just omitted, so this
+// panel still answers "is there a fee" instead of silently leaving the question open.
+const TRANSFER_FEE = 0;
+
+type WithdrawStep = "idle" | "confirm" | "otp-sending" | "otp" | "sending" | "success" | "error";
+
+function recipientLabel(r: PayoutRecipient): string {
+  if (r.type === "mobile-money") return `${(r.provider ?? "").toUpperCase()} •••• ${(r.phone_number ?? "").slice(-4)}`;
+  return `${r.account_name ?? "Bank"} •••• ${(r.account_number ?? "").slice(-4)}`;
+}
+
+/** "Available to withdraw" block for the connected-bank view of Bank & payouts — an inline
+ * confirmation panel (not a drawer, unlike PayoutDetailDrawer) that replaces its own content with
+ * a success state on completion, matching the step-based feel of the bank-setup wizard above it
+ * without sharing its `payoutStep` state (that state is for bank setup, not withdrawals). Requires
+ * an email-OTP confirmation before the transfer actually fires — see request/verify-withdrawal-otp's
+ * comments for why that's a real authorization step, not just UI friction. */
+function WithdrawBlock({ recipients }: { recipients: PayoutRecipient[] }) {
+  const { payout, lastPayout } = usePayoutSummary();
+  const [step, setStep] = useState<WithdrawStep>("idle");
+  const [error, setError] = useState<string | null>(null);
+  const [recipientId, setRecipientId] = useState<string | null>(null);
+  const [maskedEmail, setMaskedEmail] = useState<string | null>(null);
+  const [devCode, setDevCode] = useState<string | null>(null);
+  const [otpCode, setOtpCode] = useState("");
+  const pollTimer = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (pollTimer.current) window.clearTimeout(pollTimer.current);
+  }, []);
+
+  const bankRecipients = recipients.filter((r) => r.type === "bank");
+  const selectedRecipient = recipients.find((r) => r.id === recipientId) ?? bankRecipients.find((r) => r.is_default) ?? bankRecipients[0];
+
+  const lastSuccessfulDate =
+    lastPayout && lastPayout.status === "successful"
+      ? new Date(lastPayout.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+      : "No payouts yet";
+
+  const poll = (payoutId: string, attempt: number) => {
+    checkPayoutStatus(payoutId)
+      .then(({ status, failureReason }) => {
+        if (status === "successful") {
+          setStep("success");
+          return;
+        }
+        if (status === "failed") {
+          setError(failureReason ?? "Transfer failed.");
+          setStep("error");
+          return;
+        }
+        if (attempt >= 20) {
+          // Still processing after ~60s — Lenco/the webhook will settle it eventually; don't leave
+          // the panel spinning forever, just stop polling and let the pill/drawer pick it up later.
+          setStep("success");
+          return;
+        }
+        pollTimer.current = window.setTimeout(() => poll(payoutId, attempt + 1), 3000);
+      })
+      .catch(() => {
+        pollTimer.current = window.setTimeout(() => poll(payoutId, attempt + 1), 3000);
+      });
+  };
+
+  const startConfirmation = async () => {
+    if (!payout?.propertyId) return;
+    setStep("otp-sending");
+    setError(null);
+    setDevCode(null);
+    try {
+      const { maskedEmail: masked, devCode: dev } = await requestWithdrawalOtp(payout.propertyId);
+      setMaskedEmail(masked);
+      setDevCode(dev ?? null);
+      setStep("otp");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to send a confirmation code.");
+      setStep("error");
+    }
+  };
+
+  const submit = async () => {
+    if (!payout?.propertyId || !payout.rawAmount || otpCode.trim().length !== 6 || !selectedRecipient) return;
+    setStep("sending");
+    setError(null);
+    try {
+      const { confirmationToken } = await verifyWithdrawalOtp(payout.propertyId, otpCode.trim());
+      const { payoutId } = await sendPayout(payout.propertyId, payout.rawAmount, confirmationToken, selectedRecipient.id);
+      poll(payoutId, 0);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to send the transfer.");
+      setStep("error");
+    }
+  };
+
+  if (!payout) {
+    return (
+      <Row label="Available to withdraw" desc="Money collected via mobile money, ready to transfer.">
+        <span className="text-sm text-muted">Nothing to withdraw right now.</span>
+      </Row>
+    );
+  }
+
+  if (step === "success") {
+    return (
+      <div className="border-t border-line py-5">
+        <div className="mx-auto max-w-sm text-center">
+          <CheckCircleIcon size={32} weight="fill" className="mx-auto text-emerald-500" />
+          <p className="mt-3 font-display text-lg font-semibold text-ink">Transfer sent</p>
+          <p className="mt-1 text-sm text-muted">
+            {payout.amount} is on its way to your bank account — usually within one business day.
+          </p>
+          <Button variant="secondary" className="mt-4" onClick={() => setStep("idle")}>
+            Done
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (step === "otp" || step === "otp-sending") {
+    return (
+      <div className="border-t border-line py-5">
+        <div className="mx-auto max-w-sm">
+          <p className="font-display text-lg font-semibold text-ink">Enter confirmation code</p>
+          <p className="mt-1 text-sm text-muted">
+            {step === "otp-sending"
+              ? "Sending a code…"
+              : `We emailed a 6-digit code to ${maskedEmail}. It expires in 5 minutes.`}
+          </p>
+          {devCode && (
+            <p className="mt-1 text-xs text-amber-600">
+              Dev mode — email isn't connected yet, your code is <span className="font-mono font-semibold">{devCode}</span>.
+            </p>
+          )}
+          <input
+            autoFocus
+            value={otpCode}
+            onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            onKeyDown={(e) => e.key === "Enter" && otpCode.length === 6 && submit()}
+            inputMode="numeric"
+            placeholder="000000"
+            disabled={step === "otp-sending"}
+            className="mt-4 w-full rounded-lg border border-line bg-paper px-3 py-2.5 text-center text-lg font-semibold tracking-[0.3em] text-ink outline-none focus:border-brand"
+          />
+          {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+          <div className="mt-4 flex gap-2">
+            <Button variant="secondary" className="flex-1" onClick={() => setStep("confirm")}>
+              Back
+            </Button>
+            <Button variant="primary" className="flex-1" disabled={otpCode.length !== 6 || step === "otp-sending"} onClick={submit}>
+              Confirm & send
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (step === "confirm" || step === "sending" || step === "error") {
+    return (
+      <div className="border-t border-line py-5">
+        <div className="mx-auto max-w-sm">
+          <p className="font-display text-lg font-semibold text-ink">Confirm transfer</p>
+          <div className="mt-3 divide-y divide-line rounded-lg border border-line">
+            <div className="flex items-center justify-between px-4 py-2.5">
+              <span className="text-xs text-muted">Amount</span>
+              <span className="text-sm font-medium text-ink">{payout.amount}</span>
+            </div>
+            <div className="px-4 py-2.5">
+              <span className="text-xs text-muted">Destination</span>
+              {bankRecipients.length > 1 ? (
+                <div className="mt-1.5 space-y-1.5">
+                  {bankRecipients.map((r) => (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => setRecipientId(r.id)}
+                      className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                        (selectedRecipient?.id ?? bankRecipients[0]?.id) === r.id
+                          ? "border-brand bg-brand-soft text-brand"
+                          : "border-line text-ink hover:bg-mist"
+                      }`}
+                    >
+                      {recipientLabel(r)}
+                      {r.is_default && <span className="text-[10px] text-muted">Default</span>}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm font-medium text-ink">{selectedRecipient ? recipientLabel(selectedRecipient) : "No bank account"}</p>
+              )}
+            </div>
+            <div className="flex items-center justify-between px-4 py-2.5">
+              <span className="text-xs text-muted">Transfer fee</span>
+              <span className="text-sm font-medium text-ink">{TRANSFER_FEE > 0 ? formatCurrency(TRANSFER_FEE) : "None"}</span>
+            </div>
+          </div>
+          {step === "error" && error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+          <div className="mt-4 flex gap-2">
+            <Button variant="secondary" className="flex-1" disabled={step === "sending"} onClick={() => setStep("idle")}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              className="flex-1"
+              disabled={step === "sending" || !selectedRecipient}
+              onClick={startConfirmation}
+            >
+              {step === "sending" ? "Sending…" : step === "error" ? "Try again" : "Continue"}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <Row label="Available to withdraw" desc={`Last payout: ${lastSuccessfulDate}`}>
+      <div className="flex items-center gap-3">
+        <span className="text-sm font-medium text-ink">{payout.amount}</span>
+        <Button variant="secondary" disabled={bankRecipients.length === 0} onClick={() => setStep("confirm")}>
+          Withdraw
+        </Button>
+      </div>
+    </Row>
+  );
+}
+
+type AddMobileMoneyStep = "closed" | "form" | "sending" | "otp" | "verifying";
+const MOBILE_PROVIDERS = [
+  { value: "mtn", label: "MTN" },
+  { value: "airtel", label: "Airtel" },
+  { value: "zamtel", label: "Zamtel" },
+] as const;
+
+/** Adds a mobile money number as a payout recipient — phone + provider, then an SMS code proves the
+ * landlord actually controls that number (see request/verify-payout-recipient-otp's comments for
+ * why this replaces a bank-style name resolution here). Inline, not a drawer or a new route, same
+ * "sleek, matches the rest of Settings" brief as everything else on this page. */
+function AddMobileMoneyRecipient({ propertyId, onAdded }: { propertyId: string; onAdded: () => void }) {
+  const [step, setStep] = useState<AddMobileMoneyStep>("closed");
+  const [phone, setPhone] = useState("");
+  const [provider, setProvider] = useState<(typeof MOBILE_PROVIDERS)[number]["value"]>("mtn");
+  const [maskedPhone, setMaskedPhone] = useState<string | null>(null);
+  const [devCode, setDevCode] = useState<string | null>(null);
+  const [code, setCode] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const reset = () => {
+    setStep("closed");
+    setPhone("");
+    setCode("");
+    setError(null);
+    setDevCode(null);
+  };
+
+  const sendCode = async () => {
+    if (phone.trim().length < 9) return;
+    setStep("sending");
+    setError(null);
+    try {
+      const { maskedPhone: masked, devCode: dev } = await requestPayoutRecipientOtp(propertyId, phone.trim());
+      setMaskedPhone(masked);
+      setDevCode(dev ?? null);
+      setStep("otp");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to send a code.");
+      setStep("form");
+    }
+  };
+
+  const verify = async () => {
+    if (code.trim().length !== 6) return;
+    setStep("verifying");
+    setError(null);
+    try {
+      await verifyPayoutRecipientOtp(propertyId, phone.trim(), code.trim(), provider);
+      reset();
+      onAdded();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Incorrect or expired code.");
+      setStep("otp");
+    }
+  };
+
+  if (step === "closed") {
+    return (
+      <button
+        type="button"
+        onClick={() => setStep("form")}
+        className="flex items-center gap-1.5 text-sm font-medium text-brand transition active:scale-95 hover:text-ink"
+      >
+        <PlusIcon />
+        Add mobile money number
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-3 max-w-sm rounded-lg border border-line p-4">
+      {step === "otp" || step === "verifying" ? (
+        <>
+          <p className="text-sm font-medium text-ink">Enter the code sent to {maskedPhone}</p>
+          {devCode && (
+            <p className="mt-1 text-xs text-amber-600">
+              Dev mode — SMS isn't connected yet, your code is <span className="font-mono font-semibold">{devCode}</span>.
+            </p>
+          )}
+          <input
+            autoFocus
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            onKeyDown={(e) => e.key === "Enter" && code.length === 6 && verify()}
+            inputMode="numeric"
+            placeholder="000000"
+            disabled={step === "verifying"}
+            className="mt-3 w-full rounded-lg border border-line bg-paper px-3 py-2.5 text-center text-lg font-semibold tracking-[0.3em] text-ink outline-none focus:border-brand"
+          />
+          {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+          <div className="mt-3 flex gap-2">
+            <Button variant="secondary" className="flex-1" onClick={reset}>
+              Cancel
+            </Button>
+            <Button variant="primary" className="flex-1" disabled={code.length !== 6 || step === "verifying"} onClick={verify}>
+              {step === "verifying" ? "Verifying…" : "Verify"}
+            </Button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="text-sm font-medium text-ink">Add a mobile money number</p>
+          <p className="mt-1 text-xs text-muted">We'll text a code to confirm it's yours before saving it.</p>
+          <div className="mt-3 space-y-2.5">
+            <div className="flex gap-2">
+              {MOBILE_PROVIDERS.map((p) => (
+                <button
+                  key={p.value}
+                  type="button"
+                  onClick={() => setProvider(p.value)}
+                  className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
+                    provider === p.value ? "border-brand bg-brand-soft text-brand" : "border-line text-muted hover:bg-mist"
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <input
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="e.g. 0977 123 456"
+              inputMode="tel"
+              className="w-full rounded-lg border border-line bg-paper px-3 py-2.5 text-sm text-ink outline-none focus:border-brand"
+            />
+          </div>
+          {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+          <div className="mt-3 flex gap-2">
+            <Button variant="secondary" className="flex-1" onClick={reset}>
+              Cancel
+            </Button>
+            <Button variant="primary" className="flex-1" disabled={phone.trim().length < 9 || step === "sending"} onClick={sendCode}>
+              {step === "sending" ? "Sending…" : "Send code"}
+            </Button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Every payout recipient saved for this property — bank accounts and mobile money numbers, with
+ * per-row "make default" / remove actions, plus the add-mobile-money entry point. Sits alongside the
+ * legacy single-bank block above it (untouched) rather than replacing it, so existing bank setup
+ * keeps working exactly as it did; this is purely additive. */
+function PayoutMethodsList({
+  propertyId,
+  recipients,
+  onChanged,
+}: {
+  propertyId: string;
+  recipients: PayoutRecipient[];
+  onChanged: () => void;
+}) {
+  const mobileMoneyRecipients = recipients.filter((r) => r.type === "mobile-money");
+  const [removing, setRemoving] = useState<PayoutRecipient | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const makeDefault = async (id: string) => {
+    setBusyId(id);
+    try {
+      await setDefaultPayoutRecipient(propertyId, id);
+      onChanged();
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  return (
+    <div className="border-t border-line py-5">
+      <p className="font-display text-[15px] font-bold tracking-tight text-ink">Other payout methods</p>
+      <p className="mt-1 max-w-sm text-xs text-muted">
+        Add another number to split where rent money can go — pick which one a withdrawal uses when you send it.
+      </p>
+
+      {mobileMoneyRecipients.length > 0 && (
+        <div className="mt-3 max-w-sm divide-y divide-line rounded-lg border border-line">
+          {mobileMoneyRecipients.map((r) => (
+            <div key={r.id} className="flex items-center justify-between gap-2 px-4 py-2.5">
+              <div className="flex items-center gap-2.5">
+                <DeviceMobileIcon size={16} weight="duotone" className="shrink-0 text-muted" />
+                <div>
+                  <p className="text-sm font-medium text-ink">{recipientLabel(r)}</p>
+                  <p className="text-[11px] text-muted">
+                    {r.is_default ? "Default" : "Not yet connected for payouts"}
+                  </p>
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                {!r.is_default && (
+                  <button
+                    type="button"
+                    disabled={busyId === r.id}
+                    onClick={() => makeDefault(r.id)}
+                    className="rounded-md px-2 py-1 text-xs font-medium text-muted transition-colors hover:bg-mist hover:text-ink"
+                  >
+                    Make default
+                  </button>
+                )}
+                <button
+                  type="button"
+                  aria-label="Remove"
+                  onClick={() => setRemoving(r)}
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-red-50 hover:text-red-600"
+                >
+                  <TrashIcon size={14} weight="duotone" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-3">
+        <AddMobileMoneyRecipient propertyId={propertyId} onAdded={onChanged} />
+      </div>
+
+      {removing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4">
+          <div className="w-full max-w-sm rounded-xl bg-paper p-5 shadow-card">
+            <p className="text-sm font-medium text-ink">Remove this payout method?</p>
+            <p className="mt-1 text-xs text-muted">{recipientLabel(removing)} will no longer be available for withdrawals.</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setRemoving(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="dangerSolid"
+                onClick={async () => {
+                  await deletePayoutRecipient(removing.id);
+                  setRemoving(null);
+                  onChanged();
+                }}
+              >
+                Remove
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // MVP: "Statutory" (NAPSA/payroll figures) is commented out along with staff/payroll everywhere
 // else — see the note in Sidebar.tsx. Re-add it to this tuple to bring the tab back.
@@ -196,6 +689,14 @@ export default function Settings() {
   const [resolveError, setResolveError] = useState<string | null>(null);
   const [savingRecipient, setSavingRecipient] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [recipients, setRecipients] = useState<PayoutRecipient[]>([]);
+
+  const refreshRecipients = () => {
+    if (!propertyId) return;
+    listPayoutRecipients(propertyId)
+      .then(setRecipients)
+      .catch((err) => console.error("Failed to load payout recipients", err));
+  };
 
   useEffect(() => {
     setPayoutStep(0);
@@ -214,6 +715,12 @@ export default function Settings() {
       cancelled = true;
     };
   }, [tab]);
+
+  useEffect(() => {
+    if (tab !== "Online payments" || !propertyId) return;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    refreshRecipients();
+  }, [tab, propertyId]);
 
   const resolveAccount = async (bank: Bank, accountNumber: string) => {
     if (!bank || !accountNumber.trim()) return;
@@ -417,14 +924,14 @@ export default function Settings() {
                   <div className="border-b border-line py-5">
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:max-w-3xl">
                       <div>
-                        <p className="text-sm font-medium text-ink">Lenco</p>
+                        <p className="text-sm font-medium text-ink">Online payment collection</p>
                         <p className="mt-1 max-w-sm text-xs text-muted">
                           Payouts are sent to your bank account automatically on your scheduled day.
                         </p>
                       </div>
                       <div className="flex items-center gap-3">
                         <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-600">Connected</span>
-                        <Button variant="secondary">Manage in Lenco</Button>
+                        <Button variant="secondary">Manage payout account</Button>
                       </div>
                     </div>
                   </div>
@@ -444,7 +951,8 @@ export default function Settings() {
                       Edit payout details
                     </Button>
                   </Row>
-                  
+                  {propertyId && <PayoutMethodsList propertyId={propertyId} recipients={recipients} onChanged={refreshRecipients} />}
+                  <WithdrawBlock recipients={recipients} />
                 </>
               ) : (
                 <AnimatePresence mode="wait">
@@ -619,6 +1127,7 @@ export default function Settings() {
                                   setAccountNumber(formAccountNumber);
                                   setAccountHolderName(formAccountHolderName);
                                   setLencoConnected(true);
+                                  refreshRecipients();
                                   if (editingBank) {
                                     setEditingBank(false);
                                     setPayoutStep(0);

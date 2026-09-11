@@ -1,11 +1,102 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Wallet, CheckCircle, WarningCircle } from "@phosphor-icons/react";
+import { Wallet, CheckCircle, WarningCircle, CaretDown } from "@phosphor-icons/react";
 import SlideOver from "./SlideOver";
 import Button from "./Button";
 import { useSettings } from "../SettingsContext";
 import { useToast } from "../ToastContext";
-import { sendPayout, checkPayoutStatus, type PayoutStatus } from "../../lib/payoutApi";
+import { formatCurrency } from "../TenantsContext";
+import {
+  sendPayout,
+  checkPayoutStatus,
+  listPayouts,
+  requestWithdrawalOtp,
+  verifyWithdrawalOtp,
+  type PayoutStatus,
+  type PayoutRecord,
+} from "../../lib/payoutApi";
+
+const RECENT_PAYOUTS_LIMIT = 10;
+
+const payoutStatusLabel: Record<PayoutStatus, string> = {
+  pending: "Pending",
+  processing: "Pending",
+  successful: "Completed",
+  failed: "Failed",
+};
+const payoutStatusStyle: Record<PayoutStatus, string> = {
+  pending: "bg-amber-50 text-amber-600",
+  processing: "bg-amber-50 text-amber-600",
+  successful: "bg-emerald-50 text-emerald-600",
+  failed: "bg-red-50 text-red-600",
+};
+// Failed and pending/processing float to the top regardless of date — those are the ones that
+// actually need attention; a long-settled "Completed" row further down needs none.
+const payoutSortRank: Record<PayoutStatus, number> = { failed: 0, pending: 1, processing: 1, successful: 2 };
+
+function formatPayoutDate(iso: string) {
+  return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function RecentPayouts({ propertyId }: { propertyId: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [rows, setRows] = useState<PayoutRecord[] | null>(null);
+
+  useEffect(() => {
+    if (!expanded || rows !== null) return;
+    setLoading(true);
+    listPayouts(propertyId, { limit: RECENT_PAYOUTS_LIMIT })
+      .then((data) => setRows(data))
+      .catch((e) => console.error("Failed to load recent payouts", e))
+      .finally(() => setLoading(false));
+  }, [expanded, rows, propertyId]);
+
+  const sorted = rows ? [...rows].sort((a, b) => payoutSortRank[a.status] - payoutSortRank[b.status]) : [];
+
+  return (
+    <div className="mt-4 rounded-xl border border-line">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-center justify-between px-4 py-3 text-left"
+      >
+        <span className="text-sm font-medium text-ink">Recent payouts</span>
+        <CaretDown size={14} weight="bold" className={`text-muted transition-transform ${expanded ? "rotate-180" : ""}`} />
+      </button>
+
+      {expanded && (
+        <div className="border-t border-line">
+          {loading ? (
+            <p className="px-4 py-4 text-center text-xs text-muted">Loading…</p>
+          ) : sorted.length === 0 ? (
+            <p className="px-4 py-4 text-center text-xs text-muted">No payouts yet.</p>
+          ) : (
+            <div className="divide-y divide-line">
+              {sorted.map((row) => (
+                <div key={row.id} className="flex items-center justify-between px-4 py-2.5">
+                  <div>
+                    <p className="text-sm font-medium text-ink">{formatCurrency(row.amount)}</p>
+                    <p className="text-xs text-muted">{formatPayoutDate(row.createdAt)}</p>
+                  </div>
+                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${payoutStatusStyle[row.status]}`}>
+                    {payoutStatusLabel[row.status]}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          <Link
+            to="/accounting/payouts"
+            className="block border-t border-line py-2.5 text-center text-xs font-medium text-brand hover:underline"
+          >
+            View all
+          </Link>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLLS = 20; // ~60s before giving up and just saying "still processing"
@@ -36,6 +127,12 @@ export default function PayoutDetailDrawer({
   const [failureReason, setFailureReason] = useState<string | null>(null);
   const [polling, setPolling] = useState(false);
   const [stillWaiting, setStillWaiting] = useState(false);
+  // A second factor is required before a transfer actually fires — see request/verify-withdrawal-otp's
+  // comments for why this is real server-side authorization, not just a UI step.
+  const [otpStage, setOtpStage] = useState<"idle" | "requesting" | "entering">("idle");
+  const [maskedEmail, setMaskedEmail] = useState<string | null>(null);
+  const [devCode, setDevCode] = useState<string | null>(null);
+  const [otpCode, setOtpCode] = useState("");
   const pollTimer = useRef<number | null>(null);
   // Guards the local UI state updates below, not the toast — the poll is deliberately left running
   // (see pollStatus) even after this drawer unmounts, so closing it can't silently swallow the
@@ -81,14 +178,35 @@ export default function PayoutDetailDrawer({
       });
   };
 
-  const sendNow = async () => {
+  const startConfirmation = async () => {
     if (!payout.propertyId) return;
+    setOtpStage("requesting");
+    setSendError(null);
+    setDevCode(null);
+    try {
+      const { maskedEmail: masked, devCode: dev } = await requestWithdrawalOtp(payout.propertyId);
+      setMaskedEmail(masked);
+      setDevCode(dev ?? null);
+      setOtpStage("entering");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to send a confirmation code.";
+      setSendError(message);
+      setOtpStage("idle");
+      showToast(message, "error");
+    }
+  };
+
+  const sendNow = async () => {
+    if (!payout.propertyId || otpCode.trim().length !== 6) return;
     setSending(true);
     setSendError(null);
     setResolvedStatus(null);
     setStillWaiting(false);
     try {
-      const { payoutId } = await sendPayout(payout.propertyId, payout.rawAmount);
+      const { confirmationToken } = await verifyWithdrawalOtp(payout.propertyId, otpCode.trim());
+      const { payoutId } = await sendPayout(payout.propertyId, payout.rawAmount, confirmationToken);
+      setOtpStage("idle");
+      setOtpCode("");
       setPolling(true);
       pollStatus(payoutId, 0);
     } catch (err) {
@@ -123,28 +241,57 @@ export default function PayoutDetailDrawer({
                 <Button
                   variant="primary"
                   className="w-full py-3 hover:scale-[1.01] disabled:hover:scale-100"
-                  disabled={sending}
-                  onClick={sendNow}
+                  disabled={otpStage === "requesting"}
+                  onClick={startConfirmation}
                 >
-                  {sending ? "Sending…" : "Try again"}
+                  {otpStage === "requesting" ? "Sending…" : "Try again"}
                 </Button>
               </div>
             ) : sending || polling ? (
               <p className="rounded-lg border border-line bg-mist py-2.5 text-center text-sm font-medium text-muted">
-                {sending ? "Sending…" : "Waiting for Lenco to confirm…"}
+                {sending ? "Sending…" : "Waiting to confirm…"}
               </p>
             ) : stillWaiting ? (
               <p className="rounded-lg border border-amber-200 bg-amber-50 py-2.5 text-center text-sm font-medium text-amber-700">
                 Still processing — check back shortly.
               </p>
+            ) : otpStage === "entering" ? (
+              <div className="space-y-2 rounded-lg border border-line p-3">
+                <p className="text-xs text-muted">
+                  We emailed a 6-digit code to {maskedEmail}. It expires in 5 minutes.
+                </p>
+                {devCode && (
+                  <p className="text-xs text-amber-600">
+                    Dev mode — email isn't connected yet, your code is <span className="font-mono font-semibold">{devCode}</span>.
+                  </p>
+                )}
+                <input
+                  autoFocus
+                  value={otpCode}
+                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  onKeyDown={(e) => e.key === "Enter" && otpCode.length === 6 && sendNow()}
+                  inputMode="numeric"
+                  placeholder="000000"
+                  disabled={sending}
+                  className="w-full rounded-lg border border-line bg-paper px-3 py-2.5 text-center text-lg font-semibold tracking-[0.3em] text-ink outline-none focus:border-brand"
+                />
+                <Button
+                  variant="primary"
+                  className="w-full py-3 hover:scale-[1.01] disabled:hover:scale-100"
+                  disabled={sending || otpCode.length !== 6}
+                  onClick={sendNow}
+                >
+                  {sending ? "Sending…" : "Confirm & send"}
+                </Button>
+              </div>
             ) : (
               <Button
                 variant="primary"
                 className="w-full py-3 hover:scale-[1.01] disabled:hover:scale-100"
-                disabled={sending}
-                onClick={sendNow}
+                disabled={otpStage === "requesting"}
+                onClick={startConfirmation}
               >
-                Transfer to my bank
+                {otpStage === "requesting" ? "Sending code…" : "Transfer to my bank"}
               </Button>
             )}
             <Link
@@ -201,11 +348,13 @@ export default function PayoutDetailDrawer({
           <div className="flex items-start gap-2 border-t border-line px-4 py-3">
             <CheckCircle size={14} weight="fill" className="mt-0.5 shrink-0 text-emerald-500" />
             <p className="text-xs text-muted">
-              Transferred automatically via Lenco — usually within one business day.
+              Transferred automatically through online payment collection — usually within one business day.
             </p>
           </div>
         )}
       </div>
+
+      {payout.propertyId && <RecentPayouts propertyId={payout.propertyId} />}
     </SlideOver>
   );
 }

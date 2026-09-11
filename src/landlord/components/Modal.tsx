@@ -13,7 +13,7 @@ export default function Modal({
   onClose: () => void;
   children: ReactNode;
   title?: string;
-  description?: string;
+  description?: ReactNode;
   footer?: ReactNode;
   maxWidth?: string;
 }) {

@@ -24,6 +24,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, handleOptions } from "../_shared/cors.ts";
+import { sendEmail } from "../_shared/email.ts";
 
 type CreateRecipientPayload = {
   accountNumber?: string;
@@ -119,14 +120,24 @@ Deno.serve(async (req) => {
     });
   }
 
+  // First recipient ever for this property defaults to being the one payouts use; later additions
+  // (e.g. adding a mobile money number alongside an existing bank account) stay non-default until
+  // the landlord explicitly switches, via setDefaultPayoutRecipient.
+  const { count: existingCount } = await supabase
+    .from("payout_recipients")
+    .select("id", { count: "exact", head: true })
+    .eq("property_id", propertyId);
+
   const { data, error } = await supabase
     .from("payout_recipients")
     .insert({
       property_id: propertyId,
+      type: "bank",
       lenco_recipient_id: lencoRecipientId,
       account_name: accountName,
       account_number: accountNumber,
       bank_code: bankCode,
+      is_default: (existingCount ?? 0) === 0,
     })
     .select()
     .single();
@@ -136,6 +147,19 @@ Deno.serve(async (req) => {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+  }
+
+  const { data: settingsRow } = await supabase.from("settings").select("account_email").eq("property_id", propertyId).maybeSingle();
+  if (settingsRow?.account_email) {
+    try {
+      await sendEmail(
+        settingsRow.account_email,
+        "A new payout method was added to your account",
+        `A bank account ending in ${accountNumber.slice(-4)} was just added as a payout destination on your Instay account. If this wasn't you, remove it in Settings > Bank & payouts right away.`
+      );
+    } catch (err) {
+      console.error("[create-payout-recipient] failed to send security alert email", String(err));
+    }
   }
 
   return new Response(JSON.stringify({ ok: true, recipient: data }), {

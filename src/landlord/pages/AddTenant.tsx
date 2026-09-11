@@ -1174,7 +1174,7 @@ export default function AddTenant() {
         description={
           isEditing
             ? `${editingTenant!.name} · ${editingTenant!.room || "Unassigned"}`
-            : "Completed at the property office in under 4 minutes."
+            : "Completed in under 4 minutes."
         }
       />
 
@@ -1182,14 +1182,14 @@ export default function AddTenant() {
       <div className="mx-auto max-w-2xl px-4 pb-24 sm:px-8">
         {submitAttempted && !canSubmit && (
           <div className="mb-6 rounded-lg bg-red-50 px-4 py-2.5 text-xs font-medium text-red-700">
-            A few required fields still need attention — they're marked below.
+            A few required fields still need attention - they're marked below.
           </div>
         )}
         {!isEditing && (draftRestored || draftSavedAt) && (
           <div className="mb-6 flex items-center justify-between rounded-lg bg-mist px-4 py-2.5 text-xs text-muted">
             <span>
               {draftRestored
-                ? "Picked up where you left off — this draft was saved automatically."
+                ? "Picked up where you left off - this draft was saved automatically."
                 : "Saving as you type."}
             </span>
             <button
@@ -1267,7 +1267,7 @@ export default function AddTenant() {
             <h3 className="text-base font-semibold text-ink">
               Emergency contact information
             </h3>
-            <span className="text-xs text-muted">— optional</span>
+            <span className="text-xs text-muted">- optional</span>
           </div>
           {contacts.length === 0 ? (
             <button
@@ -1446,7 +1446,7 @@ export default function AddTenant() {
             subtitle={
               selectedRoom
                 ? `Does this tenant need to pay ${selectedRoom.roomType}'s security deposit upfront?`
-                : "Does this tenant need to pay a security deposit upfront? Select a room above first — the amount is set by that room type."
+                : "Does this tenant need to pay a security deposit upfront? Select a room above first - the amount is set by that room type."
             }
           />
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -1454,7 +1454,7 @@ export default function AddTenant() {
               selected={wantsDeposit === "no"}
               onClick={() => setWantsDeposit("no")}
               title="Proceed without deposit"
-              description="No deposit — proceed directly with the lease."
+              description="No deposit - proceed directly with the lease."
             />
             <ChoiceCard
               selected={wantsDeposit === "yes"}
@@ -1482,7 +1482,7 @@ export default function AddTenant() {
                   {!isEditing && (
                     <p className="mt-1.5 text-xs text-muted">
                       Defaults to {selectedRoom?.roomType}'s configured deposit
-                      — edit if this tenant's terms differ.
+                      - edit if this tenant's terms differ.
                     </p>
                   )}
                 </div>
@@ -1554,7 +1554,7 @@ export default function AddTenant() {
         <section>
           <SectionTitle
             title="Lease & billing terms"
-            subtitle="Pre-filled from your property's billing settings — adjust for this tenant if their terms are different."
+            subtitle="Pre-filled from your property's billing settings - adjust for this tenant if their terms are different."
           />
           <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="rounded-lg bg-mist px-3.5 py-2.5">
@@ -1705,7 +1705,7 @@ export default function AddTenant() {
         <section>
           <SectionTitle
             title="Documents"
-            subtitle="Tenancy agreement, national ID, acceptance letter — anything worth keeping on file for this tenant. Optional."
+            subtitle="Tenancy agreement, national ID, acceptance letter - anything worth keeping on file for this tenant. Optional."
           />
           <div className="mt-4">
             {isEditing ? (

@@ -599,31 +599,43 @@ export type Database = {
       }
       payout_recipients: {
         Row: {
-          account_name: string
-          account_number: string
-          bank_code: string
+          account_name: string | null
+          account_number: string | null
+          bank_code: string | null
           created_at: string
           id: string
-          lenco_recipient_id: string
+          is_default: boolean
+          lenco_recipient_id: string | null
+          phone_number: string | null
           property_id: string
+          provider: string | null
+          type: string
         }
         Insert: {
-          account_name: string
-          account_number: string
-          bank_code: string
+          account_name?: string | null
+          account_number?: string | null
+          bank_code?: string | null
           created_at?: string
           id?: string
-          lenco_recipient_id: string
+          is_default?: boolean
+          lenco_recipient_id?: string | null
+          phone_number?: string | null
           property_id: string
+          provider?: string | null
+          type?: string
         }
         Update: {
-          account_name?: string
-          account_number?: string
-          bank_code?: string
+          account_name?: string | null
+          account_number?: string | null
+          bank_code?: string | null
           created_at?: string
           id?: string
-          lenco_recipient_id?: string
+          is_default?: boolean
+          lenco_recipient_id?: string | null
+          phone_number?: string | null
           property_id?: string
+          provider?: string | null
+          type?: string
         }
         Relationships: [
           {

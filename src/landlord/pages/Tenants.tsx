@@ -76,7 +76,7 @@ export default function Tenants() {
         <div className="rounded-xl border border-line bg-paper">
           {/* Toolbar */}
           <div className="flex flex-wrap items-center gap-2 border-b border-line p-6">
-            <div className="flex items-center gap-2.5 rounded-md bg-mist px-3.5 py-2.5 transition-colors focus-within:bg-paper focus-within:ring-2 focus-within:ring-brand/25 sm:w-64">
+            <div className="flex items-center gap-2.5 rounded-md bg-mist px-3.5 py-2.5 transition-colors focus-within:bg-paper focus-within:ring-2 focus-within:ring-brand/25 sm:w-80">
               <SearchIcon />
               <input
                 value={query}
@@ -84,7 +84,7 @@ export default function Tenants() {
                   setQuery(e.target.value);
                   setPage(1);
                 }}
-                placeholder="Search by name, room, or phone"
+                placeholder="Search by name, room or phone"
                 className="w-full bg-transparent text-sm outline-none placeholder:text-muted"
               />
             </div>
