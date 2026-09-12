@@ -32,6 +32,10 @@ type SettingsContextValue = {
   /** The active property this dashboard session is scoped to. */
   propertyName: string;
   setPropertyName: (v: string) => void;
+  /** The stable payment-portal URL segment (/pay/:propertySlug) — set once at creation, never
+   * re-derived from the editable propertyName. Use this, not slugify(propertyName), anywhere a
+   * portal link is built. */
+  propertySlug: string;
   propertyAddress: string;
   setPropertyAddress: (v: string) => void;
   propertyType: string;
@@ -148,6 +152,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [propertyName, setPropertyNameState] = useState("Kabulonga House");
   const [propertyAddress, setPropertyAddressState] = useState("Plot 14, Kabulonga, Lusaka");
   const [propertyType, setPropertyTypeState] = useState("");
+  // The payment-portal URL segment — set once at property creation and never re-derived from the
+  // (editable) name, unlike the old behavior in Settings.tsx that recomputed it from propertyName
+  // on every render and broke every existing payment link the moment a landlord renamed their
+  // property. This is the one source of truth for what the portal route actually is.
+  const [propertySlug, setPropertySlugState] = useState("");
   const [landlordName, setLandlordNameState] = useState("");
   const [landlordPhone, setLandlordPhoneState] = useState("0977 000 000");
   const [paymentMethods, setPaymentMethodsState] = useState<PaymentMethod[]>([
@@ -229,6 +238,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       setPropertyNameState(cached.property.name);
       setPropertyAddressState(cached.property.address);
       setPropertyTypeState(cached.property.propertyType);
+      setPropertySlugState(cached.property.slug);
       applySettingsRow(cached.settingsRow as SettingsRow);
       setProperties(cached.properties);
       setIsReady(true);
@@ -242,6 +252,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         setPropertyNameState(property.name);
         setPropertyAddressState(property.address ?? "");
         setPropertyTypeState(property.property_type ?? "");
+        setPropertySlugState(property.slug ?? "");
 
         const [settingsRow, allProperties] = await Promise.all([
           getOrCreateSettings(property.id),
@@ -258,6 +269,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
             name: property.name,
             address: property.address ?? "",
             propertyType: property.property_type ?? "",
+            slug: property.slug ?? "",
           },
           settingsRow,
           properties: allProperties.map((p) => p.name),
@@ -414,6 +426,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         setCollectionTargetPct,
         propertyName,
         setPropertyName,
+        propertySlug,
         propertyAddress,
         setPropertyAddress,
         propertyType,

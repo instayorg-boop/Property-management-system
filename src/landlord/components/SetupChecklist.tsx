@@ -51,7 +51,7 @@ export default function SetupChecklist() {
         detail: "So collected rent can actually reach you.",
         done: lencoConnected || Boolean(bankName.trim()),
         icon: Bank,
-        to: "/settings/online-payments",
+        to: "/online-payments",
       },
     ],
     [roomTypeConfigs.length, tenants.length, landlordName, landlordPhone, lencoConnected, bankName]

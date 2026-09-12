@@ -208,7 +208,7 @@ export type PayoutRecord = {
 };
 
 /** Payout history for one property, newest first — used by PayoutDetailDrawer's "Recent payouts"
- * list and the full /accounting/payouts ledger. `status`/`from`/`to` narrow the query for the full
+ * list and the full /online-payments ledger. `status`/`from`/`to` narrow the query for the full
  * ledger's filters; omit them for the drawer's plain "last N" view. RLS already scopes this to the
  * caller's own properties, same as every other payouts-table read. */
 export async function listPayouts(
@@ -234,6 +234,53 @@ export async function listPayouts(
     failureReason: row.failure_reason,
     recipient: Array.isArray(row.payout_recipients) ? (row.payout_recipients[0] ?? null) : row.payout_recipients,
   }));
+}
+
+export type CollectionStatus = "pending" | "pay-offline" | "successful" | "failed";
+
+export type CollectionRecord = {
+  id: string;
+  amount: number;
+  status: CollectionStatus;
+  createdAt: string;
+  operator: "mtn" | "airtel" | "zamtel";
+  phone: string;
+  failureReason: string | null;
+  tenantName: string | null;
+};
+
+/** Tenant rent payments collected via the payment portal's mobile-money flow (public.collections),
+ * newest first — the "Payments received" side of Online payments, alongside listPayouts' outgoing
+ * transfers. Same status/from/to filter shape as listPayouts so the two tables' filter UI can share
+ * code. RLS scopes this to the caller's own properties (see the collections_select policy). */
+export async function listCollections(
+  propertyId: string,
+  opts?: { limit?: number; status?: CollectionStatus[]; from?: string; to?: string }
+): Promise<CollectionRecord[]> {
+  let query = supabase
+    .from("collections")
+    .select("id, amount, status, created_at, operator, phone, failure_reason, tenants(name)")
+    .eq("property_id", propertyId)
+    .order("created_at", { ascending: false });
+  if (opts?.status?.length) query = query.in("status", opts.status);
+  if (opts?.from) query = query.gte("created_at", opts.from);
+  if (opts?.to) query = query.lte("created_at", opts.to);
+  if (opts?.limit) query = query.limit(opts.limit);
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []).map((row) => {
+    const tenant = Array.isArray(row.tenants) ? row.tenants[0] : row.tenants;
+    return {
+      id: row.id,
+      amount: row.amount,
+      status: row.status as CollectionStatus,
+      createdAt: row.created_at,
+      operator: row.operator as "mtn" | "airtel" | "zamtel",
+      phone: row.phone,
+      failureReason: row.failure_reason,
+      tenantName: tenant?.name ?? null,
+    };
+  });
 }
 
 /** Only lenco-webhook normally moves a payout past "processing" — if that webhook was never

@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { signIn } from "../lib/auth";
+import { useAuth } from "../landlord/AuthContext";
 
 function GoogleIcon() {
   return (
@@ -25,10 +26,21 @@ function GoogleIcon() {
 export default function SignIn() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { session, isReady } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // The installed PWA opens straight to this page (its start_url) rather than the marketing
+  // landing page — an already-signed-in visitor shouldn't have to look at a sign-in form (or tap
+  // through it) to get back into the app they just installed, so this sends them straight on to
+  // wherever they were headed, or the dashboard by default.
+  useEffect(() => {
+    if (!isReady || !session) return;
+    const from = (location.state as { from?: { pathname: string } } | null)?.from?.pathname;
+    navigate(from ?? "/dashboard", { replace: true });
+  }, [isReady, session, location.state, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,19 +58,17 @@ export default function SignIn() {
   };
 
   return (
-    <div className="grid min-h-screen grid-cols-1 lg:grid-cols-2">
+    <div className="grid min-h-screen bg-white grid-cols-1 lg:grid-cols-2">
       {/* Left: form */}
       <div className="flex flex-col items-center justify-center px-6 py-8 sm:px-12 lg:px-16 lg:py-10">
         <div className="mx-auto w-full max-w-[320px]">
 
-        <Link to="/" className="flex w-fit items-center gap-1.5 mb-5">
-          <div className="flex h-5 w-5 items-center justify-center rounded bg-ink">
-            <span className="font-display text-[10px] font-bold text-paper">I</span>
-          </div>
-          <span className="font-display text-[13px] font-semibold tracking-tight">Instay</span>
+        <Link to="/" className="flex items-center gap-2 mb-4">
+          <img src="https://rlmcuhejgfftcdshbrbe.supabase.co/storage/v1/object/public/Company%20assets/Instay_Manage_Logo-removebg-preview.png" alt="Instay Manage" className="h-10 " />
+          <p className="font-sans text-blue-700 text-xl font-bold leading-[1.08] tracking-[-0.09em]  ">Instay Manage</p>
         </Link>
 
-          <h1 className="font-display text-xl font-semibold tracking-tight">Welcome back.</h1>
+          <h1 className="font-sans text-xl font-semibold tracking-tight">Welcome back👋🏼</h1>
           <p className="mt-1.5 text-[13px] text-muted">To continue, sign in to Instay.</p>
 
           <div className="mt-4 space-y-2">
@@ -128,7 +138,7 @@ export default function SignIn() {
           </form>
 
           <p className="mt-5 text-center text-[13px] text-muted">
-            New to Instay?{" "}
+           
             <Link to="/get-started" className="font-medium text-ink underline-offset-2 hover:underline">
               Create an account
             </Link>
@@ -141,7 +151,7 @@ export default function SignIn() {
       </div>
 
       {/* Right: visual */}
-      <div className="relative hidden overflow-hidden bg-ink lg:flex lg:items-center lg:justify-center">
+      <div className="relative hidden overflow-hidden lg:flex lg:items-center lg:justify-center">
         <img
           src="https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?q=80&w=735&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
           alt="Modern residential building"

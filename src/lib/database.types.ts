@@ -1001,6 +1001,7 @@ export type Database = {
           owed_amount: number
           phone: string | null
           phones: string[]
+          portal_token: string
           property_id: string
           rent_amount: number
           room_id: string | null
@@ -1032,6 +1033,7 @@ export type Database = {
           owed_amount?: number
           phone?: string | null
           phones?: string[]
+          portal_token?: string
           property_id: string
           rent_amount?: number
           room_id?: string | null
@@ -1063,6 +1065,7 @@ export type Database = {
           owed_amount?: number
           phone?: string | null
           phones?: string[]
+          portal_token?: string
           property_id?: string
           rent_amount?: number
           room_id?: string | null
@@ -1126,6 +1129,7 @@ export type Database = {
         Args: { p_session_token: string; p_tenant_id: string }
         Returns: {
           amount: number
+          created_at: string
           label: string
           paid_amount: number
           status: string

@@ -9,6 +9,7 @@ import {
   Wrench,
   IdentificationBadge,
   Wallet,
+  CreditCard,
   ChartBar,
   GearSix,
   CaretDown,
@@ -32,6 +33,7 @@ const icons = {
   tenants: UsersThree,
   rooms: DoorOpen,
   accounting: Wallet,
+  onlinePayments: CreditCard,
   staff: IdentificationBadge,
   maintenance: Wrench,
   reports: ChartBar,
@@ -63,6 +65,7 @@ const groups: { label: string; items: NavItem[] }[] = [
       { label: "Rooms", to: "/rooms", icon: "rooms" },
       { label: "Maintenance requests", to: "/maintenance", icon: "maintenance" },
       { label: "Accounting", to: "/accounting", icon: "accounting" },
+      { label: "Online payments", to: "/online-payments", icon: "onlinePayments" },
       // Staff/payroll — out of scope for the MVP. Re-enable by uncommenting this nav item plus
       // the matching routes in App.tsx (search "MVP: staff/payroll").
       // {

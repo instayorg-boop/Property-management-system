@@ -17,6 +17,7 @@ import {
   Lock,
   Paperclip,
   FileText,
+  Link as LinkIcon,
 } from "@phosphor-icons/react";
 import PageHeader from "../components/PageHeader";
 import SectionLabel from "../components/SectionLabel";
@@ -325,6 +326,7 @@ export default function TenantProfile() {
   const [showMoveOut, setShowMoveOut] = useState(false);
   const [showReactivate, setShowReactivate] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [deletingEntry, setDeletingEntry] = useState<LedgerRow | null>(null);
 
   const [documents, setDocuments] = useState<TenantDocument[]>([]);
@@ -563,6 +565,21 @@ export default function TenantProfile() {
           {/* Icon-only, but each carries a native tooltip (title) — hovering explains what it
               does instead of leaving a bare glyph to guess at. */}
           <div className="flex items-center gap-1.5">
+            {tenant.portalToken && (
+              <button
+                type="button"
+                onClick={async () => {
+                  await navigator.clipboard.writeText(`https://pay.instay.co/p/${tenant.portalToken}`);
+                  setLinkCopied(true);
+                  window.setTimeout(() => setLinkCopied(false), 1600);
+                }}
+                aria-label="Copy payment link"
+                title={linkCopied ? "Copied!" : "Copy this tenant's payment link"}
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-ink"
+              >
+                {linkCopied ? <CheckCircle size={16} weight="bold" className="text-emerald-600" /> : <LinkIcon size={16} weight="bold" />}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => navigate(`/tenants/${tenant.id}/edit`)}

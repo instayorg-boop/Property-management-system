@@ -6,7 +6,7 @@ import TenantSearchDrawer from "../components/TenantSearchDrawer";
 import TenantPaymentDrawer from "../components/TenantPaymentDrawer";
 import MoveOutModal from "../components/MoveOutModal";
 import ExpenseFormDrawer from "../components/ExpenseFormDrawer";
-import PayoutDetailDrawer, { type UpcomingPayout } from "../components/PayoutDetailDrawer";
+import { type UpcomingPayout } from "../components/PayoutDetailDrawer";
 import Select, { type SelectOption } from "../components/Select";
 import { Skeleton } from "../components/Skeleton";
 import { useTenants, useCollectedRent, formatCurrency, type Tenant } from "../TenantsContext";
@@ -247,7 +247,6 @@ export default function Dashboard() {
   const [payingTenant, setPayingTenant] = useState<Tenant | null>(null);
   const [movingOutTenant, setMovingOutTenant] = useState<Tenant | null>(null);
   const [addingExpense, setAddingExpense] = useState(false);
-  const [payoutOpen, setPayoutOpen] = useState(false);
   const [collectionRange, setCollectionRange] = useState("6");
   const [activeBar, setActiveBar] = useState<number | null>(null);
 
@@ -605,7 +604,7 @@ export default function Dashboard() {
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={() => setPayoutOpen(true)}
+                  onClick={() => navigate("/online-payments")}
                   className="mt-4 block w-full bg-mist text-center hover:bg-line/40"
                 >
                   View balance
@@ -742,7 +741,6 @@ export default function Dashboard() {
         )}
 
         {addingExpense && <ExpenseFormDrawer editing={null} onClose={() => setAddingExpense(false)} />}
-        {payoutOpen && payout && <PayoutDetailDrawer payout={payout} onClose={() => setPayoutOpen(false)} />}
       </AnimatePresence>
     </>
   );

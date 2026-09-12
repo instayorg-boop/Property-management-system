@@ -1,8 +1,6 @@
 import { supabase } from "./supabaseClient";
 import { edgeFunctionErrorMessage } from "./functionsError";
 
-export type PortalTenantSummary = { id: string; name: string; room: string };
-
 // --- OTP session storage --------------------------------------------------------------------
 // sessionStorage (not localStorage) — a portal session should not silently persist across
 // browser restarts on a shared/public device; it dies with the tab, same as the 30-minute
@@ -84,7 +82,7 @@ export type PortalTenant = {
    * requires a verified OTP session; used to pre-fill the mobile-money payment step. */
   phone: string | null;
 };
-export type PortalLedgerRow = { label: string; amount: number; paidAmount?: number; status?: string };
+export type PortalLedgerRow = { label: string; amount: number; paidAmount?: number; status?: string; createdAt: string };
 
 function roomLabel(number: string | null) {
   return number ? `Room ${number}` : "";
@@ -96,14 +94,30 @@ export async function getPortalProperty(propertySlug: string): Promise<{ id: str
   return data?.[0] ?? null;
 }
 
-/** Deliberately narrow — name + room only, no balance. Any unauthenticated visitor can browse this
- * list (that's the point, it's how "search for yourself" works), so it must never carry anything
- * financial. See pay_portal_search_tenants_v2's migration comment for why this replaced the old
- * balance-carrying pay_portal_search_tenants. */
-export async function searchPortalTenants(propertySlug: string): Promise<PortalTenantSummary[]> {
-  const { data, error } = await supabase.rpc("pay_portal_search_tenants_v2", { p_property_slug: propertySlug });
-  if (error) throw error;
-  return (data ?? []).map((row) => ({ id: row.id, name: row.name, room: roomLabel(row.room) }));
+/** Resolves a tenant's short /p/:token link straight into a verified portal session — no OTP round
+ * trip. The token itself (an unguessable, server-generated code that only ever reached the tenant
+ * via a link their landlord sent) is the proof of identity; see pay-portal-resolve-token's own
+ * comment for why that's an equivalent trust boundary to an SMS'd OTP. On success this stores the
+ * session the same way verifyPortalOtp does, so TenantBalance renders straight past its "Verify
+ * it's you" screen (it only shows that when getPortalSessionToken comes back empty). */
+export async function resolvePortalToken(
+  token: string
+): Promise<{ propertySlug: string; tenantId: string; tenantName: string; room: string | null } | null> {
+  const { data, error } = await supabase.functions.invoke<{
+    ok?: boolean;
+    propertySlug?: string;
+    tenantId?: string;
+    sessionToken?: string;
+    expiresAt?: string;
+    tenantName?: string;
+    room?: string | null;
+    error?: string;
+  }>("pay-portal-resolve-token", { body: { token } });
+  if (error || !data?.ok || !data?.propertySlug || !data?.tenantId || !data?.sessionToken || !data?.expiresAt) {
+    return null;
+  }
+  setPortalSessionToken(data.tenantId, data.sessionToken, data.expiresAt);
+  return { propertySlug: data.propertySlug, tenantId: data.tenantId, tenantName: data.tenantName ?? "", room: data.room ?? null };
 }
 
 /** Requires a verified OTP session for this tenant (see requestPortalOtp/verifyPortalOtp) — the
@@ -136,7 +150,13 @@ export async function getPortalLedger(tenantId: string): Promise<PortalLedgerRow
   const sessionToken = requireSessionToken(tenantId);
   const { data, error } = await supabase.rpc("pay_portal_get_ledger_v2", { p_tenant_id: tenantId, p_session_token: sessionToken });
   if (error) throw error;
-  return (data ?? []).map((row) => ({ label: row.label, amount: row.amount, paidAmount: row.paid_amount ?? undefined, status: row.status ?? undefined }));
+  return (data ?? []).map((row) => ({
+    label: row.label,
+    amount: row.amount,
+    paidAmount: row.paid_amount ?? undefined,
+    status: row.status ?? undefined,
+    createdAt: row.created_at,
+  }));
 }
 
 export async function logPortalPayment(tenantId: string, amount: number, label?: string): Promise<void> {

@@ -11,10 +11,15 @@ export default defineConfig({
       injectRegister: null,
       includeAssets: ['favicon-16.png', 'favicon-32.png', 'apple-touch-icon.png'],
       manifest: {
-        name: 'Instay — Property Management',
-        short_name: 'Instay',
+        name: 'Instay Manage',
+        short_name: 'Instay Manage',
         description: 'One system for rent, tenants, staff and reports.',
-        start_url: '/dashboard',
+        // The installed app opens on sign-in, not the marketing landing page — RequireAuth already
+        // bounces an anonymous visitor from /dashboard to /sign-in, but starting there directly
+        // skips that extra redirect hop, and SignIn.tsx itself now sends an already-signed-in
+        // visitor straight through to /dashboard, so either way there's no flash of a page that
+        // isn't where they're actually headed.
+        start_url: '/sign-in',
         display: 'standalone',
         background_color: '#ffffff',
         theme_color: '#111827',

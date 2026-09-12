@@ -87,7 +87,7 @@ function RecentPayouts({ propertyId }: { propertyId: string }) {
             </div>
           )}
           <Link
-            to="/accounting/payouts"
+            to="/online-payments"
             className="block border-t border-line py-2.5 text-center text-xs font-medium text-brand hover:underline"
           >
             View all
@@ -120,7 +120,7 @@ export default function PayoutDetailDrawer({
 }) {
   const { lencoConnected } = useSettings();
   const { showToast } = useToast();
-  const settingsTo = "/settings/online-payments";
+  const settingsTo = "/online-payments";
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [resolvedStatus, setResolvedStatus] = useState<PayoutStatus | null>(null);

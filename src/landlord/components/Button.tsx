@@ -1,6 +1,6 @@
 import { forwardRef, type ButtonHTMLAttributes } from "react";
 
-export type ButtonVariant = "primary" | "secondary" | "danger" | "dangerSolid" | "ghost";
+export type ButtonVariant = "primary" | "secondary" | "outline" | "danger" | "dangerSolid" | "ghost";
 export type ButtonSize = "sm" | "md";
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -16,6 +16,9 @@ const sizeCls: Record<ButtonSize, string> = {
 const variantCls: Record<ButtonVariant, string> = {
   primary: "raised-btn-brand",
   secondary: "raised-btn text-ink",
+  // Flat, border-only — for an action that needs to sit next to a primary CTA without competing
+  // with it for weight (e.g. "Payment methods" beside "Transfer funds").
+  outline: "border border-line text-ink transition-colors hover:bg-mist",
   danger: "border border-line text-red-600 transition-colors hover:bg-red-50",
   // Solid fill for an actual "confirm delete" CTA — `danger` plus a `bg-red-600 text-paper`
   // className override used to be how call sites did this, but the two text-color utilities

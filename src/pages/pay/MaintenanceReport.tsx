@@ -62,10 +62,7 @@ export default function MaintenanceReport() {
   if (!tenant) {
     return (
       <PayShell propertyName={propertyName}>
-        <p className="text-sm text-muted">We couldn't find that tenant.</p>
-        <Link to={`/pay/${propertySlug}`} className="mt-3 inline-block text-sm font-medium text-brand hover:underline">
-          ← Back to search
-        </Link>
+        <p className="text-sm text-muted">We couldn't find your account. Ask your landlord for a new link.</p>
       </PayShell>
     );
   }

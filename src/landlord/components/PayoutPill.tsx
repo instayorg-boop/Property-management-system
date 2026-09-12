@@ -4,8 +4,8 @@ import { usePayoutSummary } from "../usePayoutSummary";
 import { useIsOwner } from "../useIsOwner";
 
 /** Compact "K[amount] ready · Online payments" pill for the Accounting page header — the fast path
- * to the dedicated Payouts page (/accounting/payouts), where balance, method switching, and the
- * actual withdraw flow all live now (see that page's file comment for why it replaced opening
+ * to the dedicated Online payments page (/online-payments), where balance, method switching, and
+ * the actual withdraw flow all live now (see that page's file comment for why it replaced opening
  * PayoutDetailDrawer directly from here). A small red dot appears if the most recent transfer
  * attempt failed, so a failed payout doesn't go unnoticed just because nothing's actively wrong on
  * this page. Renders nothing at all (not even a disabled state) for anyone useIsOwner says no to —
@@ -20,7 +20,7 @@ export default function PayoutPill() {
   return (
     <button
       type="button"
-      onClick={() => navigate("/accounting/payouts")}
+      onClick={() => navigate("/online-payments")}
       className="relative flex items-center gap-2 rounded-full border border-line bg-paper px-3.5 py-2 text-left transition-colors hover:bg-mist"
     >
       {hasFailedPayout && (

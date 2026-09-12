@@ -19,7 +19,7 @@ import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 
 import PaymentLayout from "./pages/pay/PaymentLayout";
-import SelectTenant from "./pages/pay/SelectTenant";
+import TokenLink from "./pages/pay/TokenLink";
 import TenantBalance from "./pages/pay/TenantBalance";
 import PaymentSuccess from "./pages/pay/PaymentSuccess";
 import MaintenanceReport from "./pages/pay/MaintenanceReport";
@@ -73,7 +73,7 @@ export default function App() {
         <Route path="/terms" element={<Terms />} />
 
         <Route element={<PaymentLayout />}>
-          <Route path="/pay/:propertySlug" element={<SelectTenant />} />
+          <Route path="/p/:token" element={<TokenLink />} />
           <Route path="/pay/:propertySlug/:tenantId" element={<TenantBalance />} />
           <Route path="/pay/:propertySlug/:tenantId/success" element={<PaymentSuccess />} />
           <Route path="/pay/:propertySlug/:tenantId/report" element={<MaintenanceReport />} />
@@ -90,9 +90,10 @@ export default function App() {
             <Route path="/rooms" element={<Rooms />} />
             <Route path="/maintenance" element={<Maintenance />} />
             <Route path="/accounting" element={<Accounting />} />
-            {/* Deliberately not in Sidebar.tsx — reachable via the Accounting page's balance pill
-                (PayoutPill) and PayoutDetailDrawer's "View all" link. */}
-            <Route path="/accounting/payouts" element={<Payouts />} />
+            <Route path="/online-payments" element={<Payouts />} />
+            {/* Old path, from when this page lived under Accounting — kept as a redirect so any
+                existing bookmarks/links still land somewhere. */}
+            <Route path="/accounting/payouts" element={<Navigate to="/online-payments" replace />} />
             <Route path="/expenses" element={<Navigate to="/accounting" replace />} />
             {/* MVP: staff/payroll — see the note by the imports above. */}
             {/* <Route path="/staff" element={<Navigate to="/staff/employees" replace />} /> */}

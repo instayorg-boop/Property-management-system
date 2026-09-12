@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useLocation, Link } from "react-router-dom";
-import { ShieldCheck as ShieldCheckIcon, Wrench as WrenchIcon } from "@phosphor-icons/react";
+import { Wrench as WrenchIcon } from "@phosphor-icons/react";
 import { formatCurrency } from "../../landlord/TenantsContext";
 import BackArrow from "./BackArrow";
 import Spinner from "./Spinner";
@@ -10,8 +10,6 @@ import {
   getPortalTenant,
   getPortalLedger,
   getPortalSessionToken,
-  requestPortalOtp,
-  verifyPortalOtp,
   initiateCollection,
   getCollectionStatus,
   type PortalTenant,
@@ -62,52 +60,18 @@ export default function TenantBalance() {
   const [stillWaiting, setStillWaiting] = useState(false);
   const pollTimer = useRef<number | null>(null);
 
-  const [verified, setVerified] = useState(() => (tenantId ? !!getPortalSessionToken(tenantId) : false));
-  const [otpMaskedPhone, setOtpMaskedPhone] = useState<string | null>(null);
-  const [otpDevCode, setOtpDevCode] = useState<string | null>(null);
-  const [otpSending, setOtpSending] = useState(false);
-  const [otpSendError, setOtpSendError] = useState<string | null>(null);
-  const [otpCode, setOtpCode] = useState("");
-  const [otpVerifying, setOtpVerifying] = useState(false);
-  const [otpVerifyError, setOtpVerifyError] = useState<string | null>(null);
+  // Every visit now arrives via a personal /p/:token link (TokenLink.tsx), which mints this
+  // session directly — no OTP step (the token itself is the proof of identity; see
+  // pay-portal-resolve-token's comment). If there's no session at all, there's no OTP form to
+  // fall back to either, since without a token there was never a request to verify in the first
+  // place — just tell the tenant their link is stale.
+  const verified = !!(tenantId && getPortalSessionToken(tenantId));
   const claimedName = (location.state as { name?: string; room?: string } | null)?.name;
 
   useEffect(() => {
     if (!propertySlug) return;
     getPortalProperty(propertySlug).then((property) => setPropertyName(property?.name ?? ""));
   }, [propertySlug]);
-
-  const sendOtp = () => {
-    if (!propertySlug || !tenantId) return;
-    setOtpSending(true);
-    setOtpSendError(null);
-    requestPortalOtp(propertySlug, tenantId)
-      .then(({ maskedPhone, devCode }) => {
-        setOtpMaskedPhone(maskedPhone);
-        setOtpDevCode(devCode ?? null);
-      })
-      .catch((err) => setOtpSendError(err instanceof Error ? err.message : "Failed to send a code."))
-      .finally(() => setOtpSending(false));
-  };
-
-  const autoSentFor = useRef<string | null>(null);
-  useEffect(() => {
-    if (verified || !tenantId) return;
-    if (autoSentFor.current === tenantId) return;
-    autoSentFor.current = tenantId;
-    sendOtp();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [propertySlug, tenantId, verified]);
-
-  const submitOtp = () => {
-    if (!propertySlug || !tenantId || otpCode.trim().length !== 6) return;
-    setOtpVerifying(true);
-    setOtpVerifyError(null);
-    verifyPortalOtp(propertySlug, tenantId, otpCode.trim())
-      .then(() => setVerified(true))
-      .catch((err) => setOtpVerifyError(err instanceof Error ? err.message : "Incorrect code."))
-      .finally(() => setOtpVerifying(false));
-  };
 
   useEffect(() => {
     if (!verified || !propertySlug || !tenantId) return;
@@ -138,80 +102,12 @@ export default function TenantBalance() {
   if (!verified) {
     return (
       <PayShell propertyName={propertyName}>
-        <button
-          type="button"
-          onClick={() => navigate(`/pay/${propertySlug}`)}
-          className="flex items-center gap-1 text-xs font-medium text-[#64748d] hover:text-[#0d253d]"
-        >
-          <BackArrow className="h-4 w-4" />
-          Not you?
-        </button>
-
-        <div className="mt-4 flex items-center gap-2">
-          <ShieldCheckIcon size={20} weight="duotone" className="text-[#533afd]" />
-          <h1 className="font-display text-2xl font-semibold tracking-tight text-[#0d253d]">
-            {claimedName ? `Verify it's ${claimedName.split(" ")[0]}` : "Verify it's you"}
+        <div className="py-4 text-center">
+          <h1 className="font-display text-xl font-semibold tracking-tight text-[#0d253d]">
+            {claimedName ? `This link has expired, ${claimedName.split(" ")[0]}` : "This link has expired"}
           </h1>
+          <p className="mt-1.5 text-sm text-[#64748d]">Ask your landlord to resend your payment link and try again.</p>
         </div>
-        <p className="mt-1 text-sm text-[#64748d]">For your privacy, we need to confirm your phone number first.</p>
-
-        {otpSending && !otpMaskedPhone && <p className="mt-6 text-sm text-[#64748d]">Sending a code…</p>}
-
-        {otpSendError && (
-          <div className="mt-6 space-y-2">
-            <p className="text-sm text-[#ea2261]">{otpSendError}</p>
-            <button type="button" onClick={sendOtp} className="text-sm font-medium text-[#533afd] hover:underline">
-              Try again
-            </button>
-          </div>
-        )}
-
-        {otpMaskedPhone && (
-          <>
-            <p className="mt-6 text-sm text-[#0d253d]">
-              We sent a 6-digit code to the number on file, ending in <span className="font-medium">{otpMaskedPhone}</span>.
-            </p>
-            {otpDevCode && (
-              <p className="mt-1 text-xs text-[#9b6829]">
-                Dev mode — SMS isn't connected yet, your code is <span className="font-mono font-semibold">{otpDevCode}</span>.
-              </p>
-            )}
-
-            <div className="mt-5">
-              <input
-                autoFocus
-                value={otpCode}
-                onChange={(e) => {
-                  setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6));
-                  setOtpVerifyError(null);
-                }}
-                onKeyDown={(e) => e.key === "Enter" && submitOtp()}
-                inputMode="numeric"
-                placeholder="000000"
-                className="w-full border-b border-[#a8c3de] bg-transparent pb-3 text-center text-2xl font-semibold tracking-[0.3em] text-[#0d253d] outline-none focus:border-[#533afd]"
-              />
-              {otpVerifyError && <p className="mt-2 text-xs text-[#ea2261]">{otpVerifyError}</p>}
-            </div>
-
-            <button
-              type="button"
-              onClick={submitOtp}
-              disabled={otpCode.length !== 6 || otpVerifying}
-              className="mt-5 flex w-full items-center justify-center gap-2 rounded-full bg-[#533afd] py-3 text-sm font-medium text-white transition-colors hover:bg-[#4434d4] active:bg-[#2e2b8c] disabled:opacity-50"
-            >
-              {otpVerifying && <Spinner size={14} color="#fff" />}
-              {otpVerifying ? "Verifying" : "Verify"}
-            </button>
-            <button
-              type="button"
-              onClick={sendOtp}
-              disabled={otpSending}
-              className="mt-3 text-xs font-medium text-[#64748d] hover:text-[#0d253d]"
-            >
-              Didn't get it? Send another code
-            </button>
-          </>
-        )}
       </PayShell>
     );
   }
@@ -242,10 +138,7 @@ export default function TenantBalance() {
   if (!tenant) {
     return (
       <PayShell propertyName={propertyName}>
-        <p className="text-sm text-muted">We couldn't find that tenant.</p>
-        <Link to={`/pay/${propertySlug}`} className="mt-3 inline-block text-sm font-medium text-brand hover:underline">
-          Back to search
-        </Link>
+        <p className="text-sm text-muted">We couldn't find your account. Ask your landlord for a new link.</p>
       </PayShell>
     );
   }
@@ -325,16 +218,7 @@ export default function TenantBalance() {
     <PayShell propertyName={propertyName} step={shellStep}>
       {flowStep === "review" && (
         <div className="pay-step">
-          <button
-            type="button"
-            onClick={() => navigate(`/pay/${propertySlug}`)}
-            className="flex items-center gap-1 text-xs font-medium text-[#64748d] hover:text-[#0d253d]"
-          >
-            <BackArrow className="h-4 w-4" />
-            Not you?
-          </button>
-
-          <div className="mt-4 flex items-baseline justify-between">
+          <div className="flex items-baseline justify-between">
             <div>
               <p className="font-display text-lg font-semibold tracking-tight text-[#0d253d]">{tenant.name}</p>
               <p className="text-xs text-[#64748d]">
