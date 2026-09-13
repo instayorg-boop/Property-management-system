@@ -23,14 +23,20 @@ async function compressImage(file: File): Promise<{ blob: Blob; ext: string }> {
   return blob ? { blob, ext: ".jpg" } : { blob: file, ext: originalExt(file) };
 }
 
-/** Compresses (images only), enforces a size cap, uploads to a public bucket, and returns its public URL. */
-export async function uploadPhoto(bucket: "expense-photos" | "maintenance-photos", file: File): Promise<string> {
+/** Compresses (images only), enforces a size cap, uploads to a public bucket, and returns its public URL.
+ * `folder` prefixes the object path (`${folder}/${uuid}${ext}`) — property-logos' storage policies check
+ * ownership against that first path segment, the same convention tenant-documents uses. */
+export async function uploadPhoto(
+  bucket: "expense-photos" | "maintenance-photos" | "property-logos",
+  file: File,
+  folder?: string
+): Promise<string> {
   if (file.size > MAX_UPLOAD_BYTES) {
     throw new Error(`Photo is too large (max ${Math.round(MAX_UPLOAD_BYTES / 1024 / 1024)}MB).`);
   }
 
   const { blob, ext } = file.type.startsWith("image/") ? await compressImage(file) : { blob: file, ext: originalExt(file) };
-  const path = `${crypto.randomUUID()}${ext}`;
+  const path = folder ? `${folder}/${crypto.randomUUID()}${ext}` : `${crypto.randomUUID()}${ext}`;
   const { error } = await supabase.storage.from(bucket).upload(path, blob);
   if (error) throw error;
   return supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;

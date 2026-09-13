@@ -6,6 +6,7 @@ import {
   requestWithdrawalOtp,
   verifyWithdrawalOtp,
   type PayoutRecipient,
+  type SendPayoutResult,
 } from "../lib/payoutApi";
 
 export type WithdrawStep = "idle" | "confirm" | "otp-sending" | "otp" | "sending" | "success" | "error";
@@ -29,6 +30,7 @@ export function useWithdrawFlow(recipients: PayoutRecipient[]) {
   const [maskedEmail, setMaskedEmail] = useState<string | null>(null);
   const [devCode, setDevCode] = useState<string | null>(null);
   const [otpCode, setOtpCode] = useState("");
+  const [result, setResult] = useState<SendPayoutResult | null>(null);
   const pollTimer = useRef<number | null>(null);
 
   useEffect(
@@ -93,8 +95,9 @@ export function useWithdrawFlow(recipients: PayoutRecipient[]) {
     setError(null);
     try {
       const { confirmationToken } = await verifyWithdrawalOtp(payout.propertyId, otpCode.trim());
-      const { payoutId } = await sendPayout(payout.propertyId, payout.rawAmount, confirmationToken, selectedRecipient.id);
-      poll(payoutId, 0);
+      const sent = await sendPayout(payout.propertyId, payout.rawAmount, confirmationToken, selectedRecipient.id);
+      setResult(sent);
+      poll(sent.payoutId, 0);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to send the transfer.");
       setStep("error");
@@ -105,6 +108,7 @@ export function useWithdrawFlow(recipients: PayoutRecipient[]) {
     setStep("idle");
     setError(null);
     setOtpCode("");
+    setResult(null);
   };
 
   return {
@@ -123,5 +127,8 @@ export function useWithdrawFlow(recipients: PayoutRecipient[]) {
     startConfirmation,
     submit,
     reset,
+    /** The actual transfer outcome once `submit` resolves — amount/feeAmount/netAmount, itemized
+     * for display; never assume it matches what was requested (see sendPayout's comment). */
+    result,
   };
 }

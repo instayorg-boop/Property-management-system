@@ -134,7 +134,7 @@ export default function Tenants() {
                 </div>
               ))}
             {isReady && pageRows.map((t) => (
-              <div key={t.id} onClick={() => navigate(`/tenants/${t.id}`)} className="p-6 transition-colors duration-200 ease-in-out active:bg-mist">
+              <div key={t.id} onClick={() => navigate(`/tenants/${t.portalToken}`)} className="p-6 transition-colors duration-200 ease-in-out active:bg-mist">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="truncate font-semibold text-ink">{t.name}</p>
@@ -168,7 +168,7 @@ export default function Tenants() {
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        navigate(`/tenants/${t.id}`);
+                        navigate(`/tenants/${t.portalToken}`);
                       }}
                       className="font-semibold text-ink underline-offset-2 hover:underline"
                     >
@@ -228,7 +228,7 @@ export default function Tenants() {
                 {isReady && pageRows.map((t) => (
                   <tr
                     key={t.id}
-                    onClick={() => navigate(`/tenants/${t.id}`)}
+                    onClick={() => navigate(`/tenants/${t.portalToken}`)}
                     className="group cursor-pointer transition-colors duration-200 ease-in-out hover:bg-mist"
                   >
                     <td className="px-6 py-4">
@@ -257,7 +257,7 @@ export default function Tenants() {
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            navigate(`/tenants/${t.id}`);
+                            navigate(`/tenants/${t.portalToken}`);
                           }}
                           className="rounded-full font-semibold text-ink underline-offset-2 hover:underline"
                         >

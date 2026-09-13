@@ -12,7 +12,7 @@
 const KEY = "instay:cachedSettings";
 
 export type CachedSettingsBootstrap = {
-  property: { id: string; name: string; address: string; propertyType: string; slug: string };
+  property: { id: string; name: string; address: string; propertyType: string; slug: string; logoUrl: string | null };
   settingsRow: unknown;
   properties: string[];
 };

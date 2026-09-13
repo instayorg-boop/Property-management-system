@@ -1,110 +1,85 @@
 import { useEffect, useMemo, useState } from "react";
-import { useLocation, useParams, Link } from "react-router-dom";
-import { CheckCircle, DownloadSimple, Wrench } from "@phosphor-icons/react";
-import { formatCurrency } from "../../landlord/TenantsContext";
-import { getPortalProperty, getPortalTenant, type PortalTenant } from "../../lib/payPortal";
-import PayShell from "./PayShell";
+import { useLocation, useParams } from "react-router-dom";
+import { resolvePortalToken, getPortalProperty, getPortalTenant, type PortalTenant } from "../../lib/payPortal";
+import PaymentComplete from "./PaymentComplete";
+
+type SuccessState = {
+  amount?: number;
+  feeAmount?: number;
+  rentPortion?: number;
+  isPartial?: boolean;
+  method?: "mobile" | "card";
+  provider?: "mtn" | "airtel" | "zamtel";
+  phone?: string;
+  /** The Lenco collectionId — also the reference shown on the receipt and what the PDF receipt is
+   * generated from. */
+  reference?: string;
+};
 
 export default function PaymentSuccess() {
-  const { propertySlug, tenantId } = useParams();
+  const { token } = useParams();
   const location = useLocation();
+  const [propertySlug, setPropertySlug] = useState<string | null>(null);
   const [propertyName, setPropertyName] = useState("");
+  const [propertyLogoUrl, setPropertyLogoUrl] = useState<string | null>(null);
   const [tenant, setTenant] = useState<PortalTenant | null>(null);
 
+  // Re-resolving the token here (rather than trusting a session left over from TenantBalance) is
+  // what lets this page work as a standalone reload/bookmark too, same as the balance page. The
+  // dollar figures on the receipt come from router state (set right after collect-payment/poll
+  // resolves) — this fetch is only for the tenant's current room/balance, to know whether the
+  // payment cleared the balance (isFull) if the state didn't already say so.
   useEffect(() => {
-    if (!propertySlug || !tenantId) return;
+    if (!token) return;
     let cancelled = false;
     (async () => {
-      const [property, t] = await Promise.all([getPortalProperty(propertySlug), getPortalTenant(propertySlug, tenantId)]);
+      const resolved = await resolvePortalToken(token);
+      if (cancelled || !resolved) return;
+      setPropertySlug(resolved.propertySlug);
+      const [property, t] = await Promise.all([
+        getPortalProperty(resolved.propertySlug),
+        getPortalTenant(resolved.propertySlug, resolved.tenantId),
+      ]);
       if (cancelled) return;
       setPropertyName(property?.name ?? "");
+      setPropertyLogoUrl(property?.logoUrl ?? null);
       setTenant(t);
     })();
     return () => {
       cancelled = true;
     };
-  }, [propertySlug, tenantId]);
-  const state = (location.state as { amount?: number; method?: "mobile" | "card"; provider?: string } | null) ?? null;
-  const amount = state?.amount;
-  const methodLabel = state?.method === "card" ? "Card" : state?.provider ? `${state.provider} mobile money` : undefined;
+  }, [token]);
+
+  const state = (location.state as SuccessState | null) ?? null;
   const paidAt = useMemo(() => new Date(), []);
-  const reference = useMemo(() => `INS-${paidAt.getTime().toString().slice(-8)}`, [paidAt]);
 
-  const [showReceipt, setShowReceipt] = useState(false);
+  if (!tenant || !propertySlug || !state?.amount || !state?.reference) {
+    // Either still resolving, or this page was opened without the transaction state that only
+    // exists right after TenantBalance's own redirect — nothing meaningful to show either way.
+    return null;
+  }
+
+  // isPartial reflects the balance the way it actually settled — prefer the flag the collect
+  // response/poll already computed server-side, but if it's missing (e.g. someone re-opened this
+  // URL from history) fall back to the tenant's current owed_amount.
+  const remainingBalance = state.isPartial === undefined ? tenant.owedAmount : state.isPartial ? tenant.owedAmount : 0;
 
   return (
-    <PayShell propertyName={propertyName} step="done">
-      <div className="pay-step flex flex-col items-center py-4 text-center print:hidden">
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
-          <CheckCircle size={32} weight="fill" />
-        </div>
-        <p className="mt-4 font-display text-lg font-semibold tracking-tight text-[#0d253d]">Payment successful</p>
-        <p className="mt-1 text-sm text-[#64748d]">
-          {amount ? formatCurrency(amount) : "Your payment"} received{tenant ? ` for ${tenant.name}` : ""}.
-        </p>
-        <p className="mt-0.5 text-xs text-[#64748d]">
-          {paidAt.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}
-          {methodLabel ? ` · ${methodLabel}` : ""}
-        </p>
-
-        <div className="mt-6 w-full space-y-2">
-          <button
-            type="button"
-            onClick={() => setShowReceipt((v) => !v)}
-            className="block w-full rounded-full bg-[#533afd] py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#4434d4] active:bg-[#2e2b8c]"
-          >
-            {showReceipt ? "Hide receipt" : "View receipt"}
-          </button>
-          <Link
-            to={`/pay/${propertySlug}/${tenantId}`}
-            className="block w-full rounded-full border border-[#e3e8ee] py-2.5 text-sm font-medium text-[#0d253d] transition-colors hover:bg-[#f6f9fc]"
-          >
-            View my balance
-          </Link>
-          <Link
-            to={`/pay/${propertySlug}/${tenantId}/report`}
-            className="flex items-center justify-center gap-1.5 py-1 text-sm text-[#64748d] hover:text-[#0d253d]"
-          >
-            <Wrench size={14} weight="duotone" />
-            Report a maintenance issue
-          </Link>
-          <p className="text-xs text-[#64748d]">You can close this page now.</p>
-        </div>
-      </div>
-
-      {showReceipt && (
-        <div className="pay-step mt-2 rounded-lg border border-[#e3e8ee] bg-[#f6f9fc] p-4">
-          <div className="flex items-center justify-between">
-            <p className="font-display text-sm font-semibold tracking-tight text-[#0d253d]">Payment receipt</p>
-            <span className="text-[11px] text-[#64748d]">{reference}</span>
-          </div>
-          <div className="mt-3 divide-y divide-[#e3e8ee] rounded-lg border border-[#e3e8ee] bg-white">
-            <Row label="Property" value={propertyName} />
-            <Row label="Tenant" value={tenant?.name ?? "—"} />
-            <Row label="Room" value={tenant?.room ?? "—"} />
-            <Row label="Method" value={methodLabel ?? "—"} />
-            <Row label="Date" value={paidAt.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })} />
-            <Row label="Amount paid" value={amount ? formatCurrency(amount) : "—"} emphasis />
-          </div>
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-full border border-[#e3e8ee] py-2.5 text-sm font-medium text-[#0d253d] transition-colors hover:bg-white print:hidden"
-          >
-            <DownloadSimple size={14} weight="bold" />
-            Download receipt
-          </button>
-        </div>
-      )}
-    </PayShell>
-  );
-}
-
-function Row({ label, value, emphasis }: { label: string; value: string; emphasis?: boolean }) {
-  return (
-    <div className="flex items-center justify-between px-3.5 py-2 text-sm">
-      <span className="text-[#64748d]">{label}</span>
-      <span className={emphasis ? "font-semibold text-[#0d253d]" : "text-[#0d253d]"}>{value}</span>
-    </div>
+    <PaymentComplete
+      propertyName={propertyName}
+      avatarUrl={propertyLogoUrl}
+      propertySlug={propertySlug}
+      tenantId={tenant.id}
+      room={tenant.room}
+      paidAmount={state.amount}
+      rentPortion={state.rentPortion ?? state.amount}
+      feeAmount={state.feeAmount ?? 0}
+      remainingBalance={remainingBalance}
+      reference={state.reference}
+      collectionId={state.reference}
+      operator={state.provider ?? "mtn"}
+      phone={state.phone ?? tenant.phone ?? ""}
+      paidAt={paidAt}
+    />
   );
 }

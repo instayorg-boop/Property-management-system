@@ -19,10 +19,8 @@ import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 
 import PaymentLayout from "./pages/pay/PaymentLayout";
-import TokenLink from "./pages/pay/TokenLink";
 import TenantBalance from "./pages/pay/TenantBalance";
 import PaymentSuccess from "./pages/pay/PaymentSuccess";
-import MaintenanceReport from "./pages/pay/MaintenanceReport";
 
 import DashboardLayout from "./landlord/components/DashboardLayout";
 import Dashboard from "./landlord/pages/Dashboard";
@@ -73,10 +71,8 @@ export default function App() {
         <Route path="/terms" element={<Terms />} />
 
         <Route element={<PaymentLayout />}>
-          <Route path="/p/:token" element={<TokenLink />} />
-          <Route path="/pay/:propertySlug/:tenantId" element={<TenantBalance />} />
-          <Route path="/pay/:propertySlug/:tenantId/success" element={<PaymentSuccess />} />
-          <Route path="/pay/:propertySlug/:tenantId/report" element={<MaintenanceReport />} />
+          <Route path="/p/:token" element={<TenantBalance />} />
+          <Route path="/p/:token/success" element={<PaymentSuccess />} />
         </Route>
 
         <Route element={<RequireAuth />}>
@@ -85,8 +81,8 @@ export default function App() {
             <Route path="/rent" element={<Rent />} />
             <Route path="/tenants" element={<Tenants />} />
             <Route path="/tenants/new" element={<AddTenant />} />
-            <Route path="/tenants/:id/edit" element={<AddTenant />} />
-            <Route path="/tenants/:id" element={<TenantProfile />} />
+            <Route path="/tenants/:code/edit" element={<AddTenant />} />
+            <Route path="/tenants/:code" element={<TenantProfile />} />
             <Route path="/rooms" element={<Rooms />} />
             <Route path="/maintenance" element={<Maintenance />} />
             <Route path="/accounting" element={<Accounting />} />

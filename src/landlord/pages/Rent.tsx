@@ -515,7 +515,7 @@ export default function Rent() {
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <Link
-                        to={`/tenants/${t.id}`}
+                        to={`/tenants/${t.portalToken}`}
                         onClick={(e) => e.stopPropagation()}
                         className="truncate text-sm font-medium text-ink hover:underline"
                       >
@@ -625,7 +625,7 @@ export default function Rent() {
                     }}
                   >
                     <td className="px-4 py-3">
-                      <Link to={`/tenants/${t.id}`} onClick={(e) => e.stopPropagation()} className="font-medium text-ink hover:underline">
+                      <Link to={`/tenants/${t.portalToken}`} onClick={(e) => e.stopPropagation()} className="font-medium text-ink hover:underline">
                         {t.name}
                       </Link>
                       <p className="text-xs text-muted">{t.room}</p>
@@ -747,7 +747,7 @@ export default function Rent() {
               setPayingTenant(null);
             }}
             onLogPayment={() => setPaymentStep("confirm")}
-            onEdit={() => navigate(`/tenants/${payingTenant.id}/edit`)}
+            onEdit={() => navigate(`/tenants/${payingTenant.portalToken}/edit`)}
             onMoveOut={() => setMovingOutTenant(payingTenant)}
           />
         )}

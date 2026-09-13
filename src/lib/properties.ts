@@ -1,5 +1,6 @@
 import { supabase } from "./supabaseClient";
 import type { Tables } from "./database.types";
+import { uploadPhoto } from "./storage";
 
 export type Property = Tables<"properties">;
 
@@ -27,9 +28,22 @@ export async function createProperty(name: string, address?: string, propertyTyp
   return data;
 }
 
-export async function updateProperty(id: string, patch: Partial<Pick<Property, "name" | "address" | "property_type">>): Promise<void> {
+export async function updateProperty(
+  id: string,
+  patch: Partial<Pick<Property, "name" | "address" | "property_type" | "logo_url">>
+): Promise<void> {
   const { error } = await supabase.from("properties").update(patch).eq("id", id);
   if (error) throw error;
+}
+
+/** Uploads a property's logo/photo to the public property-logos bucket and points the property
+ * row at it — shown in the sidebar's account card and, more importantly, on every tenant-facing
+ * portal page (PortalHeader's avatarUrl). Reuses the shared uploadPhoto helper's compression/size
+ * cap rather than duplicating that logic. */
+export async function uploadPropertyLogo(propertyId: string, file: File): Promise<string> {
+  const url = await uploadPhoto("property-logos", file, propertyId);
+  await updateProperty(propertyId, { logo_url: url });
+  return url;
 }
 
 /**

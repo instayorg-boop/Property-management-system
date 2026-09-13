@@ -232,7 +232,7 @@ function RoomRow({ room, onSelect }: { room: RoomView; onSelect: () => void }) {
               <span key={o.id}>
                 {i > 0 && ", "}
                 <Link
-                  to={`/tenants/${o.id}`}
+                  to={`/tenants/${o.portalToken}`}
                   onClick={(e) => e.stopPropagation()}
                   className="hover:underline"
                 >
@@ -1228,7 +1228,7 @@ export default function Rooms() {
             onClose={() => setSelectedNumber(null)}
             onViewRecord={(tenant) => {
               setSelectedNumber(null);
-              navigate(`/tenants/${tenant.id}`);
+              navigate(`/tenants/${tenant.portalToken}`);
             }}
             onLogPayment={(tenant) => setPayingTenant(tenant)}
             onAssignTenant={() => {

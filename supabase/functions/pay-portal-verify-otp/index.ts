@@ -1,15 +1,17 @@
-// Verifies the OTP sent by pay-portal-request-otp and, on success, issues a portal_sessions token.
-// That token is what pay_portal_get_tenant_v2 / pay_portal_get_ledger_v2 / pay_portal_log_payment_v2
-// require — this is the actual identity-proof boundary, not just a UI gate.
+// Verifies the OTP sent by pay-portal-request-otp and, on success, hands back the tenant's own
+// (permanent) portal_token to use as their session. pay_portal_get_tenant_v2 /
+// pay_portal_get_ledger_v2 / pay_portal_log_payment_v2 verify that token directly against
+// tenants.portal_token (see the durable-token-session migration) — this is the actual
+// identity-proof boundary, not just a UI gate. No separate, time-limited session is minted: the
+// portal_token doesn't expire, so neither does getting here via OTP.
 //
 // Deploy:  supabase functions deploy pay-portal-verify-otp
 // Invoke:  supabase.functions.invoke("pay-portal-verify-otp", { body: { propertySlug, tenantId, code } })
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, handleOptions } from "../_shared/cors.ts";
-import { sha256Hex, randomSessionToken } from "../_shared/otpCrypto.ts";
+import { sha256Hex } from "../_shared/otpCrypto.ts";
 
-const SESSION_TTL_MINUTES = 30;
 const MAX_VERIFY_ATTEMPTS = 5;
 
 type VerifyOtpPayload = { propertySlug?: string; tenantId?: string; code?: string };
@@ -91,22 +93,15 @@ Deno.serve(async (req) => {
 
   await supabase.from("portal_otp_codes").update({ consumed_at: new Date().toISOString() }).eq("id", otpRow.id);
 
-  const sessionToken = randomSessionToken();
-  const tokenHash = await sha256Hex(sessionToken);
-  const expiresAt = new Date(Date.now() + SESSION_TTL_MINUTES * 60 * 1000).toISOString();
-
-  const { error: sessionError } = await supabase
-    .from("portal_sessions")
-    .insert({ tenant_id: tenantId, property_id: property.id, token_hash: tokenHash, expires_at: expiresAt });
-
-  if (sessionError) {
-    return new Response(JSON.stringify({ error: "Verified, but failed to start a session. Try again." }), {
+  const { data: tenant } = await supabase.from("tenants").select("portal_token").eq("id", tenantId).maybeSingle();
+  if (!tenant?.portal_token) {
+    return new Response(JSON.stringify({ error: "Verified, but couldn't start a session. Try again." }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 
-  return new Response(JSON.stringify({ ok: true, sessionToken, expiresAt }), {
+  return new Response(JSON.stringify({ ok: true, sessionToken: tenant.portal_token }), {
     status: 200,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });

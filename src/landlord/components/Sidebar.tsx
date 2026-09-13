@@ -19,6 +19,7 @@ import {
   X,
   DotsThreeVertical,
   Bell as BellIcon,
+  Camera,
 } from "@phosphor-icons/react";
 import { useSidebar } from "../SidebarContext";
 import { useMaintenance } from "../MaintenanceContext";
@@ -196,7 +197,9 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
   const { open, setOpen } = useSidebar();
   const { reports } = useMaintenance();
   const { tenants } = useTenants();
-  const { propertyName } = useSettings();
+  const { propertyName, propertyLogoUrl, uploadPropertyLogo } = useSettings();
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const [accountOpen, setAccountOpen] = useState(false);
   const accountRef = useRef<HTMLDivElement>(null);
@@ -301,6 +304,21 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
           used to be separate footer rows (Settings, Help, Log out) now lives inside the popup
           this opens, anchored above the trigger since it's at the very bottom of the sidebar. */}
       <div ref={accountRef} className="relative px-3 py-3">
+      <input
+        ref={logoInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (!file) return;
+          setUploadingLogo(true);
+          uploadPropertyLogo(file)
+            .catch((err) => console.error("Failed to upload property logo", err))
+            .finally(() => setUploadingLogo(false));
+        }}
+      />
       <button
             type="button"
             onClick={() => setAccountOpen((v) => !v)}
@@ -308,12 +326,35 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
             aria-expanded={accountOpen}
             className="flex items-center gap-2.5 rounded-md p-2  transition-colors bg-mist border border-gray-200  "
           >
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full ">
-              <img src='https://i.pinimg.com/originals/1d/ec/e2/1dece2c8357bdd7cee3b15036344faf5.jpg?nii=t' className="rounded-full w-8 h-8" />
+            <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full">
+              {propertyLogoUrl ? (
+                <img src={propertyLogoUrl} alt="" className="h-9 w-9 rounded-full object-cover" />
+              ) : (
+                <UserCircle size={32} weight="fill" className="text-muted" />
+              )}
+              <span
+                role="button"
+                tabIndex={0}
+                aria-label="Change property photo"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  logoInputRef.current?.click();
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    logoInputRef.current?.click();
+                  }
+                }}
+                className="absolute -right-1 -bottom-1 flex h-4.5 w-4.5 items-center justify-center rounded-full border border-paper bg-ink text-paper transition-opacity hover:opacity-80"
+              >
+                <Camera size={9} weight="bold" />
+              </span>
             </span>
             <span className="hidden min-w-0 max-w-40 flex-col items-start text-left sm:flex">
               <span className="w-full truncate text-sm font-semibold text-ink">{propertyName}</span>
-              <span className="w-full truncate text-xs text-muted">Admin · Property account</span>
+              <span className="w-full truncate text-xs text-muted">{uploadingLogo ? "Uploading…" : "Admin · Property account"}</span>
             </span>
             <DotsThreeVertical size={16} weight="bold" className="hidden shrink-0 text-muted sm:block" />
           </button>

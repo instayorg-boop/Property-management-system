@@ -86,6 +86,18 @@ export type Tenant = {
   portalToken?: string;
 };
 
+/** Same alphabet/length as the DB's generate_portal_token() default — generated client-side so a
+ * freshly-created tenant has its short code (used for /tenants/:code and the /p/:code payment
+ * link) immediately, without waiting on a round trip to read back the DB default. */
+const PORTAL_TOKEN_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+export function generatePortalToken(): string {
+  let token = "";
+  for (let i = 0; i < 6; i++) {
+    token += PORTAL_TOKEN_CHARS[Math.floor(Math.random() * PORTAL_TOKEN_CHARS.length)];
+  }
+  return token;
+}
+
 function roomLabel(number: string) {
   return `Room ${number}`;
 }
@@ -291,6 +303,7 @@ export async function insertTenant(propertyId: string, id: string, t: Omit<Tenan
   ]);
   const { error } = await supabase.from("tenants").insert({
     id,
+    portal_token: t.portalToken,
     property_id: propertyId,
     room_id: roomId,
     room_type_id: roomTypeId,

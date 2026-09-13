@@ -3,14 +3,19 @@
 // with no real payment ever happening).
 //
 // Requires a verified OTP session (see pay-portal-request-otp/verify-otp) — this moves real money,
-// so it's gated the same way the balance-reading RPCs are. The amount is computed server-side from
-// the tenant's actual owed_amount/rent_amount, never trusted from the request body — a tampered
-// client can't pay a different amount than what's actually due.
+// so it's gated the same way the balance-reading RPCs are.
 //
-// The tenant's ledger is updated ONLY by lenco-webhook once Lenco confirms collection.successful —
-// never here. This function just kicks off the request and returns pay-offline/pending; the
-// frontend polls pay_portal_get_collection_status (via getCollectionStatus in payPortal.ts) until
-// the webhook lands.
+// Fee model (locked in): tenant pays a flat 1.3% sending fee on top of whatever they choose to pay.
+// Real Lenco collection cost is 1% — the extra 0.3% is IPM margin. Partial payments are allowed
+// down to a K50 floor; the amount is clamped server-side against the tenant's real owed_amount, a
+// tampered client can shrink the amount but never inflate it past what's actually due.
+//
+// line_items / fee_amount / owed_before are snapshotted on the collections row at this point (not
+// by lenco-webhook, which only confirms an outcome and has no idea what was being paid toward).
+// line_items is a FIFO allocation of the rent portion of the payment across the tenant's open
+// ledger_entries, oldest first — each item carries the ledger_entries.id it applies to (or null
+// for a paid-in-advance amount with no existing entry) so lenco-webhook can update the exact row,
+// not just match on label text.
 //
 // Endpoint confirmed against this account's live Lenco API reference (v2.0):
 //   POST https://api.lenco.co/access/v2/collections/mobile-money
@@ -19,7 +24,7 @@
 //      not "successful" immediately — that's expected, not an error.
 //
 // Deploy:  supabase functions deploy pay-portal-collect-payment
-// Invoke:  supabase.functions.invoke("pay-portal-collect-payment", { body: { propertySlug, tenantId, phone, operator, sessionToken } })
+// Invoke:  supabase.functions.invoke("pay-portal-collect-payment", { body: { propertySlug, tenantId, phone, operator, sessionToken, amount? } })
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, handleOptions } from "../_shared/cors.ts";
@@ -31,9 +36,16 @@ type CollectPayload = {
   phone?: string;
   operator?: string;
   sessionToken?: string;
+  amount?: number;
 };
 
 const OPERATORS = ["mtn", "airtel", "zamtel"];
+const FEE_RATE = 0.013;
+const MIN_PARTIAL_AMOUNT = 50;
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
 
 Deno.serve(async (req) => {
   const preflight = handleOptions(req);
@@ -77,8 +89,6 @@ Deno.serve(async (req) => {
     });
   }
 
-  // Service-role client — this call happens before any Supabase Auth session exists (the portal is
-  // unauthenticated by design), so the OTP session check below is the real gate, not RLS.
   const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
   const { data: sessionValid } = await supabase.rpc("pay_portal_verify_session", {
@@ -115,17 +125,54 @@ Deno.serve(async (req) => {
     });
   }
 
-  const amount = tenant.owed_amount || tenant.rent_amount;
-  if (!amount || amount <= 0) {
+  const owedBefore: number = tenant.owed_amount || tenant.rent_amount || 0;
+  if (!owedBefore || owedBefore <= 0) {
     return new Response(JSON.stringify({ error: "There's nothing due to pay right now." }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 
+  const requestedAmount = typeof payload.amount === "number" && Number.isFinite(payload.amount) ? payload.amount : owedBefore;
+  const rentPortion = Math.min(owedBefore, Math.max(MIN_PARTIAL_AMOUNT, round2(requestedAmount)));
+
+  const feeAmount = round2(rentPortion * FEE_RATE);
+  const totalAmount = round2(rentPortion + feeAmount);
+
+  const { data: openEntries } = await supabase
+    .from("ledger_entries")
+    .select("id, label, amount, paid_amount, status, created_at")
+    .eq("tenant_id", tenantId)
+    .in("status", ["unpaid", "overdue", "partial"])
+    .order("created_at", { ascending: true });
+
+  const lineItems: { id: string | null; label: string; amount: number }[] = [];
+  let remaining = rentPortion;
+  for (const entry of openEntries ?? []) {
+    if (remaining <= 0) break;
+    const outstanding = round2(Number(entry.amount) - Number(entry.paid_amount ?? 0));
+    if (outstanding <= 0) continue;
+    const applied = Math.min(outstanding, remaining);
+    lineItems.push({ id: entry.id, label: entry.label, amount: applied });
+    remaining = round2(remaining - applied);
+  }
+  if (remaining > 0) {
+    lineItems.push({ id: null, label: "Rent paid in advance", amount: remaining });
+  }
+
   const { data: collectionRow, error: insertError } = await supabase
     .from("collections")
-    .insert({ tenant_id: tenantId, property_id: property.id, amount, phone, operator, status: "pending" })
+    .insert({
+      tenant_id: tenantId,
+      property_id: property.id,
+      amount: totalAmount,
+      phone,
+      operator,
+      status: "pending",
+      line_items: lineItems,
+      fee_amount: feeAmount,
+      owed_before: owedBefore,
+    })
     .select()
     .single();
 
@@ -145,7 +192,7 @@ Deno.serve(async (req) => {
         accept: "application/json",
       },
       body: JSON.stringify({
-        amount,
+        amount: totalAmount,
         reference: collectionRow.id,
         phone: toE164Zambia(phone),
         operator,
@@ -168,8 +215,6 @@ Deno.serve(async (req) => {
 
     const lencoStatus: string | undefined = lencoJson.data?.status;
     const lencoCollectionId: string | undefined = lencoJson.data?.id;
-    // Preserve Lenco's actual status verbatim — collapsing anything-but-"successful" into
-    // "pay-offline" previously hid a real immediate "failed" behind a fake "still waiting" state.
     const storedStatus = lencoStatus === "successful" || lencoStatus === "failed" ? lencoStatus : "pay-offline";
     await supabase
       .from("collections")
@@ -180,10 +225,18 @@ Deno.serve(async (req) => {
       })
       .eq("id", collectionRow.id);
 
-    return new Response(JSON.stringify({ ok: true, collectionId: collectionRow.id, status: storedStatus }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        collectionId: collectionRow.id,
+        status: storedStatus,
+        amount: totalAmount,
+        feeAmount,
+        rentPortion,
+        isPartial: rentPortion < owedBefore,
+      }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   } catch (err) {
     await supabase.from("collections").update({ status: "failed", failure_reason: String(err) }).eq("id", collectionRow.id);
     return new Response(JSON.stringify({ error: "Failed to reach Lenco", detail: String(err) }), {

@@ -673,8 +673,8 @@ function draftHasContent(d: AddTenantDraft): boolean {
  * that again every time someone edits a typo would double-count real money, so those two blocks
  * are hidden (not just disabled) while editing. Everything else is identical. */
 export default function AddTenant() {
-  const { id } = useParams<{ id: string }>();
-  const isEditing = !!id;
+  const { code } = useParams<{ code: string }>();
+  const isEditing = !!code;
   const navigate = useNavigate();
   const {
     tenants,
@@ -684,7 +684,7 @@ export default function AddTenant() {
     logPayment,
   } = useTenants();
   const editingTenant = isEditing
-    ? (tenants.find((t) => t.id === id) ?? null)
+    ? (tenants.find((t) => t.portalToken === code) ?? null)
     : null;
 
   const { propertyId, propertyName, billingPeriod, dueDay, gracePeriodDays } =
@@ -1026,7 +1026,7 @@ export default function AddTenant() {
             ? tenantGracePeriodDays
             : null,
       });
-      navigate(`/tenants/${editingTenant.id}`);
+      navigate(`/tenants/${editingTenant.portalToken}`);
       return;
     }
 
@@ -1118,7 +1118,7 @@ export default function AddTenant() {
     }
 
     clearDraft();
-    navigate(`/tenants/${created.id}`);
+    navigate(`/tenants/${created.portalToken}`);
   };
 
   // A single continuous scroll with no discrete steps has no natural sense of "how much is

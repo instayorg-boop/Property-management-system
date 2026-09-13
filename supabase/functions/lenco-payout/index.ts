@@ -7,6 +7,22 @@
 // Settings > Bank & payouts. `recipientId` in the payload picks WHICH of the property's (possibly
 // several) recipients to use — omit it to fall back to the default one.
 //
+// Processing fee: Lenco charges a tiered flat fee per transfer (see FEE_TIERS below, K8.50 at
+// the low end up to K35 at the high end). This function is the ON-DEMAND path — reached only by a
+// landlord actively confirming a withdrawal via OTP, as opposed to the scheduled batch payout on
+// `settings.payout_day` (pay-portal-scheduled-payouts) — so it adds ON_DEMAND_MARKUP on top of the
+// real fee as the cost of choosing "pay me now" instead of waiting for the schedule.
+//
+// `amount` in the request is treated as a CAP, not a guaranteed figure: pay_portal_claim_payout_
+// collections (see migration payout_claim_tracking) atomically claims real unclaimed successful
+// collections for this property, oldest first, up to that cap, and returns what was actually
+// available. A landlord can never withdraw more than has genuinely been collected and not already
+// paid out — the previous version of this function transferred whatever number was in the request
+// body with no verification against real collected funds at all, which meant a landlord (or
+// anyone with a valid withdrawal confirmation) could trigger a transfer for an amount that was
+// never actually collected. fee_amount/net_amount are itemized on the payouts row using the real
+// claimed amount; net_amount = claimed amount - fee_amount is what Lenco is actually told to send.
+//
 // `confirmationToken` is required and re-validated here (not just checked client-side), scoped to
 // purpose "withdrawal" — it's issued by verify-withdrawal-otp only after the landlord entered a code
 // emailed to the property's registered account address. This is deliberately the actual
@@ -45,6 +61,29 @@ type LencoPayoutPayload = {
   recipientId?: string;
   confirmationToken?: string;
 };
+
+const FEE_TIERS: { upTo: number; fee: number }[] = [
+  { upTo: 150, fee: 8.5 },
+  { upTo: 300, fee: 10 },
+  { upTo: 500, fee: 11 },
+  { upTo: 1_000, fee: 12 },
+  { upTo: 3_000, fee: 15 },
+  { upTo: 5_000, fee: 18 },
+  { upTo: 10_000, fee: 20 },
+  { upTo: 50_000, fee: 25 },
+  { upTo: 100_000_000, fee: 35 },
+];
+
+function lencoTransferFee(amount: number): number {
+  const tier = FEE_TIERS.find((t) => amount <= t.upTo);
+  return tier ? tier.fee : FEE_TIERS[FEE_TIERS.length - 1].fee;
+}
+
+const ON_DEMAND_MARKUP = 5;
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
 
 Deno.serve(async (req) => {
   const preflight = handleOptions(req);
@@ -100,15 +139,10 @@ Deno.serve(async (req) => {
     });
   }
 
-  // Scoped to the caller's own session — every read/write below runs under their RLS policies.
   const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
     global: { headers: { Authorization: authHeader } },
   });
 
-  // The actual authorization check — see this file's top comment. Uses the service-role client
-  // because payout_withdrawal_otp_codes has no RLS policies at all (only a service-role key or a
-  // SECURITY DEFINER function can touch it), and validates + immediately burns the token in one
-  // update so a token can't be replayed even if this request is somehow retried.
   const serviceClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
   const confirmationTokenHash = await sha256Hex(confirmationToken);
   const { data: burnedConfirmation } = await serviceClient
@@ -164,9 +198,9 @@ Deno.serve(async (req) => {
     .insert({
       property_id: propertyId,
       payout_recipient_id: recipient.id,
-      amount,
+      amount: 0,
       status: "pending",
-      narration: payload.narration ?? `Rent payout — ${recipient.account_name ?? recipient.phone_number}`,
+      narration: payload.narration ?? "On-demand rent payout",
     })
     .select()
     .single();
@@ -178,6 +212,47 @@ Deno.serve(async (req) => {
     });
   }
 
+  const { data: claimedRaw, error: claimError } = await supabase.rpc("pay_portal_claim_payout_collections", {
+    p_property_id: propertyId,
+    p_payout_id: payoutRow.id,
+    p_max_amount: amount,
+  });
+
+  if (claimError) {
+    await supabase.from("payouts").delete().eq("id", payoutRow.id);
+    return new Response(JSON.stringify({ error: "Failed to check available balance", detail: claimError.message }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const claimedAmount = round2(Number(claimedRaw ?? 0));
+  if (claimedAmount <= 0) {
+    await supabase.from("payouts").delete().eq("id", payoutRow.id);
+    return new Response(JSON.stringify({ error: "There's nothing available to pay out right now." }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const feeAmount = round2(lencoTransferFee(claimedAmount) + ON_DEMAND_MARKUP);
+  const netAmount = round2(claimedAmount - feeAmount);
+  if (netAmount <= 0) {
+    await supabase.rpc("pay_portal_release_payout_collections", { p_payout_id: payoutRow.id });
+    await supabase.from("payouts").delete().eq("id", payoutRow.id);
+    return new Response(JSON.stringify({ error: "That amount is too small to cover the transfer fee." }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const narration =
+    payload.narration ?? `Rent payout — ${recipient.account_name ?? recipient.phone_number} (fee K${feeAmount.toFixed(2)})`;
+  await supabase
+    .from("payouts")
+    .update({ amount: claimedAmount, fee_amount: feeAmount, net_amount: netAmount, narration })
+    .eq("id", payoutRow.id);
+
   try {
     const accountsResponse = await fetch("https://api.lenco.co/access/v2/accounts", {
       headers: { Authorization: `Bearer ${lencoSecretKey}`, accept: "application/json" },
@@ -186,6 +261,7 @@ Deno.serve(async (req) => {
     const accountId: string | undefined = accountsJson.data?.[0]?.id;
     if (!accountsResponse.ok || !accountId) {
       await supabase.from("payouts").update({ status: "failed", failure_reason: "Couldn't find a Lenco account to pay out from" }).eq("id", payoutRow.id);
+      await supabase.rpc("pay_portal_release_payout_collections", { p_payout_id: payoutRow.id });
       return new Response(
         JSON.stringify({ error: "Couldn't find a Lenco account to pay out from", detail: accountsJson }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -202,7 +278,7 @@ Deno.serve(async (req) => {
           isMobileMoney
             ? {
                 accountId,
-                amount,
+                amount: netAmount,
                 reference: payoutRow.id,
                 narration: payoutRow.narration,
                 phone: recipient.phone_number,
@@ -211,7 +287,7 @@ Deno.serve(async (req) => {
               }
             : {
                 accountId,
-                amount,
+                amount: netAmount,
                 reference: payoutRow.id,
                 narration: payoutRow.narration,
                 transferRecipientId: recipient.lenco_recipient_id,
@@ -224,6 +300,7 @@ Deno.serve(async (req) => {
 
     if (!lencoResponse.ok) {
       await supabase.from("payouts").update({ status: "failed", failure_reason: lencoJson.message ?? "Lenco rejected the transfer" }).eq("id", payoutRow.id);
+      await supabase.rpc("pay_portal_release_payout_collections", { p_payout_id: payoutRow.id });
       return new Response(
         JSON.stringify({ error: lencoJson.message ?? "Lenco rejected the transfer request", lencoStatus: lencoResponse.status, detail: lencoJson }),
         { status: lencoResponse.status === 400 ? 400 : 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -236,12 +313,13 @@ Deno.serve(async (req) => {
       .update({ status: "processing", lenco_transaction_id: lencoTransactionId ?? null })
       .eq("id", payoutRow.id);
 
-    return new Response(JSON.stringify({ ok: true, payoutId: payoutRow.id, lencoTransactionId }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ ok: true, payoutId: payoutRow.id, lencoTransactionId, amount: claimedAmount, feeAmount, netAmount }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   } catch (err) {
     await supabase.from("payouts").update({ status: "failed", failure_reason: String(err) }).eq("id", payoutRow.id);
+    await supabase.rpc("pay_portal_release_payout_collections", { p_payout_id: payoutRow.id });
     return new Response(JSON.stringify({ error: "Failed to reach Lenco", detail: String(err) }), {
       status: 502,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

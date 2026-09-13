@@ -1,20 +1,33 @@
 // Fallback for pay_portal_get_collection_status: that RPC only ever reads our own `collections`
-// row, which is only written by lenco-webhook — if the webhook never arrives (not registered with
-// Lenco yet, delivery failure, etc.) a collection sits at "pay-offline" forever with nothing to
-// show the tenant, even after they've approved or declined on their phone.
+// row, which is normally written by lenco-webhook — if the webhook never arrives (not registered
+// with Lenco yet, delivery failure, etc.) a collection sits at "pay-offline" forever with nothing
+// to show the tenant, even after they've approved or declined on their phone.
 //
 // Lenco's own docs recommend this exact fallback: "listen for webhook notification or requery the
 // collection request status endpoint at interval" — GET /access/v2/collections/status/{reference},
 // where {reference} is the value we sent as `reference` in the original collect-payment call
-// (our collections.id). This function does that requery, and — same as the webhook — applies the
-// result to our `collections` row and marks the tenant paid on success, so whichever of the two
-// (webhook or this) lands first wins and the other becomes a no-op.
+// (our collections.id). This function does that requery.
+//
+// On success, this calls the SAME reconcileSuccessfulCollection (../_shared/reconcileCollection.ts)
+// that lenco-webhook uses — previously this had its own separate copy of the reconciliation logic
+// that had drifted out of date: it zeroed owed_amount outright regardless of partial payments,
+// logged one lump ledger row that included the sending fee as if it were rent, and never touched
+// property_balances at all. A tenant whose payment happened to get confirmed via this polling path
+// instead of the webhook was getting silently wrong ledger and balance state. Sharing one
+// implementation between both paths is what stops that from happening again.
+//
+// Idempotency: the `collections` update below is guarded with `.in("status", ["pending",
+// "pay-offline"])`, same as the webhook's guard — whichever of the two paths (this one or the
+// webhook) resolves the collection first runs reconciliation exactly once; the other matches zero
+// rows and skips it, rather than double-crediting the ledger or double-counting the running
+// balance if both happen to fire close together.
 //
 // Deploy:  supabase functions deploy pay-portal-check-collection
 // Invoke:  supabase.functions.invoke("pay-portal-check-collection", { body: { tenantId, collectionId, sessionToken } })
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, handleOptions } from "../_shared/cors.ts";
+import { reconcileSuccessfulCollection } from "../_shared/reconcileCollection.ts";
 
 type CheckPayload = {
   tenantId?: string;
@@ -77,7 +90,7 @@ Deno.serve(async (req) => {
 
   const { data: collectionRow, error: fetchError } = await supabase
     .from("collections")
-    .select("id, tenant_id, amount, status, failure_reason")
+    .select("id, tenant_id, property_id, amount, fee_amount, line_items, status, failure_reason")
     .eq("id", collectionId)
     .eq("tenant_id", tenantId)
     .maybeSingle();
@@ -89,7 +102,6 @@ Deno.serve(async (req) => {
     });
   }
 
-  // Already resolved (by the webhook, or an earlier requery) — nothing to do.
   if (collectionRow.status === "successful" || collectionRow.status === "failed") {
     return new Response(
       JSON.stringify({ ok: true, status: collectionRow.status, failureReason: collectionRow.failure_reason }),
@@ -116,16 +128,13 @@ Deno.serve(async (req) => {
   }
 
   if (lencoStatus !== "successful" && lencoStatus !== "failed") {
-    // Still pending/pay-offline (or Lenco didn't answer) — report current state, unchanged.
     return new Response(
       JSON.stringify({ ok: true, status: collectionRow.status, failureReason: collectionRow.failure_reason }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 
-  // Guard against a race with lenco-webhook landing at the same moment: only apply this update (and
-  // only credit the tenant) if the row is still in a non-terminal state.
-  const { data: updatedRows } = await supabase
+  const { data: updatedRow } = await supabase
     .from("collections")
     .update({
       status: lencoStatus,
@@ -135,34 +144,11 @@ Deno.serve(async (req) => {
     })
     .eq("id", collectionRow.id)
     .in("status", ["pending", "pay-offline"])
-    .select("id");
+    .select("id, tenant_id, property_id, amount, fee_amount, line_items")
+    .maybeSingle();
 
-  if (updatedRows && updatedRows.length > 0 && lencoStatus === "successful") {
-    const { data: tenantRow } = await supabase
-      .from("tenants")
-      .select("status, on_time_count, total_months_count")
-      .eq("id", collectionRow.tenant_id)
-      .maybeSingle();
-    if (tenantRow) {
-      const wasLate = ["overdue", "unpaid"].includes(tenantRow.status);
-      await supabase
-        .from("tenants")
-        .update({
-          status: "paid",
-          owed_amount: 0,
-          on_time_count: wasLate ? tenantRow.on_time_count : tenantRow.on_time_count + 1,
-          total_months_count: tenantRow.total_months_count + 1,
-        })
-        .eq("id", collectionRow.tenant_id);
-      await supabase.from("ledger_entries").insert({
-        tenant_id: collectionRow.tenant_id,
-        label: "Rent payment",
-        amount: collectionRow.amount,
-        status: "paid",
-        method: "mobile-money",
-        source: "lenco",
-      });
-    }
+  if (updatedRow && lencoStatus === "successful") {
+    await reconcileSuccessfulCollection(supabase, updatedRow);
   }
 
   return new Response(

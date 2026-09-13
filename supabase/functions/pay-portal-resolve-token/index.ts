@@ -1,18 +1,20 @@
-// Resolves a tenant's short SMS link (/p/:token) directly into a portal session — no OTP round
-// trip. The token itself is the proof of identity: it's a 6-character, server-generated,
-// unguessable code (~30 bits of entropy, drawn from a 32-symbol alphabet) that only ever reaches a
-// tenant via a link their landlord sent them, the same trust boundary an OTP code sent by SMS
-// already relies on. Requiring a second OTP on top of a token that arrived the same way (by SMS)
-// would just be asking the tenant to prove their phone number twice.
+// Resolves a tenant's short SMS link (/p/:token) directly into the portal — no OTP round trip.
+// The token itself is the proof of identity: it's a 6-character, server-generated, unguessable
+// code (~30 bits of entropy, drawn from a 32-symbol alphabet) that only ever reaches a tenant via
+// a link their landlord sent them, the same trust boundary an OTP code sent by SMS already relies
+// on. Requiring a second OTP on top of a token that arrived the same way (by SMS) would just be
+// asking the tenant to prove their phone number twice.
+//
+// The token is also the "session" — there's no separate, time-limited session token minted here.
+// It's returned as-is for the frontend to hold onto and pass to pay_portal_get_tenant_v2 etc.
+// (which now verify it directly against tenants.portal_token, see the durable-token-session
+// migration), so the link keeps working indefinitely, exactly like the /p/:token link itself.
 //
 // Deploy:  supabase functions deploy pay-portal-resolve-token
 // Invoke:  supabase.functions.invoke("pay-portal-resolve-token", { body: { token } })
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, handleOptions } from "../_shared/cors.ts";
-import { sha256Hex, randomSessionToken } from "../_shared/otpCrypto.ts";
-
-const SESSION_TTL_MINUTES = 30;
 
 type ResolveTokenPayload = { token?: string };
 
@@ -68,21 +70,6 @@ Deno.serve(async (req) => {
     });
   }
 
-  const sessionToken = randomSessionToken();
-  const tokenHash = await sha256Hex(sessionToken);
-  const expiresAt = new Date(Date.now() + SESSION_TTL_MINUTES * 60 * 1000).toISOString();
-
-  const { error: sessionError } = await supabase
-    .from("portal_sessions")
-    .insert({ tenant_id: tenant.id, property_id: tenant.property_id, token_hash: tokenHash, expires_at: expiresAt });
-
-  if (sessionError) {
-    return new Response(JSON.stringify({ error: "Couldn't start a session. Try again." }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
   const room = (tenant.rooms as { number: string } | null)?.number ?? null;
 
   return new Response(
@@ -90,8 +77,7 @@ Deno.serve(async (req) => {
       ok: true,
       propertySlug,
       tenantId: tenant.id,
-      sessionToken,
-      expiresAt,
+      sessionToken: token,
       tenantName: tenant.name,
       room,
     }),

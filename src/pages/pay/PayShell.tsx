@@ -32,40 +32,17 @@ export default function PayShell({
   const activeIndex = step ? STEPS.findIndex((s) => s.key === step) : -1;
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-white">
-      <GradientMesh />
-      <div className="relative mx-auto flex min-h-screen w-full max-w-md flex-col px-5 py-6">
-        <div className="flex items-center justify-center">
-          <img src="https://cdn.brandfetch.io/idkuvXnjOH/theme/dark/logo.svg?c=1dxbfHSJFAPEGdCLU4o5B" alt="Instay" className="h-6" />
-        </div>
-        <p className="mt-1.5 text-center text-xs font-medium text-[#61718a]">{propertyName}</p>
+    <div className="relative min-h-screen overflow-hidden ">
+    
+     
+        
 
-        {activeIndex >= 0 && (
-          <div className="mt-6 flex items-center gap-1.5 px-1">
-            {STEPS.map((s, i) => (
-              <div key={s.key} className="flex flex-1 flex-col items-center gap-1.5">
-                <div
-                  className={`h-1 w-full rounded-full transition-colors ${
-                    i <= activeIndex ? "bg-[#533afd]" : "bg-[#e3e8ee]"
-                  }`}
-                />
-                <span
-                  className="text-[10px] font-medium"
-                  style={{ color: i <= activeIndex ? "#0d253d" : "#64748d" }}
-                >
-                  {s.label}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
 
-        <div className="mt-6 flex-1 rounded-lg bg-white p-5 shadow-lg ">
           {children}
-        </div>
+        
 
        
-      </div>
+      
     </div>
   );
 }

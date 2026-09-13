@@ -11,7 +11,6 @@ export default function Landing() {
     
       <main>
         <Hero />
-        
         <FeatureShowcase />
         <IntegrationsSection />
         <ScaleSection />

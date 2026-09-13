@@ -5,6 +5,7 @@ import { supabase } from "../lib/supabaseClient";
 import {
   listTenants,
   insertTenant,
+  generatePortalToken,
   updateTenantRow,
   deleteTenantRow,
   addLedgerEntry,
@@ -163,10 +164,10 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
   }, [propertyId]);
 
   const addTenant = (t: Omit<Tenant, "id">): Tenant => {
-    const tenant: Tenant = { ...t, id: crypto.randomUUID() };
+    const tenant: Tenant = { ...t, id: crypto.randomUUID(), portalToken: t.portalToken ?? generatePortalToken() };
     commitTenants((prev) => [tenant, ...prev]);
     if (propertyId) {
-      void insertTenant(propertyId, tenant.id, t)
+      void insertTenant(propertyId, tenant.id, tenant)
         .then(() => showToast(`${t.name || "Tenant"} added`, "success"))
         .catch((e) => {
           console.error("Failed to save tenant", e);

@@ -178,20 +178,41 @@ export async function getLencoBalance(propertyId: string): Promise<{ collected: 
  * anything else, since mobile-money disbursement isn't connected yet (see its file comment).
  * `confirmationToken` is required — get one from verifyWithdrawalOtp first, it's the real
  * authorization for this call, not just a param that happens to be checked. */
+export type SendPayoutResult = {
+  payoutId: string;
+  /** What was actually transferred — a cap, not a guarantee: can be less than requested if the
+   * real available balance was lower. Always show this, never an echo of what the landlord typed. */
+  amount: number;
+  /** Includes a flat K5 on-demand markup on top of the real Lenco transfer fee — scheduled/cron
+   * payouts never carry this. */
+  feeAmount: number;
+  netAmount: number;
+};
+
 export async function sendPayout(
   propertyId: string,
   amount: number,
   confirmationToken: string,
   recipientId?: string,
   narration?: string
-): Promise<{ payoutId: string }> {
-  const { data, error } = await supabase.functions.invoke<{ ok?: boolean; payoutId?: string; error?: string }>("lenco-payout", {
-    body: { propertyId, amount, confirmationToken, recipientId, narration },
-  });
+): Promise<SendPayoutResult> {
+  const { data, error } = await supabase.functions.invoke<{
+    ok?: boolean;
+    payoutId?: string;
+    amount?: number;
+    feeAmount?: number;
+    netAmount?: number;
+    error?: string;
+  }>("lenco-payout", { body: { propertyId, amount, confirmationToken, recipientId, narration } });
   if (error || !data?.ok || !data?.payoutId) {
     throw new Error(await edgeFunctionErrorMessage(error, "Failed to send payout."));
   }
-  return { payoutId: data.payoutId };
+  return {
+    payoutId: data.payoutId,
+    amount: data.amount ?? amount,
+    feeAmount: data.feeAmount ?? 0,
+    netAmount: data.netAmount ?? (data.amount ?? amount),
+  };
 }
 
 export type PayoutStatus = "pending" | "processing" | "successful" | "failed";
@@ -199,6 +220,13 @@ export type PayoutStatus = "pending" | "processing" | "successful" | "failed";
 export type PayoutRecord = {
   id: string;
   amount: number;
+  /** Fee deducted (Lenco's own transfer fee, plus a flat K5 markup for an on-demand payout — a
+   * scheduled/cron one carries only the former) and what the landlord actually received —
+   * null on older rows recorded before this split existed. */
+  feeAmount: number | null;
+  netAmount: number | null;
+  /** Human-readable fee breakdown, e.g. "Rent payout — fee K12.00 (incl. K5 on-demand), net K988.00". */
+  narration: string | null;
   status: PayoutStatus;
   createdAt: string;
   failureReason: string | null;
@@ -217,7 +245,9 @@ export async function listPayouts(
 ): Promise<PayoutRecord[]> {
   let query = supabase
     .from("payouts")
-    .select("id, amount, status, created_at, failure_reason, payout_recipients(type, provider, account_name, account_number, phone_number)")
+    .select(
+      "id, amount, fee_amount, net_amount, narration, status, created_at, failure_reason, payout_recipients(type, provider, account_name, account_number, phone_number)"
+    )
     .eq("property_id", propertyId)
     .order("created_at", { ascending: false });
   if (opts?.status?.length) query = query.in("status", opts.status);
@@ -229,6 +259,9 @@ export async function listPayouts(
   return (data ?? []).map((row) => ({
     id: row.id,
     amount: row.amount,
+    feeAmount: row.fee_amount ?? null,
+    netAmount: row.net_amount ?? null,
+    narration: row.narration ?? null,
     status: row.status as PayoutStatus,
     createdAt: row.created_at,
     failureReason: row.failure_reason,

@@ -191,13 +191,14 @@ export default function Dashboard() {
 
   // Every ledger entry across every tenant, newest first — replaces a hardcoded "recent payments" list.
   const payments = useMemo(() => {
-    const rows: { tenantId: string; tenant: string; room: string; status: string; date: string; amount: string; createdAt: string }[] = [];
+    const rows: { tenantId: string; portalToken?: string; tenant: string; room: string; status: string; date: string; amount: string; createdAt: string }[] = [];
     for (const t of tenants) {
       for (const row of t.ledger) {
         if (!row.createdAt) continue;
         const collected = row.status === "partial" ? (row.paidAmount ?? 0) : row.amount;
         rows.push({
           tenantId: t.id,
+          portalToken: t.portalToken,
           tenant: t.name,
           room: t.room,
           status: ledgerStatusLabel[row.status ?? "paid"] ?? "Paid",
@@ -549,7 +550,7 @@ export default function Dashboard() {
                           
                           <div>
                             <Link
-                              to={`/tenants/${p.tenantId}`}
+                              to={`/tenants/${p.portalToken ?? p.tenantId}`}
                               onClick={(e) => e.stopPropagation()}
                               className="font-medium text-ink hover:underline"
                             >
@@ -700,7 +701,7 @@ export default function Dashboard() {
               setPayingTenant(null);
             }}
             onLogPayment={() => setPaymentStep("confirm")}
-            onEdit={() => navigate(`/tenants/${payingTenant.id}/edit`)}
+            onEdit={() => navigate(`/tenants/${payingTenant.portalToken}/edit`)}
             onMoveOut={() => setMovingOutTenant(payingTenant)}
           />
         )}

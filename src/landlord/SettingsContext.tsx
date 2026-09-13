@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { getOrCreatePrimaryProperty, listProperties, createProperty, updateProperty } from "../lib/properties";
+import { getOrCreatePrimaryProperty, listProperties, createProperty, updateProperty, uploadPropertyLogo as uploadPropertyLogoRequest } from "../lib/properties";
 import { getOrCreateSettings, updateSettings, type SettingsRow } from "../lib/settingsApi";
 import { readSettingsCache, writeSettingsCache } from "../lib/offline/settingsCache";
 
@@ -36,6 +36,10 @@ type SettingsContextValue = {
    * re-derived from the editable propertyName. Use this, not slugify(propertyName), anywhere a
    * portal link is built. */
   propertySlug: string;
+  /** The property's logo/photo, shown side by side with its name in the sidebar's account card
+   * and on every tenant-facing portal page. Null until uploaded. */
+  propertyLogoUrl: string | null;
+  uploadPropertyLogo: (file: File) => Promise<void>;
   propertyAddress: string;
   setPropertyAddress: (v: string) => void;
   propertyType: string;
@@ -157,6 +161,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   // on every render and broke every existing payment link the moment a landlord renamed their
   // property. This is the one source of truth for what the portal route actually is.
   const [propertySlug, setPropertySlugState] = useState("");
+  const [propertyLogoUrl, setPropertyLogoUrlState] = useState<string | null>(null);
   const [landlordName, setLandlordNameState] = useState("");
   const [landlordPhone, setLandlordPhoneState] = useState("0977 000 000");
   const [paymentMethods, setPaymentMethodsState] = useState<PaymentMethod[]>([
@@ -239,6 +244,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       setPropertyAddressState(cached.property.address);
       setPropertyTypeState(cached.property.propertyType);
       setPropertySlugState(cached.property.slug);
+      setPropertyLogoUrlState(cached.property.logoUrl ?? null);
       applySettingsRow(cached.settingsRow as SettingsRow);
       setProperties(cached.properties);
       setIsReady(true);
@@ -253,6 +259,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         setPropertyAddressState(property.address ?? "");
         setPropertyTypeState(property.property_type ?? "");
         setPropertySlugState(property.slug ?? "");
+        setPropertyLogoUrlState(property.logo_url ?? null);
 
         const [settingsRow, allProperties] = await Promise.all([
           getOrCreateSettings(property.id),
@@ -270,6 +277,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
             address: property.address ?? "",
             propertyType: property.property_type ?? "",
             slug: property.slug ?? "",
+            logoUrl: property.logo_url ?? null,
           },
           settingsRow,
           properties: allProperties.map((p) => p.name),
@@ -314,6 +322,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const setPropertyType = (v: string) => {
     setPropertyTypeState(v);
     if (propertyId) void updateProperty(propertyId, { property_type: v });
+  };
+  const uploadPropertyLogo = async (file: File) => {
+    if (!propertyId) return;
+    const url = await uploadPropertyLogoRequest(propertyId, file);
+    setPropertyLogoUrlState(url);
   };
   const setLandlordName = (v: string) => {
     setLandlordNameState(v);
@@ -427,6 +440,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         propertyName,
         setPropertyName,
         propertySlug,
+        propertyLogoUrl,
+        uploadPropertyLogo,
         propertyAddress,
         setPropertyAddress,
         propertyType,

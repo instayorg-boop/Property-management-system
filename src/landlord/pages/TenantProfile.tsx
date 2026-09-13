@@ -305,7 +305,7 @@ function ProfileSkeleton() {
 }
 
 export default function TenantProfile() {
-  const { id } = useParams<{ id: string }>();
+  const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
   const {
     tenants,
@@ -335,7 +335,7 @@ export default function TenantProfile() {
   const [uploadingDocs, setUploadingDocs] = useState(false);
   const documentInputRef = useRef<HTMLInputElement>(null);
 
-  const tenant = tenants.find((t) => t.id === id) ?? null;
+  const tenant = tenants.find((t) => t.portalToken === code) ?? null;
 
   const refreshDocuments = () => {
     if (!tenant) return;
@@ -582,7 +582,7 @@ export default function TenantProfile() {
             )}
             <button
               type="button"
-              onClick={() => navigate(`/tenants/${tenant.id}/edit`)}
+              onClick={() => navigate(`/tenants/${tenant.portalToken}/edit`)}
               aria-label="Edit details"
               title="Edit tenant details"
               className="flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-ink"
@@ -960,7 +960,7 @@ export default function TenantProfile() {
                                         <button
                                           type="button"
                                           onClick={() =>
-                                            navigate(`/tenants/${tenant.id}/edit`)
+                                            navigate(`/tenants/${tenant.portalToken}/edit`)
                                           }
                                           aria-label="Mark deposit collected"
                                           title="Mark deposit collected"

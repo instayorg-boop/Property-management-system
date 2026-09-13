@@ -68,6 +68,7 @@ export type BedRow = {
   bed: string;
   tenant: string | null;
   tenantId: string | null;
+  portalToken: string | null;
   rent: number;
   status: BedStatus;
 };
@@ -86,6 +87,7 @@ export function useBedRoll(): BedRow[] {
           bed: room.beds.length > 1 ? `Bed ${String.fromCharCode(65 + i)}` : "—",
           tenant: occupant?.name ?? null,
           tenantId: occupant?.id ?? null,
+          portalToken: occupant?.portalToken ?? null,
           rent: occupant?.rentAmount ?? room.typeConfig.rent,
           status: occupant ? occupant.status : "vacant",
         });
@@ -98,6 +100,7 @@ export function useBedRoll(): BedRow[] {
 export type ArrearsRow = {
   id: string;
   tenantId: string;
+  portalToken?: string;
   tenant: string;
   room: string;
   daysOverdue: number;
@@ -119,6 +122,7 @@ export function useArrears(): ArrearsRow[] {
           return {
             id: t.id,
             tenantId: t.id,
+            portalToken: t.portalToken,
             tenant: t.name,
             room: t.room,
             daysOverdue: t.daysOverdue ?? 0,

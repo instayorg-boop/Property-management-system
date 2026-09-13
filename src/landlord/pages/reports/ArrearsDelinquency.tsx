@@ -88,7 +88,7 @@ export default function ArrearsDelinquency() {
                     <td className="px-6 py-4 font-medium">
                       <button
                         type="button"
-                        onClick={() => navigate(`/tenants/${a.tenantId}`)}
+                        onClick={() => navigate(`/tenants/${a.portalToken ?? a.tenantId}`)}
                         className="text-ink hover:text-brand hover:underline"
                       >
                         {a.tenant}

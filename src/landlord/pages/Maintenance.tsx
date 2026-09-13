@@ -172,7 +172,7 @@ function RequestDrawer({
           {reportedByTenant ? (
             <button
               type="button"
-              onClick={() => navigate(`/tenants/${reportedByTenant.id}`)}
+              onClick={() => navigate(`/tenants/${reportedByTenant.portalToken}`)}
               className="font-medium text-brand hover:underline"
             >
               {request.tenant}

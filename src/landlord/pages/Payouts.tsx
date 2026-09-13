@@ -13,6 +13,7 @@ import {
   Coins as CoinsIcon,
   Trash as TrashIcon,
   Plus as PlusIconBase,
+  CalendarBlank,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 import PageHeader from "../components/PageHeader";
@@ -215,11 +216,13 @@ function formatDate(iso: string) {
 }
 
 function downloadCsv(filename: string, rows: PayoutRecord[]) {
-  const header = ["Date", "Amount", "Method", "Status", "Failure reason"];
+  const header = ["Date", "Amount", "Fee", "Net", "Method", "Status", "Failure reason"];
   const lines = rows.map((r) =>
     [
       formatDate(r.createdAt),
       r.amount,
+      r.feeAmount ?? "",
+      r.netAmount ?? "",
       r.recipient ? recipientLabel(r.recipient as PayoutRecipient) : "",
       statusLabel[r.status],
       r.failureReason ?? "",
@@ -342,6 +345,7 @@ function TransferFundsModal({
     setOtpCode,
     startConfirmation,
     submit,
+    result,
   } = useWithdrawFlow(recipients);
 
   // The modal always opens straight into method-selection — "idle" is only meaningful for the
@@ -448,7 +452,35 @@ function TransferFundsModal({
                 <CheckCircle size={40} weight="fill" className="text-emerald-500" />
               </motion.div>
               <p className="mt-4 font-display text-lg font-semibold text-ink">Transfer sent</p>
-              <p className="mt-1 text-sm text-muted">{payout.amount} is on its way — usually within one business day.</p>
+              {result ? (
+                <>
+                  <p className="mt-1 text-sm text-muted">
+                    {formatCurrency(result.netAmount)} is on its way — usually within one business day.
+                  </p>
+                  <div className="mt-4 w-full max-w-xs space-y-1.5 rounded-lg border border-line bg-mist/40 px-3 py-2.5 text-left text-xs">
+                    <div className="flex items-center justify-between text-muted">
+                      <span>Requested</span>
+                      <span className="font-medium text-ink">{formatCurrency(payout.rawAmount)}</span>
+                    </div>
+                    {result.amount !== payout.rawAmount && (
+                      <div className="flex items-center justify-between text-muted">
+                        <span>Transferred</span>
+                        <span className="font-medium text-ink">{formatCurrency(result.amount)}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between text-muted">
+                      <span>Fee (incl. K5 for instant payout)</span>
+                      <span className="font-medium text-ink">{formatCurrency(result.feeAmount)}</span>
+                    </div>
+                    <div className="flex items-center justify-between border-t border-line pt-1.5 font-semibold text-ink">
+                      <span>You'll receive</span>
+                      <span>{formatCurrency(result.netAmount)}</span>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <p className="mt-1 text-sm text-muted">{payout.amount} is on its way — usually within one business day.</p>
+              )}
             </motion.div>
           ) : step === "otp" || step === "otp-sending" ? (
             <motion.div key="otp" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex-1">
@@ -1192,6 +1224,7 @@ export default function Payouts() {
     setBankName,
     setAccountNumber,
     setAccountHolderName,
+    payoutDay,
   } = useSettings();
   const isOwner = useIsOwner();
   const { payout, lencoAvailable } = usePayoutSummary();
@@ -1358,6 +1391,13 @@ export default function Payouts() {
                 label="Last payout"
                 value={lastPayout ? formatDate(lastPayout.createdAt) : "—"}
               />
+              {lencoConnected && (
+                <StatCard
+                  icon={<CalendarBlank size={13} weight="bold" />}
+                  label="Next scheduled payout"
+                  value={`Every ${payoutDay}`}
+                />
+              )}
             </div>
           </>
         )}
@@ -1476,7 +1516,16 @@ export default function Payouts() {
                             {statusLabel[r.status]}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-muted">{r.failureReason ?? "—"}</td>
+                        <td className="px-4 py-3 text-muted">
+                          {r.failureReason ??
+                            (r.netAmount != null && r.feeAmount != null ? (
+                              <span title={r.narration ?? undefined}>
+                                Fee {formatCurrency(r.feeAmount)} · Net {formatCurrency(r.netAmount)}
+                              </span>
+                            ) : (
+                              "—"
+                            ))}
+                        </td>
                       </tr>
                     ))}
                   {!loading && pageRows.length === 0 && (

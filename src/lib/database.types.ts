@@ -85,11 +85,13 @@ export type Database = {
           amount: number
           created_at: string
           failure_reason: string | null
+          fee_amount: number | null
           id: string
           lenco_collection_id: string | null
           operator: string
           phone: string
           property_id: string
+          rent_portion: number | null
           status: string
           tenant_id: string
           updated_at: string
@@ -98,11 +100,13 @@ export type Database = {
           amount: number
           created_at?: string
           failure_reason?: string | null
+          fee_amount?: number | null
           id?: string
           lenco_collection_id?: string | null
           operator: string
           phone: string
           property_id: string
+          rent_portion?: number | null
           status?: string
           tenant_id: string
           updated_at?: string
@@ -111,11 +115,13 @@ export type Database = {
           amount?: number
           created_at?: string
           failure_reason?: string | null
+          fee_amount?: number | null
           id?: string
           lenco_collection_id?: string | null
           operator?: string
           phone?: string
           property_id?: string
+          rent_portion?: number | null
           status?: string
           tenant_id?: string
           updated_at?: string
@@ -660,9 +666,11 @@ export type Database = {
           created_at: string
           currency: string
           failure_reason: string | null
+          fee_amount: number | null
           id: string
           lenco_transaction_id: string | null
           narration: string | null
+          net_amount: number | null
           payout_recipient_id: string
           property_id: string
           status: string
@@ -673,9 +681,11 @@ export type Database = {
           created_at?: string
           currency?: string
           failure_reason?: string | null
+          fee_amount?: number | null
           id?: string
           lenco_transaction_id?: string | null
           narration?: string | null
+          net_amount?: number | null
           payout_recipient_id: string
           property_id: string
           status?: string
@@ -686,9 +696,11 @@ export type Database = {
           created_at?: string
           currency?: string
           failure_reason?: string | null
+          fee_amount?: number | null
           id?: string
           lenco_transaction_id?: string | null
           narration?: string | null
+          net_amount?: number | null
           payout_recipient_id?: string
           property_id?: string
           status?: string
@@ -716,6 +728,7 @@ export type Database = {
           address: string | null
           created_at: string
           id: string
+          logo_url: string | null
           name: string
           owner_id: string | null
           property_type: string | null
@@ -725,6 +738,7 @@ export type Database = {
           address?: string | null
           created_at?: string
           id?: string
+          logo_url?: string | null
           name: string
           owner_id?: string | null
           property_type?: string | null
@@ -734,6 +748,7 @@ export type Database = {
           address?: string | null
           created_at?: string
           id?: string
+          logo_url?: string | null
           name?: string
           owner_id?: string | null
           property_type?: string | null
@@ -1138,7 +1153,9 @@ export type Database = {
       pay_portal_get_property: {
         Args: { p_property_slug: string }
         Returns: {
+          due_day: number
           id: string
+          logo_url: string | null
           name: string
         }[]
       }
@@ -1159,7 +1176,9 @@ export type Database = {
         Args: { p_property_slug: string; p_session_token: string; p_tenant_id: string }
         Returns: {
           days_overdue: number
+          emergency_contacts: Json
           id: string
+          move_in_date: string
           name: string
           owed_amount: number
           phone: string
@@ -1167,6 +1186,17 @@ export type Database = {
           room: string
           room_type: string
           status: string
+        }[]
+      }
+      pay_portal_get_maintenance_v1: {
+        Args: { p_session_token: string; p_tenant_id: string }
+        Returns: {
+          description: string
+          id: string
+          location: string
+          photo_urls: string[]
+          status: string
+          submitted_at: string
         }[]
       }
       pay_portal_log_payment: {
