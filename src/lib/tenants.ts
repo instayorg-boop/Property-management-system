@@ -25,8 +25,28 @@ export type LedgerRow = {
    * never set by the client, so it can't be spoofed. "manual" = the landlord typed this in
    * themselves (logPayment, the initial security-deposit row). Distinct from `method`: a
    * manually-logged "mobile money" entry and a real Lenco payment both end up with
-   * method = "mobile-money", so this is what actually gates whether an entry can be deleted. */
-  source: "manual" | "lenco";
+   * method = "mobile-money", so this is what actually gates whether an entry can be deleted.
+   * "adjustment" = a manually-applied balance change that isn't a payment being settled — an
+   * ad-hoc charge (amount > 0) or a credit/waiver (amount < 0), from addAdjustment/waivePenalty. */
+  source: "manual" | "lenco" | "adjustment";
+  /** Phase 3C raw event metadata — undefined on every legacy row (event_type IS NULL in the DB),
+   * populated on rows produced by the new financial-event model (Phase 3A onward). These are never
+   * read by any existing UI component; they exist purely so a future phase can consume the real
+   * event shape (charge/payment/penalty/adjustment linkage, billing period, due dates) without
+   * this projection needing to be rebuilt from scratch. `amount`/`paidAmount`/`status` above always
+   * carry the legacy-compatible, always-positive display convention regardless of which event(s)
+   * this row represents — never the raw signed event amount. */
+  eventType?: "charge" | "payment" | "penalty" | "adjustment" | "credit" | null;
+  chargeId?: string | null;
+  billingPeriodId?: string | null;
+  dueDate?: string | null;
+  gracePeriodEnd?: string | null;
+  affectsBalance?: boolean;
+  origin?: string | null;
+  voidedAt?: string | null;
+  /** For a projected charge row: the raw settling events (payments/adjustments whose charge_id
+   * points at this charge) that were summed into `paidAmount`. Empty/undefined otherwise. */
+  linkedEvents?: LedgerRow[];
 };
 
 export const RELATION_OPTIONS = ["Parent", "Guardian", "Spouse", "Sibling", "Friend", "Other"] as const;
@@ -221,12 +241,34 @@ function toTenant(row: TenantRow, propertyName: string, ledger: LedgerRow[]): Te
   };
 }
 
-type LedgerEntryRow = Pick<
+export type RawLedgerEntryRow = Pick<
   Tables<"ledger_entries">,
-  "id" | "tenant_id" | "label" | "amount" | "paid_amount" | "status" | "created_at" | "method" | "source"
+  | "id"
+  | "tenant_id"
+  | "label"
+  | "amount"
+  | "paid_amount"
+  | "status"
+  | "created_at"
+  | "method"
+  | "source"
+  | "event_type"
+  | "affects_balance"
+  | "charge_id"
+  | "billing_period_id"
+  | "due_date"
+  | "grace_period_end"
+  | "origin"
+  | "voided_at"
 >;
 
-function toLedgerRow(row: LedgerEntryRow): LedgerRow {
+function toSource(source: string): LedgerRow["source"] {
+  return source === "lenco" ? "lenco" : source === "adjustment" ? "adjustment" : "manual";
+}
+
+/** A legacy row (event_type IS NULL) passes through exactly as it always has — this is the same
+ * mapping toLedgerRow used to do directly, unchanged in every field it sets. */
+function projectLegacyRow(row: RawLedgerEntryRow): LedgerRow {
   return {
     id: row.id,
     label: row.label,
@@ -235,8 +277,136 @@ function toLedgerRow(row: LedgerEntryRow): LedgerRow {
     status: (row.status as PaymentStatus) ?? undefined,
     createdAt: row.created_at,
     method: (row.method as PaymentMethod | null) ?? null,
-    source: row.source === "lenco" ? "lenco" : "manual",
+    source: toSource(row.source),
   };
+}
+
+/** THE centralized ledger projection (Phase 3C) — the one place that turns raw `ledger_entries`
+ * rows (a mix of pre-event-model legacy rows and new event_type-tagged rows) into the
+ * legacy-shaped `LedgerRow[]` every UI consumer (TenantProfile, Rent, Dashboard, Accounting,
+ * TenantPaymentDrawer, useCollectedRent) already reads. Those consumers are untouched by this
+ * phase — they keep reading `amount`/`paidAmount`/`status` exactly as before; only what populates
+ * that array changes.
+ *
+ * Algorithm:
+ *  1. event_type IS NULL -> legacy row, passed through unchanged (projectLegacyRow).
+ *  2. voided_at IS NOT NULL on a new-model row -> dropped entirely; a voided event must not affect
+ *     the projected financial state (nothing currently sets voided_at on a new row, so this is
+ *     inert today, but the projection already honors it).
+ *  3. event_type = 'charge' -> becomes one projected charge-shaped row. Its `paidAmount`/`status`
+ *     are derived from every non-voided, affects_balance-true event whose charge_id points at it
+ *     (summed as signed amounts against the charge's own positive amount — a `payment` row's
+ *     negative amount reduces what's outstanding, a linked `adjustment`/`credit` applies the same
+ *     way), matching the exact paidAmount-only-when-partial convention every existing reader
+ *     already expects. Those linked rows are consumed here — they must NOT also appear as their
+ *     own independent charge-shaped row (requirement 4).
+ *  4. Any other new-model row not consumed by step 3 (affects_balance = false audit rows — e.g. a
+ *     future waived-penalty event — and any payment/adjustment/penalty with no charge_id) is
+ *     projected as its own standalone history row, in the same shape a legacy adjustment row has
+ *     always had. A payment's raw negative `amount` is never surfaced directly (requirement 7) —
+ *     it's shown positive, exactly like a legacy fully-settled payment row already is.
+ *  5. Everything is merged and re-sorted by createdAt, newest first, matching today's query order.
+ */
+export function projectLedgerRows(rows: RawLedgerEntryRow[]): LedgerRow[] {
+  const legacy: LedgerRow[] = [];
+  const charges = new Map<string, RawLedgerEntryRow>();
+  const linkedByCharge = new Map<string, RawLedgerEntryRow[]>();
+  const standalone: RawLedgerEntryRow[] = [];
+
+  for (const row of rows) {
+    // A voided row — legacy or new-model alike — is excluded from the projection entirely. This
+    // check runs before the legacy/new-model split specifically so that voiding (see
+    // voidLedgerEntry) works uniformly for both row shapes; a legacy row was never checked for
+    // voided_at before this, since nothing used to set it on one.
+    if (row.voided_at) continue;
+
+    if (row.event_type == null) {
+      legacy.push(projectLegacyRow(row));
+      continue;
+    }
+
+    if (row.event_type === "charge") {
+      charges.set(row.id, row);
+      continue;
+    }
+    // An audit-only event (affects_balance = false) never gets merged into a charge's paidAmount,
+    // regardless of whether it happens to carry a charge_id — that's the entire point of
+    // affects_balance existing (see the Phase 2A migration comment): stay visible in history
+    // without changing what's owed.
+    if (row.affects_balance !== false && row.charge_id) {
+      const list = linkedByCharge.get(row.charge_id) ?? [];
+      list.push(row);
+      linkedByCharge.set(row.charge_id, list);
+      continue;
+    }
+    standalone.push(row);
+  }
+
+  const projectedCharges: LedgerRow[] = [];
+  for (const charge of charges.values()) {
+    const linked = linkedByCharge.get(charge.id) ?? [];
+    const net = linked.reduce((sum, ev) => sum + ev.amount, 0); // payments are negative, adjustments signed
+    const remaining = Math.max(0, charge.amount + net);
+    const paidAmount = round2(charge.amount - remaining);
+    const status: PaymentStatus = remaining <= 0 ? "paid" : paidAmount > 0 ? "partial" : "unpaid";
+    projectedCharges.push({
+      id: charge.id,
+      label: charge.label,
+      amount: charge.amount,
+      // Matches the legacy convention exactly: paidAmount is only ever set on a partial row —
+      // a fully-paid or fully-unpaid row is read via `amount`/`status` alone by every consumer.
+      paidAmount: status === "partial" ? paidAmount : undefined,
+      status,
+      createdAt: charge.created_at,
+      method: (charge.method as PaymentMethod | null) ?? null,
+      source: toSource(charge.source),
+      eventType: "charge",
+      chargeId: null,
+      billingPeriodId: charge.billing_period_id,
+      dueDate: charge.due_date,
+      gracePeriodEnd: charge.grace_period_end,
+      affectsBalance: charge.affects_balance,
+      origin: charge.origin,
+      voidedAt: charge.voided_at,
+      linkedEvents: linked.map(projectStandaloneRow),
+    });
+  }
+
+  const projectedStandalone = standalone.map(projectStandaloneRow);
+
+  return [...legacy, ...projectedCharges, ...projectedStandalone].sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+}
+
+/** Projects one new-model row that isn't being merged into a charge (a standalone payment, a
+ * penalty, a tenant-level adjustment/credit, or an audit-only row) into the same shape a legacy
+ * `source: "adjustment"` row has always had. A `payment` row's negative amount is flipped positive
+ * (requirement 7) and shown fully settled, since a standalone payment is — by definition — money
+ * that was actually received. */
+function projectStandaloneRow(row: RawLedgerEntryRow): LedgerRow {
+  const isPayment = row.event_type === "payment";
+  const displayAmount = isPayment ? Math.abs(row.amount) : row.amount;
+  return {
+    id: row.id,
+    label: row.label,
+    amount: displayAmount,
+    paidAmount: isPayment ? displayAmount : undefined,
+    status: isPayment ? "paid" : undefined,
+    createdAt: row.created_at,
+    method: (row.method as PaymentMethod | null) ?? null,
+    source: toSource(row.source),
+    eventType: row.event_type as LedgerRow["eventType"],
+    chargeId: row.charge_id,
+    billingPeriodId: row.billing_period_id,
+    dueDate: row.due_date,
+    gracePeriodEnd: row.grace_period_end,
+    affectsBalance: row.affects_balance,
+    origin: row.origin,
+    voidedAt: row.voided_at,
+  };
+}
+
+export function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }
 
 export async function listTenants(propertyId: string, propertyName: string): Promise<Tenant[]> {
@@ -252,16 +422,27 @@ export async function listTenants(propertyId: string, propertyName: string): Pro
   const tenantIds = tenantRows.map((r) => r.id);
   const { data: ledgerRows, error: ledgerError } = await supabase
     .from("ledger_entries")
-    .select("id, tenant_id, label, amount, paid_amount, status, created_at, method, source")
+    .select(
+      "id, tenant_id, label, amount, paid_amount, status, created_at, method, source, event_type, affects_balance, charge_id, billing_period_id, due_date, grace_period_end, origin, voided_at"
+    )
     .in("tenant_id", tenantIds)
     .order("created_at", { ascending: false });
   if (ledgerError) throw ledgerError;
 
-  const ledgerByTenant = new Map<string, LedgerRow[]>();
+  // Grouped per tenant, then run through the one centralized projection (Phase 3C) — a charge row
+  // and the payment(s)/adjustment(s) that settle it can live on different tenants only in theory
+  // (ledger_entries.charge_id has no cross-tenant constraint), but in practice every charge and
+  // everything that settles it belongs to the same tenant, so projecting per-tenant-group is
+  // equivalent to projecting the whole set and is far cheaper to reason about.
+  const rowsByTenant = new Map<string, RawLedgerEntryRow[]>();
   for (const row of ledgerRows) {
-    const list = ledgerByTenant.get(row.tenant_id) ?? [];
-    list.push(toLedgerRow(row));
-    ledgerByTenant.set(row.tenant_id, list);
+    const list = rowsByTenant.get(row.tenant_id) ?? [];
+    list.push(row);
+    rowsByTenant.set(row.tenant_id, list);
+  }
+  const ledgerByTenant = new Map<string, LedgerRow[]>();
+  for (const [tenantId, rows] of rowsByTenant) {
+    ledgerByTenant.set(tenantId, projectLedgerRows(rows));
   }
 
   return tenantRows.map((row) => toTenant(row, propertyName, ledgerByTenant.get(row.id) ?? []));
@@ -376,10 +557,121 @@ export async function addLedgerEntry(tenantId: string, entry: LedgerRow): Promis
   if (error) throw error;
 }
 
-/** Removes one payment-history record. Doesn't touch the tenant's owed_amount/status/on_time
- * fields — those are tracked independently (see logPayment), not derived from the ledger, so
- * deleting a mistaken entry corrects the record without silently reopening a balance. */
-export async function deleteLedgerEntry(id: string): Promise<void> {
-  const { error } = await supabase.from("ledger_entries").delete().eq("id", id);
+/** A raw Phase 3A financial-event row — deliberately NOT `LedgerRow`, which is the
+ * legacy-compatible *projected* display shape (see projectLedgerRows). This is the actual shape
+ * written to `ledger_entries` for a new-model event: signed `amount`, no `paid_amount`/`status`
+ * (those are legacy-only fields; a payment event's own row never carries them per Phase 3D). */
+export type NewLedgerEventInsert = {
+  id: string;
+  tenantId: string;
+  label: string;
+  /** Signed per event_type — negative for a payment, positive for a charge/penalty, signed for an
+   * adjustment/credit. Never the legacy "amount owed" convention. */
+  amount: number;
+  eventType: "charge" | "payment" | "penalty" | "adjustment" | "credit";
+  affectsBalance: boolean;
+  origin: string;
+  source: LedgerRow["source"];
+  chargeId: string | null;
+  idempotencyKey: string;
+  method?: PaymentMethod | null;
+  createdAt?: string;
+};
+
+/** Inserts one new-model financial event. Sibling to addLedgerEntry (legacy shape) — this is the
+ * Phase 3D write path for a NEW manual payment; existing legacy rows/writers are untouched. */
+export async function addLedgerEvent(entry: NewLedgerEventInsert): Promise<void> {
+  const { error } = await supabase.from("ledger_entries").insert({
+    id: entry.id,
+    tenant_id: entry.tenantId,
+    label: entry.label,
+    amount: entry.amount,
+    event_type: entry.eventType,
+    affects_balance: entry.affectsBalance,
+    origin: entry.origin,
+    source: entry.source,
+    charge_id: entry.chargeId,
+    idempotency_key: entry.idempotencyKey,
+    method: entry.method ?? null,
+    ...(entry.createdAt ? { created_at: entry.createdAt } : {}),
+  });
   if (error) throw error;
+}
+
+export type SyncTenantBalanceResult = {
+  tenantId: string;
+  /** True only when this tenant has no legacy row at all (event_type IS NULL) and the RPC
+   * actually recomputed+wrote owed_amount/status/days_overdue. False for a legacy/mixed tenant
+   * (skip_reason: "skipped_legacy_or_mixed") or an unknown tenant (skip_reason: "tenant_not_found")
+   * — in either case nothing was written, and the caller is responsible for whatever fallback
+   * behavior it had before this existed (see logPayments). */
+  synchronized: boolean;
+  skipReason: string | null;
+  balance: number | null;
+  status: PaymentStatus | null;
+  daysOverdue: number | null;
+};
+
+/** Calls the Phase 3E `sync_tenant_balance_if_new_model` RPC — the one centralized place that
+ * recomputes and writes a new-model-only tenant's owed_amount/status/days_overdue from their
+ * financial events. Safe to call unconditionally for any tenant: it's self-gating, and a
+ * legacy/mixed tenant simply comes back `synchronized: false` having written nothing. */
+export async function syncTenantBalanceIfNewModel(tenantId: string): Promise<SyncTenantBalanceResult> {
+  const { data, error } = await supabase.rpc("sync_tenant_balance_if_new_model", { p_tenant_id: tenantId }).maybeSingle();
+  if (error) throw error;
+  return {
+    tenantId: data?.tenant_id ?? tenantId,
+    synchronized: data?.synchronized ?? false,
+    skipReason: data?.skip_reason ?? null,
+    balance: data?.balance ?? null,
+    status: (data?.status as PaymentStatus | null) ?? null,
+    daysOverdue: data?.days_overdue ?? null,
+  };
+}
+
+/** Whether a caller that just wrote a new-model event should still apply its own manually
+ * computed tenant-balance patch. True whenever syncTenantBalanceIfNewModel did NOT itself write
+ * the authoritative balance (a legacy/mixed tenant, or the sync call failed/was skipped) — false
+ * once it did, so the two never compete for the same tenant. Shared by TenantsContext.tsx's
+ * logPayments and offline/sync.ts's replayLedgerEntry, the two places that still carry a legacy
+ * fallback write; pulled out as its own function purely so this one decision is testable in
+ * isolation rather than duplicated inline in both places. */
+export function needsBalanceFallbackWrite(syncResult: { synchronized: boolean } | null | undefined): boolean {
+  return !syncResult?.synchronized;
+}
+
+/** Voids one ledger record instead of deleting it — the row stays in the table permanently (its
+ * `amount`/`paid_amount`/`event_type`/etc. are never rewritten), marked with when and why it was
+ * voided. This replaces the old hard-DELETE entirely: deleting a payment row used to remove the
+ * evidence it existed while leaving owed_amount/status exactly as that payment had already set
+ * them — permanently forgiving real debt with no trace (the exact problem voided_at/void_reason
+ * were added to solve in the Phase 2A migration, but never wired up to this action until now).
+ * Works uniformly for legacy rows and every new-model event_type (charge/payment/penalty/
+ * adjustment/credit) — projectLedgerRows already excludes any voided row from what the UI sees,
+ * for both row shapes, so voiding here is sufficient for the entry to disappear/recalculate
+ * correctly with no other change needed. Does NOT touch tenants.owed_amount/status/counters —
+ * those stay exactly as they were, same as the old delete never touched them either. */
+/** Thrown when the database refuses a void — currently only for a new-model charge that still
+ * has an active (non-voided, balance-affecting) event linked to it via charge_id. Distinct from a
+ * plain Error so the UI can show this exact explanation instead of a generic failure message. */
+export class VoidRefusedError extends Error {
+  readonly reason: string;
+  constructor(reason: string) {
+    super(
+      reason === "charge_has_active_linked_events"
+        ? "This charge can't be voided while a payment or other event is still linked to it. Void those first."
+        : "This entry couldn't be voided."
+    );
+    this.reason = reason;
+  }
+}
+
+/** Routes through the void_ledger_entry DB function (Phase 3E) rather than a plain UPDATE, so the
+ * charge-void guard (a charge with active linked events can't be voided) is enforced atomically in
+ * the database — see that function's own comment for why a client-side check-then-update would be
+ * race-prone. Legacy rows and every other new-model event_type are unaffected by the guard. */
+export async function voidLedgerEntry(id: string, reason: string): Promise<void> {
+  const { data, error } = await supabase.rpc("void_ledger_entry", { p_id: id, p_reason: reason }).maybeSingle();
+  if (error) throw error;
+  if (!data || !data.voided) throw new VoidRefusedError(data?.refusal_reason ?? "unknown");
 }

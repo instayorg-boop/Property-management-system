@@ -32,6 +32,118 @@ export type Database = {
         }
         Relationships: []
       }
+      assistant_conversations: {
+        Row: {
+          created_at: string
+          id: string
+          property_id: string
+          title: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          property_id: string
+          title?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          property_id?: string
+          title?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assistant_conversations_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      assistant_messages: {
+        Row: {
+          content: string
+          conversation_id: string
+          created_at: string
+          id: string
+          role: string
+          tool_args: Json | null
+          tool_name: string | null
+          tool_result: Json | null
+        }
+        Insert: {
+          content: string
+          conversation_id: string
+          created_at?: string
+          id?: string
+          role: string
+          tool_args?: Json | null
+          tool_name?: string | null
+          tool_result?: Json | null
+        }
+        Update: {
+          content?: string
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          role?: string
+          tool_args?: Json | null
+          tool_name?: string | null
+          tool_result?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assistant_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "assistant_conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      statutory_rates: {
+        Row: {
+          created_at: string
+          effective_date: string
+          id: string
+          napsa_monthly_cap: number
+          napsa_rate: number
+          nhima_employee_rate: number
+          nhima_employer_rate: number
+          notes: string | null
+          paye_bands: Json
+          sdl_rate: number
+        }
+        Insert: {
+          created_at?: string
+          effective_date: string
+          id?: string
+          napsa_monthly_cap: number
+          napsa_rate: number
+          nhima_employee_rate: number
+          nhima_employer_rate: number
+          notes?: string | null
+          paye_bands: Json
+          sdl_rate: number
+        }
+        Update: {
+          created_at?: string
+          effective_date?: string
+          id?: string
+          napsa_monthly_cap?: number
+          napsa_rate?: number
+          nhima_employee_rate?: number
+          nhima_employer_rate?: number
+          notes?: string | null
+          paye_bands?: Json
+          sdl_rate?: number
+        }
+        Relationships: []
+      }
       clock_entries: {
         Row: {
           created_at: string
@@ -467,40 +579,70 @@ export type Database = {
       }
       ledger_entries: {
         Row: {
+          affects_balance: boolean
           amount: number
+          billing_period_id: string | null
+          charge_id: string | null
           created_at: string
+          due_date: string | null
+          event_type: string | null
+          grace_period_end: string | null
           id: string
+          idempotency_key: string | null
           label: string
           method: string | null
+          origin: string | null
           paid_amount: number | null
           period: string | null
           source: string
           status: string | null
           tenant_id: string
+          void_reason: string | null
+          voided_at: string | null
         }
         Insert: {
+          affects_balance?: boolean
           amount?: number
+          billing_period_id?: string | null
+          charge_id?: string | null
           created_at?: string
+          due_date?: string | null
+          event_type?: string | null
+          grace_period_end?: string | null
           id?: string
+          idempotency_key?: string | null
           label: string
           method?: string | null
+          origin?: string | null
           paid_amount?: number | null
           period?: string | null
           source?: string
           status?: string | null
           tenant_id: string
+          void_reason?: string | null
+          voided_at?: string | null
         }
         Update: {
+          affects_balance?: boolean
           amount?: number
+          billing_period_id?: string | null
+          charge_id?: string | null
           created_at?: string
+          due_date?: string | null
+          event_type?: string | null
+          grace_period_end?: string | null
           id?: string
+          idempotency_key?: string | null
           label?: string
           method?: string | null
+          origin?: string | null
           paid_amount?: number | null
           period?: string | null
           source?: string
           status?: string | null
           tenant_id?: string
+          void_reason?: string | null
+          voided_at?: string | null
         }
         Relationships: [
           {
@@ -508,6 +650,39 @@ export type Database = {
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ledger_entries_charge_id_fkey"
+            columns: ["charge_id"]
+            isOneToOne: false
+            referencedRelation: "ledger_entries"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      property_balances: {
+        Row: {
+          property_id: string
+          available_balance: number
+          updated_at: string
+        }
+        Insert: {
+          property_id: string
+          available_balance?: number
+          updated_at?: string
+        }
+        Update: {
+          property_id?: string
+          available_balance?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "property_balances_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: true
+            referencedRelation: "properties"
             referencedColumns: ["id"]
           },
         ]
@@ -1124,6 +1299,61 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      assistant_get_overdue_tenants: {
+        Args: { p_property_id: string }
+        Returns: {
+          days_overdue: number
+          name: string
+          owed_amount: number
+          phone: string | null
+          tenant_id: string
+        }[]
+      }
+      assistant_get_collections_summary: {
+        Args: { p_period: string; p_property_id: string }
+        Returns: {
+          failed_count: number
+          successful_count: number
+          total_collected: number
+          total_fees: number
+        }[]
+      }
+      assistant_get_vacancy_summary: {
+        Args: { p_property_id: string }
+        Returns: {
+          occupied_rooms: number
+          total_rooms: number
+          vacant_rooms: number
+        }[]
+      }
+      assistant_explain_tenant_balance: {
+        Args: { p_tenant_id: string }
+        Returns: {
+          days_overdue: number
+          entry_amount: number
+          entry_created_at: string
+          entry_label: string
+          entry_paid_amount: number | null
+          entry_period: string | null
+          entry_status: string | null
+          name: string
+          owed_amount: number
+          tenant_id: string
+        }[]
+      }
+      assistant_get_current_statutory_rates: {
+        Args: { p_as_of?: string }
+        Returns: {
+          effective_date: string
+          napsa_monthly_cap: number
+          napsa_rate: number
+          nhima_employee_rate: number
+          nhima_employer_rate: number
+          notes: string | null
+          paye_bands: Json
+          sdl_rate: number
+        }[]
+      }
       pay_portal_get_ledger: {
         Args: { p_tenant_id: string }
         Returns: {
@@ -1132,6 +1362,22 @@ export type Database = {
           paid_amount: number
           status: string
         }[]
+      }
+      pay_portal_get_property_balance: {
+        Args: { p_property_id: string }
+        Returns: number
+      }
+      pay_portal_increment_property_balance: {
+        Args: { p_amount: number; p_property_id: string }
+        Returns: undefined
+      }
+      pay_portal_claim_payout_collections: {
+        Args: { p_max_amount?: number; p_payout_id: string; p_property_id: string }
+        Returns: number
+      }
+      pay_portal_release_payout_collections: {
+        Args: { p_payout_id: string }
+        Returns: undefined
       }
       pay_portal_get_collection_status: {
         Args: { p_collection_id: string; p_session_token: string; p_tenant_id: string }
@@ -1199,10 +1445,10 @@ export type Database = {
           submitted_at: string
         }[]
       }
-      pay_portal_log_payment: {
-        Args: { p_amount: number; p_label: string; p_tenant_id: string }
-        Returns: undefined
-      }
+      /** Session-gated (pay_portal_verify_session). Phase 1 fix (20260916000000): deducts
+       * p_amount from the tenant's real current balance and sets status paid/partial accordingly,
+       * clamped at 0 — no longer unconditionally zeroes owed_amount. The v1 function (no session
+       * check at all) was dropped in the same migration after confirming zero callers. */
       pay_portal_log_payment_v2: {
         Args: { p_amount: number; p_label: string; p_session_token: string; p_tenant_id: string }
         Returns: undefined
@@ -1246,6 +1492,21 @@ export type Database = {
       pay_portal_verify_session: {
         Args: { p_session_token: string; p_tenant_id: string }
         Returns: boolean
+      }
+      sync_tenant_balance_if_new_model: {
+        Args: { p_tenant_id: string }
+        Returns: {
+          tenant_id: string
+          synchronized: boolean
+          skip_reason: string | null
+          balance: number | null
+          status: string | null
+          days_overdue: number | null
+        }[]
+      }
+      void_ledger_entry: {
+        Args: { p_id: string; p_reason: string }
+        Returns: { entry_id: string; voided: boolean; refusal_reason: string | null }[]
       }
     }
     Enums: {

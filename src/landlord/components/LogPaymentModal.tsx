@@ -20,6 +20,25 @@ function baseLabelOf(label: string) {
   return label.replace(/\s*\([^)]*\)\s*$/, "").trim();
 }
 
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+/** Which month/year a ledger label is actually for, regardless of exact template — this modal
+ * writes "September Rent 2026", but AddTenant's move-in payment and logPayments' own default
+ * label both write "September 2026 rent" instead (see TenantProfile.tsx's furthestPaidMonth for
+ * the same gap). Comparing labels as exact strings meant a month settled via one of those other
+ * paths still showed up here as payable again — this looks for a month name and a 4-digit year
+ * anywhere in the label instead of one exact template. */
+function periodOf(label: string): { year: number; month: number } | null {
+  const yearMatch = label.match(/\d{4}/);
+  if (!yearMatch) return null;
+  const month = MONTH_NAMES.findIndex((name) => label.includes(name));
+  if (month === -1) return null;
+  return { year: Number(yearMatch[0]), month };
+}
+
 /** "September Rent 2026" style labels running from the current month through December of *this*
  * year only — no past months (nothing to backdate into), no rollover into next year. */
 function monthOptions() {
@@ -27,7 +46,12 @@ function monthOptions() {
   const monthsLeftThisYear = 12 - now.getMonth();
   return Array.from({ length: monthsLeftThisYear }, (_, i) => {
     const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-    return { key: d.toLocaleDateString("en-US", { month: "long" }), label: `${d.toLocaleDateString("en-US", { month: "long" })} Rent ${d.getFullYear()}` };
+    return {
+      key: d.toLocaleDateString("en-US", { month: "long" }),
+      label: `${d.toLocaleDateString("en-US", { month: "long" })} Rent ${d.getFullYear()}`,
+      year: d.getFullYear(),
+      month: d.getMonth(),
+    };
   });
 }
 
@@ -55,23 +79,40 @@ export default function LogPaymentModal({
 }) {
   // A month is done once any entry logged against it settled the balance in full — exclude it so
   // it can't be selected and paid again. Earlier partial entries for the same month don't exclude
-  // it; only the entry that finally clears it does.
-  const settledLabels = useMemo(
-    () => new Set(ledger.filter((e) => e.status === "paid").map((e) => baseLabelOf(e.label))),
-    [ledger]
-  );
+  // it; only the entry that finally clears it does. Matched by month/year (periodOf), not literal
+  // label text, so a month settled via a differently-templated label (move-in payment, etc.) is
+  // still recognized as settled.
+  const settledPeriods = useMemo(() => {
+    const periods = new Set<string>();
+    for (const e of ledger) {
+      if (e.status !== "paid") continue;
+      const p = periodOf(baseLabelOf(e.label));
+      if (p) periods.add(`${p.year}-${p.month}`);
+    }
+    return periods;
+  }, [ledger]);
   // Only the nearest not-yet-settled month is ever independently selectable — a tenant can't skip
   // ahead and log a future month while this one still has a balance. Paying several months at once
   // is instead handled by the "months to pay" stepper below, which always fills forward from here.
-  const options = useMemo(() => monthOptions().filter((o) => !settledLabels.has(o.label)), [settledLabels]);
+  const options = useMemo(
+    () => monthOptions().filter((o) => !settledPeriods.has(`${o.year}-${o.month}`)),
+    [settledPeriods]
+  );
   const currentLabel = options[0]?.label;
   function remainingFor(label: string) {
     if (label === currentLabel) return outstanding || rentAmount;
+    const targetPeriod = options.find((o) => o.label === label) ?? periodOf(label);
     // A "paid" entry's `amount` is the total that was due; a "partial" one's `paidAmount` is what
     // was actually paid toward it (see logPayment) — sum whichever applies to get what's been
-    // collected against this label so far.
+    // collected against this label/period so far.
     const loggedSoFar = ledger
-      .filter((e) => baseLabelOf(e.label) === label)
+      .filter((e) => {
+        if (targetPeriod) {
+          const p = periodOf(baseLabelOf(e.label));
+          return !!p && p.year === targetPeriod.year && p.month === targetPeriod.month;
+        }
+        return baseLabelOf(e.label) === label;
+      })
       .reduce((sum, e) => sum + (e.status === "paid" ? e.amount : e.paidAmount ?? 0), 0);
     return Math.max(0, rentAmount - loggedSoFar);
   }
@@ -85,6 +126,13 @@ export default function LogPaymentModal({
   // How many consecutive months (starting at the current one) this single payment covers — 1 is
   // the ordinary case, >1 is paying ahead of schedule in one go instead of one log per month.
   const [monthsToPay, setMonthsToPay] = useState(1);
+  // Guards against a second confirm while the first is still being submitted — set synchronously
+  // before onConfirm runs, so a rapid second click (or tap) can't fire a duplicate payment before
+  // the caller's own state update unmounts this modal. onConfirm itself is void/fire-and-forget
+  // (see the prop type below), so "in flight" here just means "the synchronous confirm handler
+  // hasn't finished running yet" — cleared in a finally so the button recovers even if onConfirm
+  // throws synchronously, without needing onConfirm to become a Promise.
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const isMultiMonth = labelChoice === currentLabel && monthsToPay > 1;
   const coveredMonths = isMultiMonth ? options.slice(0, monthsToPay) : [];
@@ -101,6 +149,7 @@ export default function LogPaymentModal({
   const cap = labelChoice === CUSTOM ? outstanding : remainingFor(labelChoice);
   const exceedsOutstanding = !isMultiMonth && cap > 0 && parsedAmount > cap;
   const canConfirm =
+    !isSubmitting &&
     Number.isFinite(parsedAmount) &&
     parsedAmount > 0 &&
     baseLabel.length > 0 &&
@@ -114,11 +163,17 @@ export default function LogPaymentModal({
       : "Confirm payment";
 
   function handleConfirm() {
-    if (isMultiMonth) {
-      onConfirm(coveredMonths.map((o) => ({ amount: remainingFor(o.label), method, label: o.label, date })));
-      return;
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      if (isMultiMonth) {
+        onConfirm(coveredMonths.map((o) => ({ amount: remainingFor(o.label), method, label: o.label, date })));
+        return;
+      }
+      onConfirm([{ amount: parsedAmount, method, label, date }]);
+    } finally {
+      setIsSubmitting(false);
     }
-    onConfirm([{ amount: parsedAmount, method, label, date }]);
   }
 
   return (

@@ -5,9 +5,8 @@ import {
   ArrowLeft,
   PencilSimple,
   Trash,
+  Prohibit,
   CheckCircle,
-  WarningCircle,
-  CaretDown,
   Wrench,
   Receipt,
   UsersThree,
@@ -24,6 +23,8 @@ import SectionLabel from "../components/SectionLabel";
 import { Skeleton, SkeletonRow } from "../components/Skeleton";
 import MoveOutModal from "../components/MoveOutModal";
 import LogPaymentModal from "../components/LogPaymentModal";
+import AdjustmentModal from "../components/AdjustmentModal";
+import WaivePenaltyModal from "../components/WaivePenaltyModal";
 import ConfirmDeleteTenantModal from "../components/ConfirmDeleteTenantModal";
 import ReactivateTenantModal from "../components/ReactivateTenantModal";
 import Modal from "../components/Modal";
@@ -35,8 +36,10 @@ import {
   type LedgerRow,
 } from "../TenantsContext";
 import { useMaintenance } from "../MaintenanceContext";
+import { calcTotalOwed, calcPenalty } from "../invoiceUtils";
 import { useSettings } from "../SettingsContext";
 import Button from "../components/Button";
+import Select from "../components/Select";
 import {
   listTenantDocuments,
   uploadTenantDocument,
@@ -124,20 +127,25 @@ const MONTH_NAMES = [
   "December",
 ];
 
-/** The furthest-out month this tenant has a paid ledger entry for, read from labels like
- * "October Rent 2026" (LogPaymentModal's format) — lets "next due" reflect a payment logged in
- * advance for a future month, instead of always assuming only the current month was covered. */
+/** The furthest-out month this tenant has a paid ledger entry for — lets "next due" reflect a
+ * payment logged in advance for a future month, instead of always assuming only the current month
+ * was covered. Ledger labels aren't one fixed format: LogPaymentModal writes "October Rent 2026",
+ * while AddTenant's first-month-at-move-in payment and logPayments' own default fallback both write
+ * "October 2026 rent" instead. Matching only the first format meant a tenant whose first payment
+ * was logged at move-in (and never had a second one through the Log Payment modal) got stuck with
+ * a phantom "Due" row for an already-paid month forever — so this looks for a month name and a
+ * 4-digit year anywhere in the label, in either order, rather than one exact template. */
 function furthestPaidMonth(
   ledger: LedgerRow[],
 ): { year: number; month: number } | null {
   let furthest: { year: number; month: number } | null = null;
   for (const row of ledger) {
     if (row.status !== "paid") continue;
-    const match = row.label.match(/^(\w+) Rent (\d{4})/);
-    if (!match) continue;
-    const month = MONTH_NAMES.indexOf(match[1]);
+    const yearMatch = row.label.match(/\d{4}/);
+    if (!yearMatch) continue;
+    const month = MONTH_NAMES.findIndex((name) => row.label.includes(name));
     if (month === -1) continue;
-    const year = Number(match[2]);
+    const year = Number(yearMatch[0]);
     if (
       !furthest ||
       year > furthest.year ||
@@ -210,36 +218,92 @@ function outstandingCaption(
   return daysOverdue ? `${period} · ${daysOverdue}d overdue` : period;
 }
 
-function ConfirmDeleteLedgerEntryModal({
+/** Title varies by what's actually being voided — "Void payment"/"Void charge"/etc — rather than
+ * one generic "Delete this entry?" the old modal used, since voiding a charge (removes an
+ * obligation) reads very differently from voiding a payment (undoes a receipt) even though both
+ * go through the same action. Falls back to the legacy source convention (source: "adjustment")
+ * for rows with no event_type, and to a generic title only when neither tells us anything. */
+function voidModalTitle(entry: LedgerRow): string {
+  switch (entry.eventType) {
+    case "charge":
+      return "Void charge";
+    case "payment":
+      return "Void payment";
+    case "penalty":
+      return "Void penalty";
+    case "adjustment":
+    case "credit":
+      return "Void adjustment";
+    default:
+      return entry.source === "adjustment" ? "Void adjustment" : "Void entry";
+  }
+}
+
+function ConfirmVoidLedgerEntryModal({
   entry,
   onClose,
   onConfirm,
 }: {
   entry: LedgerRow;
   onClose: () => void;
-  onConfirm: () => void;
+  /** Rejects on failure — the modal stays open and shows the error rather than closing, per the
+   * "don't optimistically remove, leave the row intact on failure" requirement. Resolves once the
+   * void has actually been confirmed by the server. */
+  onConfirm: (reason: string) => Promise<void>;
 }) {
+  const [reason, setReason] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const canConfirm = reason.trim().length > 0 && !isSubmitting;
+
+  async function handleConfirm() {
+    if (!canConfirm) return;
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      await onConfirm(reason.trim());
+      // No setIsSubmitting(false)/onClose here — onConfirm's own success path closes the modal;
+      // reaching this line always means it resolved, so there's nothing left to reset before unmount.
+    } catch (e) {
+      // A refused void (e.g. the charge-void guard) carries a specific explanation — show that
+      // instead of a generic failure message so the landlord knows why, not just that it failed.
+      setError(e instanceof Error ? e.message : "Couldn't void this entry — please try again.");
+      setIsSubmitting(false);
+    }
+  }
+
   return (
     <Modal
       onClose={onClose}
       maxWidth="max-w-sm"
-      title="Delete this entry?"
+      title={voidModalTitle(entry)}
       footer={
         <div className="flex justify-end gap-2">
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose} disabled={isSubmitting}>
             Cancel
           </Button>
-          <Button variant="dangerSolid" onClick={onConfirm}>
-            Delete
+          <Button variant="dangerSolid" onClick={handleConfirm} disabled={!canConfirm}>
+            {isSubmitting ? "Voiding…" : "Void"}
           </Button>
         </div>
       }
     >
       <p className="text-sm text-muted">
-        "{entry.label}" ({formatCurrency(entry.amount)}) will be removed from
-        this tenant's payment history. This doesn't change their current balance
-        — it only corrects the record.
+        "{entry.label}" ({formatCurrency(Math.abs(entry.amount))}) will be marked void and kept in
+        this tenant's history — it stays visible as voided rather than being erased. This doesn't
+        change their current balance on its own; it only corrects the record.
       </p>
+      <div className="mt-3">
+        <label className="mb-1.5 block text-xs font-medium text-muted">Reason (required)</label>
+        <input
+          autoFocus
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="e.g. Logged in error, duplicate entry"
+          className="w-full rounded-lg border border-line bg-paper px-3 py-2.5 text-sm outline-none focus:border-brand"
+        />
+      </div>
+      {error && <p className="mt-2 text-xs text-red-500">{error}</p>}
     </Modal>
   );
 }
@@ -314,7 +378,9 @@ export default function TenantProfile() {
     moveOutTenant,
     reactivateTenant,
     logPayments,
-    deleteLedgerEntry,
+    voidLedgerEntry,
+    addAdjustment,
+    waivePenalty,
   } = useTenants();
   const { reports } = useMaintenance();
   const { dueDay, propertyId } = useSettings();
@@ -323,11 +389,14 @@ export default function TenantProfile() {
   const [historyFilter, setHistoryFilter] =
     useState<(typeof historyFilters)[number]>("All");
   const [showLogPayment, setShowLogPayment] = useState(false);
+  const [showAdjustment, setShowAdjustment] = useState(false);
+  const [showWaivePenalty, setShowWaivePenalty] = useState(false);
   const [showMoveOut, setShowMoveOut] = useState(false);
   const [showReactivate, setShowReactivate] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
-  const [deletingEntry, setDeletingEntry] = useState<LedgerRow | null>(null);
+  const [voidingEntry, setVoidingEntry] = useState<LedgerRow | null>(null);
+  const [viewingEntry, setViewingEntry] = useState<LedgerRow | null>(null);
 
   const [documents, setDocuments] = useState<TenantDocument[]>([]);
   const [documentsLoading, setDocumentsLoading] = useState(true);
@@ -414,6 +483,9 @@ export default function TenantProfile() {
   }
 
   const tenantReports = reports.filter((r) => r.tenant === tenant.name);
+  // Includes any accrued late penalty (see calcTotalOwed) — the raw tenant.owedAmount field alone
+  // undercounts once a tenant is overdue.
+  const totalOwed = calcTotalOwed(tenant);
 
   // Property-wide due day (Settings), same source TenantPaymentDrawer uses — not invented per
   // tenant, since this app doesn't track a per-tenant due day.
@@ -429,7 +501,11 @@ export default function TenantProfile() {
     (paidThrough.year > today.getFullYear() ||
       (paidThrough.year === today.getFullYear() &&
         paidThrough.month >= today.getMonth()));
-  const currentPeriodRow: (LedgerRow & { synthetic: true }) | null =
+  // Any late penalty accrued right now (see calcPenalty) is attached directly onto this same
+  // current-period row — as its own sub-line, not a separate floating row — so it's obvious which
+  // month it's actually for rather than reading as an unrelated line item.
+  const penaltyAmount = calcPenalty(tenant);
+  const currentPeriodRow: (LedgerRow & { synthetic: true; penaltyAmount?: number }) | null =
     tenant.active && !currentPeriodCovered
       ? {
           id: "current-period",
@@ -442,6 +518,7 @@ export default function TenantProfile() {
           status: tenant.status === "paid" ? "unpaid" : tenant.status, // paid-up-but-uncovered can't happen, but guards the type
           source: "manual",
           synthetic: true,
+          penaltyAmount: penaltyAmount > 0 ? penaltyAmount : undefined,
         }
       : null;
 
@@ -462,7 +539,7 @@ export default function TenantProfile() {
         }
       : null;
 
-  const allRows: (LedgerRow & { synthetic?: boolean })[] = [
+  const allRows: (LedgerRow & { synthetic?: boolean; penaltyAmount?: number })[] = [
     ...(currentPeriodRow ? [currentPeriodRow] : []),
     ...(depositDueRow ? [depositDueRow] : []),
     ...tenant.ledger,
@@ -474,12 +551,12 @@ export default function TenantProfile() {
   );
 
   /** What's still left on one row specifically — 0 for a fully paid row, the live tenant balance
-   * for the synthesized current-period row (which can include carried-over arrears, not just this
-   * month's rent), the deposit amount itself for the synthesized deposit-due row, and
-   * amount-minus-paid for a partial one. */
-  function rowOutstanding(row: LedgerRow & { synthetic?: boolean }): number {
+   * plus any attached late penalty for the synthesized current-period row (which can include
+   * carried-over arrears, not just this month's rent), the deposit amount itself for that
+   * synthesized row, and amount-minus-paid for a partial one. */
+  function rowOutstanding(row: LedgerRow & { synthetic?: boolean; penaltyAmount?: number }): number {
     if (row.id === "deposit-due") return row.amount;
-    if (row.synthetic) return tenant!.owedAmount;
+    if (row.synthetic) return tenant!.owedAmount + (row.penaltyAmount ?? 0);
     if (row.status === "partial")
       return Math.max(0, row.amount - (row.paidAmount ?? 0));
     if (row.status === "overdue" || row.status === "unpaid") return row.amount;
@@ -628,16 +705,16 @@ export default function TenantProfile() {
           <StatCard
             icon={<CurrencyCircleDollar size={13} weight="bold" />}
             label="Outstanding balance"
-            value={formatCurrency(tenant.owedAmount)}
+            value={formatCurrency(totalOwed)}
             valueClassName={
-              tenant.owedAmount === 0
+              totalOwed === 0
                 ? "text-emerald-600"
                 : tenant.active
                   ? "text-red-600"
                   : "text-ink"
             }
             caption={outstandingCaption(
-              tenant.owedAmount,
+              totalOwed,
               tenant.rentAmount,
               tenant.daysOverdue,
             )}
@@ -802,65 +879,36 @@ export default function TenantProfile() {
 
                 {tab === "Financial ledger" && (
                   <div>
-                    <div
-                      className={`flex items-start gap-2.5 rounded-lg px-4 py-3 ${tenant.owedAmount === 0 ? "bg-emerald-50" : "bg-amber-50"}`}
-                    >
-                      {tenant.owedAmount === 0 ? (
-                        <CheckCircle
-                          size={18}
-                          weight="fill"
-                          className="mt-0.5 shrink-0 text-emerald-600"
-                        />
-                      ) : (
-                        <WarningCircle
-                          size={18}
-                          weight="fill"
-                          className="mt-0.5 shrink-0 text-amber-600"
-                        />
-                      )}
-                      <div>
-                        <p
-                          className={`text-sm font-semibold ${tenant.owedAmount === 0 ? "text-emerald-700" : "text-amber-700"}`}
-                        >
-                          {tenant.owedAmount === 0
-                            ? "Fully paid up"
-                            : `${formatCurrency(tenant.owedAmount)} owed`}
-                        </p>
-                        <p
-                          className={`text-xs ${tenant.owedAmount === 0 ? "text-emerald-700/70" : "text-amber-700/70"}`}
-                        >
-                          Paid on time {tenant.onTimeCount} of{" "}
-                          {tenant.totalMonthsCount || tenant.onTimeCount} months
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <SectionLabel>Transactions</SectionLabel>
                       <div className="flex items-center gap-2">
-                        <div className="relative">
-                          <select
-                            value={historyFilter}
-                            onChange={(e) =>
-                              setHistoryFilter(
-                                e.target
-                                  .value as (typeof historyFilters)[number],
-                              )
-                            }
-                            className="appearance-none rounded-md py-1 pr-5 pl-1 text-xs font-medium text-muted outline-none hover:text-ink"
-                          >
-                            {historyFilters.map((f) => (
-                              <option key={f}>{f}</option>
-                            ))}
-                          </select>
-                          <CaretDown
-                            size={10}
-                            weight="bold"
-                            className="pointer-events-none absolute top-1/2 right-1 -translate-y-1/2 text-muted"
-                          />
-                        </div>
+                        <Select
+                          value={historyFilter}
+                          onChange={(v) =>
+                            setHistoryFilter(v as (typeof historyFilters)[number])
+                          }
+                          options={historyFilters.map((f) => ({ value: f, label: f }))}
+                        />
                         {/* Only shown here, on the tab it actually applies to — not in the page
                               header where it had nothing to do with the other identity actions. */}
+                        {tenant.active && penaltyAmount > 0 && (
+                          <Button
+                            variant="warning"
+                            size="sm"
+                            onClick={() => setShowWaivePenalty(true)}
+                          >
+                            Waive penalty
+                          </Button>
+                        )}
+                        {tenant.active && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => setShowAdjustment(true)}
+                          >
+                            + Add charge/credit
+                          </Button>
+                        )}
                         {tenant.active && (
                           <Button
                             variant="primary"
@@ -907,31 +955,58 @@ export default function TenantProfile() {
                           <tbody className="divide-y divide-line">
                             {filteredLedger.map((row) => {
                               const outstanding = rowOutstanding(row);
-                              const displayStatusLabel =
-                                row.synthetic && row.status === "unpaid"
+                              // An adjustment (addAdjustment/waivePenalty) isn't a payment being
+                              // settled — it has no real paid/overdue/unpaid/partial status, so it
+                              // gets its own "Charge"/"Credit" tag instead of misreading as "Paid"
+                              // (the ?? "paid" fallback every real row relies on).
+                              const isAdjustment = row.source === "adjustment";
+                              const displayStatusLabel = isAdjustment
+                                ? row.amount >= 0
+                                  ? "Charge"
+                                  : "Credit"
+                                : row.synthetic && row.status === "unpaid"
                                   ? "Due"
                                   : statusLabel[row.status ?? "paid"];
+                              const adjustmentStyle = row.amount >= 0 ? "bg-amber-50 text-amber-600" : "bg-blue-50 text-blue-600";
                               return (
                                 <tr
                                   key={row.id}
                                   className="group transition-colors duration-200 ease-in-out hover:bg-mist"
                                 >
                                   <td className="py-3.5 font-medium text-ink">
-                                    {row.label}
+                                    {/* A charge/credit's or a manual payment's reason gets folded onto the
+                                        label (same convention LogPaymentModal uses for its note field), which
+                                        can run long — truncate to one line instead of breaking the table's
+                                        layout, and make it clickable to read the full text in a small modal. */}
+                                    <button
+                                      type="button"
+                                      onClick={() => setViewingEntry(row)}
+                                      className="block max-w-[160px] truncate text-left align-middle decoration-dotted hover:underline sm:max-w-[280px]"
+                                      title={row.label}
+                                    >
+                                      {row.label}
+                                    </button>
                                     {row.label === "Security deposit" && (
                                       <span className="ml-2 rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-600">
                                         Security deposit
                                       </span>
                                     )}
+                                    {!!row.penaltyAmount && (
+                                      <span className="mt-0.5 block text-xs font-normal text-amber-600">
+                                        + {formatCurrency(row.penaltyAmount)} late penalty ({tenant.daysOverdue}d overdue)
+                                      </span>
+                                    )}
                                   </td>
                                   <td className="font-display py-3.5 text-ink">
-                                    {row.paidAmount !== undefined
-                                      ? `${formatCurrency(row.paidAmount)} of ${formatCurrency(row.amount)}`
-                                      : formatCurrency(row.amount)}
+                                    {isAdjustment
+                                      ? `${row.amount >= 0 ? "+" : "−"}${formatCurrency(Math.abs(row.amount))}`
+                                      : row.paidAmount !== undefined
+                                        ? `${formatCurrency(row.paidAmount)} of ${formatCurrency(row.amount)}`
+                                        : formatCurrency(row.amount + (row.penaltyAmount ?? 0))}
                                   </td>
                                   <td className="py-3.5">
                                     <span
-                                      className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${paymentStatusStyle[row.status ?? "paid"]}`}
+                                      className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${isAdjustment ? adjustmentStyle : paymentStatusStyle[row.status ?? "paid"]}`}
                                     >
                                       {displayStatusLabel}
                                     </span>
@@ -1010,24 +1085,26 @@ export default function TenantProfile() {
                                             className="text-emerald-500"
                                           />
                                         </span>
-                                        {/* Only manually-logged entries can be deleted — a real,
-                                            gateway-verified Lenco payment can't be erased from here. */}
-                                        {row.source === "manual" ? (
+                                        {/* Any landlord-originated entry (manual payments, adjustments,
+                                            charges, penalties) can be voided — a real, gateway-verified
+                                            Lenco payment can't be, from here or otherwise. Void, never
+                                            delete: see voidLedgerEntry for why. */}
+                                        {row.source !== "lenco" ? (
                                           <button
                                             type="button"
                                             onClick={() =>
-                                              setDeletingEntry(row)
+                                              setVoidingEntry(row)
                                             }
-                                            aria-label="Delete entry"
-                                            title="Delete this entry"
+                                            aria-label="Void entry"
+                                            title="Void this entry"
                                             className="flex h-6 w-6 items-center justify-center rounded text-muted opacity-0 transition-colors group-hover:opacity-100 hover:bg-red-50 hover:text-red-600 focus-visible:opacity-100"
                                           >
-                                            <Trash size={14} weight="bold" />
+                                            <Prohibit size={14} weight="bold" />
                                           </button>
                                         ) : (
                                           <span
                                             className="flex h-6 w-6 items-center justify-center text-muted"
-                                            title="Verified online payment — can't be deleted"
+                                            title="Verified online payment — can't be voided"
                                           >
                                             <Lock size={14} weight="bold" />
                                           </span>
@@ -1221,7 +1298,7 @@ export default function TenantProfile() {
           <LogPaymentModal
             tenantName={tenant.name}
             room={tenant.room}
-            outstanding={tenant.owedAmount || tenant.rentAmount}
+            outstanding={totalOwed || tenant.rentAmount}
             rentAmount={tenant.rentAmount}
             ledger={tenant.ledger}
             onClose={() => setShowLogPayment(false)}
@@ -1239,13 +1316,48 @@ export default function TenantProfile() {
             }}
           />
         )}
-        {deletingEntry && (
-          <ConfirmDeleteLedgerEntryModal
-            entry={deletingEntry}
-            onClose={() => setDeletingEntry(null)}
-            onConfirm={() => {
-              deleteLedgerEntry(tenant.id, deletingEntry.id);
-              setDeletingEntry(null);
+        {showAdjustment && (
+          <AdjustmentModal
+            tenantName={tenant.name}
+            room={tenant.room}
+            onClose={() => setShowAdjustment(false)}
+            onConfirm={(input) => {
+              addAdjustment(tenant.id, input);
+              setShowAdjustment(false);
+            }}
+          />
+        )}
+        {showWaivePenalty && (
+          <WaivePenaltyModal
+            tenantName={tenant.name}
+            room={tenant.room}
+            penaltyAmount={penaltyAmount}
+            daysOverdue={tenant.daysOverdue ?? 0}
+            onClose={() => setShowWaivePenalty(false)}
+            onConfirm={(reason) => {
+              waivePenalty(tenant.id, reason);
+              setShowWaivePenalty(false);
+            }}
+          />
+        )}
+        {viewingEntry && (
+          <Modal onClose={() => setViewingEntry(null)} title="Entry details" maxWidth="max-w-sm">
+            <p className="text-sm text-ink">{viewingEntry.label}</p>
+            <p className="mt-3 text-xs text-muted">
+              {formatCurrency(Math.abs(viewingEntry.amount))}
+              {viewingEntry.createdAt
+                ? ` — ${new Date(viewingEntry.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`
+                : ""}
+            </p>
+          </Modal>
+        )}
+        {voidingEntry && (
+          <ConfirmVoidLedgerEntryModal
+            entry={voidingEntry}
+            onClose={() => setVoidingEntry(null)}
+            onConfirm={async (reason) => {
+              await voidLedgerEntry(tenant.id, voidingEntry.id, reason);
+              setVoidingEntry(null);
             }}
           />
         )}

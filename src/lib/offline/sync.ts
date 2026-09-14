@@ -1,4 +1,5 @@
 import { supabase } from "../supabaseClient";
+import { syncTenantBalanceIfNewModel, needsBalanceFallbackWrite } from "../tenants";
 import { db, type QueuedAction } from "./db";
 
 type Listener = () => void;
@@ -119,23 +120,38 @@ async function replay(action: QueuedAction): Promise<ReplayResult> {
   }
 }
 
-async function replayLedgerEntry(action: QueuedAction): Promise<ReplayResult> {
-  const { _tenantPatch, ...ledgerPayload } = action.payload as {
-    tenant_id: string;
-    amount: number;
-    _tenantPatch?: Record<string, unknown>;
-    [k: string]: unknown;
-  };
+export type QueuedLedgerPayload = {
+  tenant_id: string;
+  amount: number;
+  event_type?: string;
+  _tenantPatch?: Record<string, unknown>;
+  [k: string]: unknown;
+};
 
-  // A payment that would push the tenant into an inconsistent state (e.g. already fully paid,
-  // or someone else logged a payment for the same period while offline) needs a human to look
-  // at it rather than being auto-applied — see requirement 3.
+/** Pure gating decision for a queued `record_payment` action, pulled out of replayLedgerEntry so
+ * it can be tested without a live Supabase call. A payment that would push the tenant into an
+ * inconsistent state (e.g. already fully paid, or someone else logged a payment for the same
+ * period while offline) needs a human to look at it rather than being auto-applied.
+ *
+ * This action type is only ever used to queue a payment, so that alone is what should gate the
+ * check — not the row's own `amount` sign. A legacy-shaped payload always carries a positive
+ * "amount owed" (`amount > 0`); a Phase 3D new-model payment event always carries a negative
+ * "amount paid" (`amount < 0`, `event_type: "payment"`). Gating on `amount > 0` (as this used to)
+ * silently skipped the check for every new-model payment, whose amount is never positive —
+ * `tenantOwedAmount` is the only input that should matter, regardless of the payload's shape. */
+export function paymentReplayNeedsReview(_payload: QueuedLedgerPayload, tenantOwedAmount: number | null | undefined): boolean {
+  return tenantOwedAmount != null && tenantOwedAmount <= 0;
+}
+
+async function replayLedgerEntry(action: QueuedAction): Promise<ReplayResult> {
+  const { _tenantPatch, ...ledgerPayload } = action.payload as QueuedLedgerPayload;
+
   const { data: tenant } = await supabase
     .from("tenants")
     .select("owed_amount")
     .eq("id", ledgerPayload.tenant_id)
     .maybeSingle();
-  if (tenant && ledgerPayload.amount > 0 && tenant.owed_amount <= 0) {
+  if (paymentReplayNeedsReview(ledgerPayload, tenant?.owed_amount)) {
     return { kind: "needs_review" };
   }
 
@@ -145,7 +161,16 @@ async function replayLedgerEntry(action: QueuedAction): Promise<ReplayResult> {
   const { error: ledgerError } = await supabase.from("ledger_entries").upsert(ledgerPayload as never);
   if (ledgerError) throw ledgerError;
 
-  if (_tenantPatch) {
+  // Phase 3E: sync this tenant's authoritative balance now that the event is durably written —
+  // a no-op for legacy/mixed tenants, in which case the queued _tenantPatch (the old
+  // manually-computed values, attached only to the last event in a batch) is applied instead,
+  // exactly as before this phase existed. Left to throw (not caught) on failure, unlike the
+  // online path in TenantsContext — a replay failure here should mark this action "failed" for
+  // retry, same as any other step in this function; retrying is safe since both the upsert
+  // above and this sync are idempotent.
+  const syncResult = await syncTenantBalanceIfNewModel(ledgerPayload.tenant_id);
+
+  if (needsBalanceFallbackWrite(syncResult) && _tenantPatch) {
     const { error: tenantError } = await supabase.from("tenants").update(_tenantPatch as never).eq("id", ledgerPayload.tenant_id);
     if (tenantError) throw tenantError;
   }

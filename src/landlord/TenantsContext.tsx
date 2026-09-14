@@ -9,7 +9,12 @@ import {
   updateTenantRow,
   deleteTenantRow,
   addLedgerEntry,
-  deleteLedgerEntry as deleteLedgerEntryRow,
+  addLedgerEvent,
+  type NewLedgerEventInsert,
+  syncTenantBalanceIfNewModel,
+  needsBalanceFallbackWrite,
+  round2,
+  voidLedgerEntry as voidLedgerEntryRow,
   tenantPatchToRow,
   relationLabel,
   RELATION_OPTIONS,
@@ -25,6 +30,7 @@ import {
 import { readCachedView, writeCachedView } from "../lib/offline/cachedView";
 import { enqueueAction } from "../lib/offline/sync";
 import { ACTION_PRIORITY } from "../lib/offline/db";
+import { calcPenalty, calcTotalOwed } from "./invoiceUtils";
 
 const TENANTS_VIEW_KEY = "tenants";
 
@@ -64,9 +70,20 @@ type TenantsContextValue = {
    * `logPayment` calls in a loop, which only the first of would actually take effect (see
    * logPayments' comment for why). */
   logPayments: (id: string, payments: { amount: number; label?: string; method?: PaymentMethod; paidAt?: string }[]) => void;
-  /** Removes one payment-history record — a correction to the log, not a balance change; see
-   * lib/tenants.ts's deleteLedgerEntry for why owedAmount/status are untouched. */
-  deleteLedgerEntry: (tenantId: string, entryId: string) => void;
+  /** Marks one ledger record voided (never deletes it) — a correction to the log, not a balance
+   * change; see lib/tenants.ts's voidLedgerEntry for why owedAmount/status are untouched, and why
+   * this is safe for both legacy and new-model rows. Deliberately does NOT optimistically remove
+   * the row from local state before the write succeeds — the caller should treat this as pending
+   * until it resolves, and show an error (leaving the row as-is) if it rejects. Resolves once the
+   * server confirms the void; the tenant's ledger then updates via the existing realtime
+   * subscription on `ledger_entries`, not via any local mutation here. */
+  voidLedgerEntry: (tenantId: string, entryId: string, reason: string) => Promise<void>;
+  /** An ad-hoc charge (amount > 0, e.g. a damage fine) or credit/waiver (amount < 0) — a balance
+   * change that isn't a rent payment being settled. `label` is the full display text to log. */
+  addAdjustment: (tenantId: string, input: { amount: number; label: string }) => void;
+  /** Clears the live accrued late penalty (resets daysOverdue) and logs an audit-only ledger row
+   * explaining why — doesn't touch owedAmount, since the penalty was never part of it. */
+  waivePenalty: (tenantId: string, reason: string) => void;
 };
 
 const TenantsContext = createContext<TenantsContextValue | null>(null);
@@ -285,20 +302,26 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
   ) => {
     if (payments.length === 0) return;
     let updated: Tenant | undefined;
-    let newEntries: LedgerRow[] = [];
+    let newEvents: NewLedgerEventInsert[] = [];
     commitTenants((prev) =>
       prev.map((t) => {
         if (t.id !== id) return t;
         let current = t;
-        const createdEntries: LedgerRow[] = [];
+        const createdEvents: NewLedgerEventInsert[] = [];
         for (const { amount, label, method, paidAt } of payments) {
           // Generated once and reused everywhere (local state, the online insert, the offline
           // queue's idempotency key) so a retried/double-triggered sync can't insert the same
           // payment twice, and so the row can be targeted for deletion right after it's logged.
           const ledgerEntryId = crypto.randomUUID();
-          // `paidAt` is a plain YYYY-MM-DD from DatePicker — treat it as local midnight on that
-          // day rather than letting `new Date("YYYY-MM-DD")` parse it as UTC, which can land a day off.
-          const createdAt = paidAt
+          // `paidAt` is a plain YYYY-MM-DD from DatePicker, which always has a value (defaults to
+          // today) — so this used to collapse EVERY manual payment to local midnight on its date,
+          // never the actual time it was logged. That's correct for a genuinely backdated payment
+          // (sorts under that past day), but for today's date it meant a payment logged at 2pm got
+          // timestamped earlier than a charge/credit added at, say, 10am the same day (those use
+          // the real current time), making same-day entries sort in the wrong order relative to
+          // each other. Only collapse to midnight when the date is actually in the past.
+          const todayStr = new Date().toISOString().slice(0, 10);
+          const createdAt = paidAt && paidAt !== todayStr
             ? (() => {
                 const [y, m, d] = paidAt.split("-").map(Number);
                 return new Date(y, (m || 1) - 1, d || 1).toISOString();
@@ -307,28 +330,97 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
           // A logged amount can settle less than what's owed — only clear the balance and flip to
           // "paid" once it covers the full outstanding amount; otherwise the tenant stays "partial"
           // with the remainder still owed, instead of every manual payment wiping the balance to 0.
-          const owedBefore = current.owedAmount || current.rentAmount;
+          // `calcTotalOwed` (not the raw `owedAmount` field) so a payment that includes the live
+          // late penalty is recorded at what was actually owed, not silently short by the penalty
+          // portion. The `> 0` check is deliberate, not `||` — `owedAmount` is a real monetary
+          // value where 0 is a legitimate balance, not a signal to fall back to `rentAmount`; `||`
+          // on a number is exactly the class of bug that produced this (a merely-just-settled
+          // tenant read as "no obligation tracked" and got re-charged a fresh month's rent).
+          const totalOwed = calcTotalOwed(current);
+          const owedBefore = totalOwed > 0 ? totalOwed : current.rentAmount;
           const remaining = Math.max(0, owedBefore - amount);
           const settledInFull = remaining <= 0;
-          createdEntries.push({
+          const label_ = label ?? `${new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })} rent`;
+
+          // Phase 3D charge matching: prefer the tenant's own open (not yet fully paid) rent
+          // charge for THIS calendar billing period — the shape Phase 3B's generator produces
+          // (event_type='charge', billingPeriodId='YYYY-MM'). `current.ledger` is already the
+          // Phase 3C *projected* view, so a charge row's `id` here is the real ledger_entries id
+          // to link against, and `status` already reflects any prior payments against it. There's
+          // deliberately no search across other periods or any allocation-splitting — a payment
+          // that doesn't match this period's open charge (none generated yet, already settled, or
+          // this is an advance/backdated payment for a different period) becomes a standalone
+          // event instead of guessing at a historical charge to attach it to.
+          const now = new Date();
+          const currentBillingPeriodId = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+          const openCharge = current.ledger.find(
+            (row) => row.eventType === "charge" && row.billingPeriodId === currentBillingPeriodId && row.status !== "paid"
+          );
+
+          const rawEvent: NewLedgerEventInsert = {
             id: ledgerEntryId,
-            label: label ?? `${new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })} rent`,
-            // `amount` is what was owed for this period, `paidAmount` is what's actually been
-            // paid toward it — the same convention every reader (Rent, Dashboard, Accounting, the
-            // profile ledger row) uses to show "K400 of K1,000" on a partial entry. A row that
-            // settles in full doesn't need paidAmount — readers just use `amount` — but a partial
-            // one left without it always read as K0 collected, however much was logged.
-            amount: owedBefore,
-            paidAmount: settledInFull ? undefined : amount,
-            status: settledInFull ? "paid" : "partial",
-            createdAt,
-            method: method ?? null,
+            tenantId: id,
+            label: label_,
+            // The actual amount paid, negative — never the legacy "amount owed" convention.
+            amount: -amount,
+            eventType: "payment",
+            affectsBalance: true,
+            origin: "landlord_manual",
             source: "manual",
-          });
+            chargeId: openCharge ? openCharge.id : null,
+            // Deterministic function of this operation's own id — stable across a retried
+            // offline replay of the exact same queued action, unique per real payment.
+            idempotencyKey: `manual_payment:${ledgerEntryId}`,
+            method: method ?? null,
+            createdAt,
+          };
+          createdEvents.push(rawEvent);
+
+          // Optimistic local projection update — current.ledger already holds Phase 3C-projected
+          // rows, so a payment linked to an open charge updates THAT row in place (matching
+          // projectLedgerRows' own remaining/paidAmount math) rather than appending a second,
+          // independent row for the same charge. An unlinked payment appends its own standalone
+          // row, exactly the shape projectStandaloneRow would produce for it server-side.
+          const nextLedger: LedgerRow[] = openCharge
+            ? current.ledger.map((row) => {
+                if (row.id !== openCharge.id) return row;
+                const priorPaid = row.status === "paid" ? row.amount : row.paidAmount ?? 0;
+                const newPaidTotal = priorPaid + amount;
+                const remainingOnCharge = Math.max(0, row.amount - newPaidTotal);
+                const newStatus: PaymentStatus = remainingOnCharge <= 0 ? "paid" : newPaidTotal > 0 ? "partial" : "unpaid";
+                // Matches projectLedgerRows' own round2() on its equivalent paidAmount — without
+                // it, a payment amount with fractional cents could leave the optimistic UI
+                // showing floating-point noise (e.g. 733.0000000000001) until the next refetch.
+                return { ...row, paidAmount: newStatus === "partial" ? round2(newPaidTotal) : undefined, status: newStatus };
+              })
+            : [
+                {
+                  id: ledgerEntryId,
+                  label: label_,
+                  amount,
+                  paidAmount: amount,
+                  status: "paid",
+                  createdAt,
+                  method: method ?? null,
+                  source: "manual",
+                  eventType: "payment",
+                  chargeId: null,
+                  affectsBalance: true,
+                  origin: "landlord_manual",
+                } satisfies LedgerRow,
+                ...current.ledger,
+              ];
+
           current = {
             ...current,
+            ledger: nextLedger,
             status: settledInFull ? "paid" : "partial",
             owedAmount: remaining,
+            // Matches reconcileCollection.ts's automatic-payment path, which already resets this
+            // on full settlement — the manual path previously left it untouched, so a tenant who
+            // paid off their balance by hand kept their old daysOverdue lingering, ready to
+            // resurface a stale penalty the moment status left "paid" next cycle.
+            daysOverdue: settledInFull ? 0 : current.daysOverdue,
             onTimeCount:
               settledInFull && current.status !== "overdue" && current.status !== "unpaid"
                 ? current.onTimeCount + 1
@@ -336,16 +428,16 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
             totalMonthsCount: settledInFull ? current.totalMonthsCount + 1 : current.totalMonthsCount,
           };
         }
-        const next: Tenant = { ...current, ledger: [...[...createdEntries].reverse(), ...t.ledger] };
-        updated = next;
-        newEntries = createdEntries;
-        return next;
+        updated = current;
+        newEvents = createdEvents;
+        return current;
       })
     );
     if (propertyId && updated) {
       const tenantPatch = {
         status: updated.status,
         owedAmount: updated.owedAmount,
+        daysOverdue: updated.daysOverdue,
         onTimeCount: updated.onTimeCount,
         totalMonthsCount: updated.totalMonthsCount,
       };
@@ -358,70 +450,213 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
         const tenantRowPatch = {
           status: updated.status,
           owed_amount: updated.owedAmount,
+          days_overdue: updated.daysOverdue ?? null,
           on_time_count: updated.onTimeCount,
           total_months_count: updated.totalMonthsCount,
         };
-        newEntries.forEach((entry, i) => {
+        newEvents.forEach((event, i) => {
           void enqueueAction({
-            id: entry.id,
+            id: event.id,
             type: "record_payment",
             propertyId,
             payload: {
-              id: entry.id,
-              tenant_id: id,
-              label: entry.label,
-              amount: entry.amount,
-              paid_amount: entry.paidAmount ?? null,
-              status: entry.status ?? null,
-              method: entry.method ?? null,
-              source: entry.source,
-              created_at: entry.createdAt,
-              _tenantPatch: i === newEntries.length - 1 ? tenantRowPatch : undefined,
+              id: event.id,
+              tenant_id: event.tenantId,
+              label: event.label,
+              amount: event.amount,
+              event_type: event.eventType,
+              affects_balance: event.affectsBalance,
+              origin: event.origin,
+              source: event.source,
+              charge_id: event.chargeId,
+              idempotency_key: event.idempotencyKey,
+              method: event.method ?? null,
+              created_at: event.createdAt,
+              _tenantPatch: i === newEvents.length - 1 ? tenantRowPatch : undefined,
             },
             baseUpdatedAt: null,
             priority: ACTION_PRIORITY.record_payment,
           });
         });
         showToast(
-          newEntries.length > 1 ? "Payments saved — will sync when you're back online" : "Payment saved — will sync when you're back online",
+          newEvents.length > 1 ? "Payments saved — will sync when you're back online" : "Payment saved — will sync when you're back online",
           "info"
         );
         return;
       }
 
-      void Promise.all([updateTenantRow(propertyId, id, tenantPatch), ...newEntries.map((entry) => addLedgerEntry(id, entry))])
-        .then(() => showToast(newEntries.length > 1 ? "Payments logged" : "Payment logged", "success"))
-        .catch((e) => {
+      // Phase 3E: the event(s) must land before syncing — sync recomputes from whatever's
+      // already durably written, so calling it first (or racing it against the insert) would
+      // read a stale state. A failed insert here must never reach the sync call at all — it
+      // throws straight into the catch below.
+      void (async () => {
+        try {
+          await Promise.all(newEvents.map((event) => addLedgerEvent(event)));
+
+          // Authoritative for a new-model-only tenant (writes owed_amount/status/days_overdue
+          // itself); a no-op for anyone with legacy history. Only fall back to the old
+          // manually-computed tenantPatch write when sync did NOT do it — never both, so there's
+          // never two competing balance calculations landing for the same tenant.
+          let syncResult: { synchronized: boolean } | null = null;
+          try {
+            syncResult = await syncTenantBalanceIfNewModel(id);
+          } catch (e) {
+            console.error("Failed to sync tenant balance after payment", e);
+          }
+          if (needsBalanceFallbackWrite(syncResult)) {
+            await updateTenantRow(propertyId, id, tenantPatch);
+          }
+
+          showToast(newEvents.length > 1 ? "Payments logged" : "Payment logged", "success");
+        } catch (e) {
           console.error("Failed to log payment", e);
           showToast("Couldn't log that payment — please try again.", "error");
-        });
+        }
+      })();
     }
   };
 
   const logPayment = (id: string, amount: number, label?: string, method?: PaymentMethod, paidAt?: string) =>
     logPayments(id, [{ amount, label, method, paidAt }]);
 
-  // Deleting a payment-history row is a record correction, not a balance change — owedAmount,
-  // status, and the on-time/total month counts stay exactly as they are (see the comment on
-  // lib/tenants.ts's deleteLedgerEntry). Only supported online: this one skips the offline queue
-  // rather than risk a delete racing a not-yet-synced payment insert for the same row.
-  const deleteLedgerEntry = (tenantId: string, entryId: string) => {
+  // Voiding a ledger row is a record correction, not a balance change — owedAmount, status, and
+  // the on-time/total month counts stay exactly as they are (see the comment on lib/tenants.ts's
+  // voidLedgerEntry). Only supported online: this one skips the offline queue rather than risk a
+  // void racing a not-yet-synced payment insert for the same row.
+  // A manually-applied balance change that isn't a payment being settled — an ad-hoc charge
+  // (amount > 0, e.g. a damage fine) or a credit/waiver (amount < 0, e.g. a goodwill discount).
+  // `label` is the full display text the caller already composed (including any reason folded in,
+  // the same convention LogPaymentModal uses for its note field) — this doesn't add its own.
+  // Clamped so owedAmount can never go negative: there's no "tenant is in credit" concept anywhere
+  // else in this data model, so a credit larger than what's currently owed just zeroes it out
+  // rather than carrying the remainder forward.
+  const addAdjustment = (id: string, input: { amount: number; label: string }) => {
     if (!navigator.onLine) {
-      showToast("Reconnect to delete this entry.", "info");
+      showToast("Reconnect to add a charge or credit.", "info");
       return;
     }
+    let updated: Tenant | undefined;
+    let newEntry: LedgerRow | undefined;
     commitTenants((prev) =>
-      prev.map((t) => (t.id === tenantId ? { ...t, ledger: t.ledger.filter((row) => row.id !== entryId) } : t))
+      prev.map((t) => {
+        if (t.id !== id) return t;
+        const nextOwed = Math.max(0, t.owedAmount + input.amount);
+        const nextStatus: PaymentStatus = nextOwed === 0 ? "paid" : t.status === "paid" ? "unpaid" : t.status;
+        const entry: LedgerRow = {
+          id: crypto.randomUUID(),
+          label: input.label,
+          amount: input.amount,
+          source: "adjustment",
+          createdAt: new Date().toISOString(),
+        };
+        const next: Tenant = { ...t, owedAmount: nextOwed, status: nextStatus, ledger: [entry, ...t.ledger] };
+        updated = next;
+        newEntry = entry;
+        return next;
+      })
     );
-    void deleteLedgerEntryRow(entryId).catch((e) => {
-      console.error("Failed to delete ledger entry", e);
-      showToast("Couldn't delete that entry — please try again.", "error");
-    });
+    if (propertyId && updated && newEntry) {
+      void Promise.all([
+        updateTenantRow(propertyId, id, { status: updated.status, owedAmount: updated.owedAmount }),
+        addLedgerEntry(id, newEntry),
+      ])
+        .then(() => showToast(input.amount >= 0 ? "Charge added" : "Credit applied", "success"))
+        .catch((e) => {
+          console.error("Failed to add adjustment", e);
+          showToast("Couldn't save that change — please try again.", "error");
+        });
+    }
+  };
+
+  // The late penalty isn't stored anywhere — calcPenalty derives it live from daysOverdue every
+  // time (see invoiceUtils.ts) — so "waiving" it doesn't touch owedAmount at all; it just resets
+  // daysOverdue so the live formula stops accruing it, plus an audit-only ledger row explaining
+  // where the K-amount that used to show up went, so it isn't just silently gone from history.
+  const waivePenalty = (id: string, reason: string) => {
+    if (!navigator.onLine) {
+      showToast("Reconnect to waive a penalty.", "info");
+      return;
+    }
+    let updated: Tenant | undefined;
+    let newEntry: LedgerRow | undefined;
+    commitTenants((prev) =>
+      prev.map((t) => {
+        if (t.id !== id) return t;
+        const penalty = calcPenalty(t);
+        if (penalty <= 0) return t;
+        const entry: LedgerRow = {
+          id: crypto.randomUUID(),
+          label: `Late penalty waived (${t.daysOverdue}d${reason ? `, ${reason}` : ""})`,
+          amount: -penalty,
+          source: "adjustment",
+          createdAt: new Date().toISOString(),
+        };
+        // 0, not undefined — tenantPatchToRow only writes daysOverdue to the DB when it's
+        // !== undefined, so undefined here would silently no-op instead of actually clearing it.
+        const next: Tenant = { ...t, daysOverdue: 0, ledger: [entry, ...t.ledger] };
+        updated = next;
+        newEntry = entry;
+        return next;
+      })
+    );
+    if (propertyId && updated && newEntry) {
+      void Promise.all([updateTenantRow(propertyId, id, { daysOverdue: 0 }), addLedgerEntry(id, newEntry)])
+        .then(() => showToast("Late penalty waived", "success"))
+        .catch((e) => {
+          console.error("Failed to waive penalty", e);
+          showToast("Couldn't save that change — please try again.", "error");
+        });
+    }
+  };
+
+  // Deliberately no optimistic local mutation — the row must stay visible, unchanged, until the
+  // server confirms the void, and stay visible if it fails. The existing realtime subscription on
+  // `ledger_entries` (see the effect above) already refetches and re-projects on any change to
+  // that table, so a successful void reaches the UI without this function touching local state
+  // itself. Callers should await this and handle a rejection (show an error, keep the row as-is).
+  const voidLedgerEntry = async (_tenantId: string, entryId: string, reason: string): Promise<void> => {
+    if (!navigator.onLine) {
+      showToast("Reconnect to void this entry.", "info");
+      throw new Error("offline");
+    }
+    try {
+      await voidLedgerEntryRow(entryId, reason);
+    } catch (e) {
+      console.error("Failed to void ledger entry", e);
+      // A VoidRefusedError (e.g. the charge-void guard) has a specific, user-facing explanation —
+      // show that instead of the generic fallback so the landlord knows *why* it was refused. A
+      // rejected void never reaches the sync call below — nothing changed, so there's nothing to
+      // resync.
+      showToast(e instanceof Error ? e.message : "Couldn't void that entry — please try again.", "error");
+      throw e;
+    }
+    // The void succeeded — sync this tenant's authoritative balance (a no-op for legacy/mixed
+    // tenants, matching voidLedgerEntry's own long-standing design of never touching their
+    // balance). A sync failure here doesn't undo the void or fail this call — the void itself
+    // already committed, so surfacing it as a void error would be misleading; log and move on.
+    try {
+      await syncTenantBalanceIfNewModel(_tenantId);
+    } catch (e) {
+      console.error("Failed to sync tenant balance after void", e);
+    }
   };
 
   return (
     <TenantsContext.Provider
-      value={{ tenants, isReady, addTenant, updateTenant, deleteTenant, moveOutTenant, reactivateTenant, logPayment, logPayments, deleteLedgerEntry }}
+      value={{
+        tenants,
+        isReady,
+        addTenant,
+        updateTenant,
+        deleteTenant,
+        moveOutTenant,
+        reactivateTenant,
+        logPayment,
+        logPayments,
+        voidLedgerEntry,
+        addAdjustment,
+        waivePenalty,
+      }}
     >
       {children}
     </TenantsContext.Provider>
