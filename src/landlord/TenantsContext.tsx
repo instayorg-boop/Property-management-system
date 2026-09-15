@@ -530,6 +530,12 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
   // Clamped so owedAmount can never go negative: there's no "tenant is in credit" concept anywhere
   // else in this data model, so a credit larger than what's currently owed just zeroes it out
   // rather than carrying the remainder forward.
+  // Phase B (financial event migration): a NEW adjustment/credit is now written as an event-model
+  // row (event_type='adjustment' for a positive charge, 'credit' for a negative one), then
+  // syncTenantBalanceIfNewModel is called exactly like logPayments already does — authoritative
+  // for a new-model-only tenant, a no-op (falls back to the manual patch below) for anyone with
+  // legacy history. This never touches historical adjustment rows; it only changes what a NEW one
+  // looks like going forward.
   const addAdjustment = (id: string, input: { amount: number; label: string }) => {
     if (!navigator.onLine) {
       showToast("Reconnect to add a charge or credit.", "info");
@@ -537,17 +543,39 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
     }
     let updated: Tenant | undefined;
     let newEntry: LedgerRow | undefined;
+    let newEvent: NewLedgerEventInsert | undefined;
     commitTenants((prev) =>
       prev.map((t) => {
         if (t.id !== id) return t;
         const nextOwed = Math.max(0, t.owedAmount + input.amount);
         const nextStatus: PaymentStatus = nextOwed === 0 ? "paid" : t.status === "paid" ? "unpaid" : t.status;
+        const entryId = crypto.randomUUID();
+        // A real financial effect either way — an ad-hoc charge increases what's owed, a credit
+        // decreases it — so both affect the balance, distinguished only by event_type/sign.
+        const eventType: "adjustment" | "credit" = input.amount >= 0 ? "adjustment" : "credit";
         const entry: LedgerRow = {
-          id: crypto.randomUUID(),
+          id: entryId,
           label: input.label,
           amount: input.amount,
           source: "adjustment",
           createdAt: new Date().toISOString(),
+          eventType,
+          affectsBalance: true,
+          origin: "landlord_manual",
+        };
+        newEvent = {
+          id: entryId,
+          tenantId: id,
+          label: input.label,
+          amount: input.amount,
+          eventType,
+          affectsBalance: true,
+          origin: "landlord_manual",
+          source: "adjustment",
+          // No forced allocation against a specific charge — same "don't invent historical
+          // allocation" rule the charge-matching design already applies to payments.
+          chargeId: null,
+          idempotencyKey: `${eventType}:${entryId}`,
         };
         const next: Tenant = { ...t, owedAmount: nextOwed, status: nextStatus, ledger: [entry, ...t.ledger] };
         updated = next;
@@ -555,16 +583,28 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
         return next;
       })
     );
-    if (propertyId && updated && newEntry) {
-      void Promise.all([
-        updateTenantRow(propertyId, id, { status: updated.status, owedAmount: updated.owedAmount }),
-        addLedgerEntry(id, newEntry),
-      ])
-        .then(() => showToast(input.amount >= 0 ? "Charge added" : "Credit applied", "success"))
-        .catch((e) => {
+    if (propertyId && updated && newEntry && newEvent) {
+      const finalUpdated = updated;
+      const finalEvent = newEvent;
+      void (async () => {
+        try {
+          await addLedgerEvent(finalEvent);
+
+          let syncResult: { synchronized: boolean } | null = null;
+          try {
+            syncResult = await syncTenantBalanceIfNewModel(id);
+          } catch (e) {
+            console.error("Failed to sync tenant balance after adjustment", e);
+          }
+          if (needsBalanceFallbackWrite(syncResult)) {
+            await updateTenantRow(propertyId, id, { status: finalUpdated.status, owedAmount: finalUpdated.owedAmount });
+          }
+          showToast(input.amount >= 0 ? "Charge added" : "Credit applied", "success");
+        } catch (e) {
           console.error("Failed to add adjustment", e);
           showToast("Couldn't save that change — please try again.", "error");
-        });
+        }
+      })();
     }
   };
 
@@ -572,6 +612,13 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
   // time (see invoiceUtils.ts) — so "waiving" it doesn't touch owedAmount at all; it just resets
   // daysOverdue so the live formula stops accruing it, plus an audit-only ledger row explaining
   // where the K-amount that used to show up went, so it isn't just silently gone from history.
+  // Phase B: the waiver row is audit-only (affects_balance=false) — waiving the live penalty never
+  // touches owedAmount (it never included the penalty to begin with; see the comment above), so
+  // this event must NOT contribute to calculate_tenant_balance's sum. daysOverdue=0 is still the
+  // real effect (stops the live formula from accruing it further) and is written the same way as
+  // before; sync_tenant_balance_if_new_model recomputes days_overdue itself for a new-model tenant
+  // (from the open charge's grace period), so the manual daysOverdue write only actually matters as
+  // the legacy/mixed-tenant fallback.
   const waivePenalty = (id: string, reason: string) => {
     if (!navigator.onLine) {
       showToast("Reconnect to waive a penalty.", "info");
@@ -579,17 +626,35 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
     }
     let updated: Tenant | undefined;
     let newEntry: LedgerRow | undefined;
+    let newEvent: NewLedgerEventInsert | undefined;
     commitTenants((prev) =>
       prev.map((t) => {
         if (t.id !== id) return t;
         const penalty = calcPenalty(t);
         if (penalty <= 0) return t;
+        const entryId = crypto.randomUUID();
+        const label = `Late penalty waived (${t.daysOverdue}d${reason ? `, ${reason}` : ""})`;
         const entry: LedgerRow = {
-          id: crypto.randomUUID(),
-          label: `Late penalty waived (${t.daysOverdue}d${reason ? `, ${reason}` : ""})`,
+          id: entryId,
+          label,
           amount: -penalty,
           source: "adjustment",
           createdAt: new Date().toISOString(),
+          eventType: "adjustment",
+          affectsBalance: false,
+          origin: "landlord_manual",
+        };
+        newEvent = {
+          id: entryId,
+          tenantId: id,
+          label,
+          amount: -penalty,
+          eventType: "adjustment",
+          affectsBalance: false,
+          origin: "landlord_manual",
+          source: "adjustment",
+          chargeId: null,
+          idempotencyKey: `penalty_waiver:${entryId}`,
         };
         // 0, not undefined — tenantPatchToRow only writes daysOverdue to the DB when it's
         // !== undefined, so undefined here would silently no-op instead of actually clearing it.
@@ -599,13 +664,27 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
         return next;
       })
     );
-    if (propertyId && updated && newEntry) {
-      void Promise.all([updateTenantRow(propertyId, id, { daysOverdue: 0 }), addLedgerEntry(id, newEntry)])
-        .then(() => showToast("Late penalty waived", "success"))
-        .catch((e) => {
+    if (propertyId && updated && newEntry && newEvent) {
+      const finalEvent = newEvent;
+      void (async () => {
+        try {
+          await addLedgerEvent(finalEvent);
+
+          let syncResult: { synchronized: boolean } | null = null;
+          try {
+            syncResult = await syncTenantBalanceIfNewModel(id);
+          } catch (e) {
+            console.error("Failed to sync tenant balance after penalty waiver", e);
+          }
+          if (needsBalanceFallbackWrite(syncResult)) {
+            await updateTenantRow(propertyId, id, { daysOverdue: 0 });
+          }
+          showToast("Late penalty waived", "success");
+        } catch (e) {
           console.error("Failed to waive penalty", e);
           showToast("Couldn't save that change — please try again.", "error");
-        });
+        }
+      })();
     }
   };
 
