@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   MagnifyingGlass as SearchIcon,
   UsersThree,
@@ -8,6 +8,9 @@ import {
   Wrench,
   Compass,
   X as CloseIcon,
+  ArrowUp,
+  ArrowDown,
+  ArrowElbowDownLeft,
 } from "@phosphor-icons/react";
 import { useTenants } from "../TenantsContext";
 import { useRooms, roomLabel } from "../RoomsContext";
@@ -36,6 +39,24 @@ const GROUP_ICON: Record<Group, typeof UsersThree> = {
   Pages: Compass,
 };
 
+// Each group gets its own quiet accent so the eye can sort results before it even reads them.
+const GROUP_STYLE: Record<Group, { bg: string; fg: string; ring: string }> = {
+  Tenants: { bg: "bg-blue-50", fg: "text-blue-600", ring: "ring-blue-100" },
+  Rooms: { bg: "bg-violet-50", fg: "text-violet-600", ring: "ring-violet-100" },
+  Maintenance: { bg: "bg-amber-50", fg: "text-amber-600", ring: "ring-amber-100" },
+  Pages: { bg: "bg-slate-100", fg: "text-slate-500", ring: "ring-slate-100" },
+};
+
+const BADGE_STYLE: Record<string, string> = {
+  Paid: "bg-emerald-50 text-emerald-700",
+  Overdue: "bg-red-50 text-red-700",
+  Unpaid: "bg-amber-50 text-amber-700",
+  Partial: "bg-amber-50 text-amber-700",
+  Open: "bg-red-50 text-red-700",
+  "In progress": "bg-amber-50 text-amber-700",
+  Resolved: "bg-emerald-50 text-emerald-700",
+};
+
 const PAGES: { title: string; subtitle: string; to: string }[] = [
   { title: "Dashboard", subtitle: "Overview", to: "/dashboard" },
   { title: "Rent", subtitle: "Rent collection", to: "/rent" },
@@ -50,6 +71,33 @@ const PAGES: { title: string; subtitle: string; to: string }[] = [
   { title: "Occupancy rate", subtitle: "Reports", to: "/reports/occupancy-rate" },
   { title: "Settings", subtitle: "Property settings", to: "/settings" },
 ];
+
+/** Wraps the substring of `text` that matches `query` in a highlight span. */
+function Highlight({ text, query }: { text: string; query: string }) {
+  const q = query.trim();
+  if (!q) return <>{text}</>;
+  const idx = text.toLowerCase().indexOf(q.toLowerCase());
+  if (idx === -1) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="rounded-[3px] bg-brand/15 text-ink px-px font-semibold">
+        {text.slice(idx, idx + q.length)}
+      </mark>
+      {text.slice(idx + q.length)}
+    </>
+  );
+}
+
+const listVariants = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.025 } },
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 6 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.18, ease: [0.22, 1, 0.36, 1] as const } },
+};
 
 export default function GlobalSearch({
   onClose,
@@ -66,6 +114,7 @@ export default function GlobalSearch({
   const navigate = useNavigate();
   const [query, setQuery] = useState(initialQuery);
   const [tab, setTab] = useState<"All" | Group>("All");
+  const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -73,12 +122,8 @@ export default function GlobalSearch({
   }, []);
 
   useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+    setActiveIndex(0);
+  }, [query, tab]);
 
   const allResults = useMemo<ResultItem[]>(() => {
     const q = query.trim().toLowerCase();
@@ -161,6 +206,9 @@ export default function GlobalSearch({
       .filter((g) => g.items.length > 0);
   }, [tab, visible, allResults]);
 
+  // Flat, keyboard-navigable list in the same order the sections render.
+  const flatVisible = useMemo(() => grouped.flatMap((g) => g.items), [grouped]);
+
   const select = (item: ResultItem) => {
     navigate(item.to);
     onNavigate();
@@ -172,6 +220,27 @@ export default function GlobalSearch({
     inputRef.current?.focus();
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveIndex((i) => Math.min(i + 1, flatVisible.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIndex((i) => Math.max(i - 1, 0));
+    } else if (e.key === "Enter" && flatVisible[activeIndex]) {
+      e.preventDefault();
+      select(flatVisible[activeIndex]);
+    }
+  };
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
   const tabs: { key: "All" | Group; label: string; count?: number }[] = [
     { key: "All", label: "All" },
     { key: "Tenants", label: "Tenants", count: counts.Tenants },
@@ -181,133 +250,211 @@ export default function GlobalSearch({
   ];
 
   return (
-    <div className="fixed inset-0 z-60 flex flex-col bg-paper">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.15 }}
+      className="fixed inset-0 z-60 flex flex-col bg-paper/95 backdrop-blur-sm"
+    >
       <motion.div
-        initial={{ y: "-100%" }}
-        animate={{ y: 0 }}
-        exit={{ y: "-100%" }}
+        initial={{ y: -16, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        exit={{ y: -16, opacity: 0 }}
         transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
         className="flex h-full flex-col"
       >
         {/* Header bar — search input sits where the sidebar logo/search icon lives, so opening this
             feels like the trigger simply expanded into a full-screen surface. */}
         <div className="shrink-0 border-b border-line px-4 py-4 sm:px-8">
-          <div className="mx-auto flex max-w-3xl items-center gap-3">
-            <SearchIcon size={22} weight="bold" className="shrink-0 text-muted" />
+          <div className="mx-auto flex max-w-3xl items-center gap-3 rounded-2xl border border-line bg-paper px-4 py-2.5 shadow-sm">
+            <SearchIcon size={20} weight="bold" className="shrink-0 text-muted" />
             <input
               ref={inputRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={handleKeyDown}
               placeholder="Search tenants, rooms, maintenance requests, pages…"
               className="flex-1 bg-transparent text-lg outline-none placeholder:text-muted"
             />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                aria-label="Clear search"
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-mist hover:text-ink"
+              >
+                <CloseIcon size={13} weight="bold" />
+              </button>
+            )}
+            <span className="hidden shrink-0 items-center gap-1 rounded-md border border-line px-1.5 py-0.5 text-[10px] font-medium text-muted sm:flex">
+              esc
+            </span>
             <button
               type="button"
               onClick={onClose}
               aria-label="Close search"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-mist hover:text-ink"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-mist hover:text-ink"
             >
-              <CloseIcon size={18} weight="bold" />
+              <CloseIcon size={16} weight="bold" />
             </button>
           </div>
 
-          {query.trim() !== "" && (
-            <div className="mx-auto mt-4 flex max-w-3xl items-center gap-1 overflow-x-auto">
-              {tabs.map((t) => (
-                <button
-                  key={t.key}
-                  type="button"
-                  onClick={() => setTab(t.key)}
-                  className={`flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
-                    tab === t.key ? "bg-ink text-paper" : "text-muted hover:bg-mist hover:text-ink"
-                  }`}
-                >
-                  {t.label}
-                  {typeof t.count === "number" && t.count > 0 && (
-                    <span className={`text-xs ${tab === t.key ? "text-paper/70" : "text-muted/70"}`}>{t.count}</span>
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
+          <AnimatePresence>
+            {query.trim() !== "" && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.15 }}
+                className="mx-auto mt-3 flex max-w-3xl items-center gap-1 overflow-x-auto"
+              >
+                {tabs.map((t) => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    onClick={() => setTab(t.key)}
+                    className={`flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                      tab === t.key ? "bg-ink text-paper" : "text-muted hover:bg-mist hover:text-ink"
+                    }`}
+                  >
+                    {t.label}
+                    {typeof t.count === "number" && t.count > 0 && (
+                      <span className={`text-xs ${tab === t.key ? "text-paper/70" : "text-muted/70"}`}>{t.count}</span>
+                    )}
+                  </button>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Results */}
         <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-8">
           <div className="mx-auto max-w-3xl">
             {query.trim() === "" && (
-              <p className="py-16 text-center text-sm text-muted">Start typing to search across the whole property account.</p>
+              <div className="flex flex-col items-center py-16 text-center">
+                <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-mist text-muted">
+                  <SearchIcon size={20} weight="bold" />
+                </span>
+                <p className="text-sm text-muted">Start typing to search across the whole property account.</p>
+              </div>
             )}
 
             {query.trim() !== "" && visible.length === 0 && (
-              <p className="py-16 text-center text-sm text-muted">No matches for "{query}".</p>
+              <div className="flex flex-col items-center py-16 text-center">
+                <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-mist text-muted">
+                  <SearchIcon size={20} weight="bold" />
+                </span>
+                <p className="text-sm text-muted">No matches for "{query}".</p>
+              </div>
             )}
 
-            {grouped.map((section) => {
-              const SectionIcon = GROUP_ICON[section.group];
-              return (
-                <div key={section.group} className="mb-6 last:mb-0">
-                  <div className="mb-2 flex items-center justify-between">
-                    <p className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted uppercase">
-                      <SectionIcon size={14} weight="bold" />
-                      {section.group}
-                    </p>
-                    {tab === "All" && counts[section.group] > section.items.length && (
-                      <button
-                        type="button"
-                        onClick={() => setTab(section.group)}
-                        className="text-xs font-medium text-brand hover:underline"
-                      >
-                        View all {counts[section.group]}
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="overflow-hidden rounded-xl border border-line">
-                    {section.items.map((item, i) => {
-                      const ItemIcon = item.icon;
-                      return (
-                        <div
-                          key={item.key}
-                          className={`flex items-center gap-3 px-4 py-3 transition-colors hover:bg-mist ${
-                            i > 0 ? "border-t border-line" : ""
-                          }`}
+            <AnimatePresence mode="popLayout">
+              {grouped.map((section) => {
+                const SectionIcon = GROUP_ICON[section.group];
+                const style = GROUP_STYLE[section.group];
+                return (
+                  <motion.div
+                    key={section.group}
+                    layout
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                    className="mb-6 last:mb-0"
+                  >
+                    <div className="mb-2 flex items-center justify-between">
+                      <p className={`flex items-center gap-1.5 text-xs font-semibold tracking-wide uppercase ${style.fg}`}>
+                        <SectionIcon size={13} weight="bold" />
+                        {section.group}
+                      </p>
+                      {tab === "All" && counts[section.group] > section.items.length && (
+                        <button
+                          type="button"
+                          onClick={() => setTab(section.group)}
+                          className="text-xs font-medium text-brand hover:underline"
                         >
-                          <button type="button" onClick={() => select(item)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
-                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-mist text-muted">
-                              <ItemIcon size={17} weight="duotone" />
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-sm font-medium text-ink">{item.title}</span>
-                              <span className="block truncate text-xs text-muted">{item.subtitle}</span>
-                            </span>
-                          </button>
+                          View all {counts[section.group]}
+                        </button>
+                      )}
+                    </div>
 
-                          {item.group === "Tenants" && !!item.relatedMaintenanceCount && (
-                            <button
-                              type="button"
-                              onClick={() => jumpToMaintenance(item.title)}
-                              className="shrink-0 rounded-full bg-mist px-2.5 py-1 text-[11px] font-medium text-muted transition-colors hover:bg-line"
-                            >
-                              {item.relatedMaintenanceCount} maintenance
+                    <motion.div
+                      variants={listVariants}
+                      initial="hidden"
+                      animate="show"
+                      className="overflow-hidden rounded-xl border border-line bg-paper"
+                    >
+                      {section.items.map((item, i) => {
+                        const ItemIcon = item.icon;
+                        const flatIndex = flatVisible.indexOf(item);
+                        const isActive = flatIndex === activeIndex;
+                        return (
+                          <motion.div
+                            key={item.key}
+                            variants={itemVariants}
+                            onMouseEnter={() => setActiveIndex(flatIndex)}
+                            className={`group flex items-center gap-3 px-4 py-3 transition-colors ${
+                              i > 0 ? "border-t border-line" : ""
+                            } ${isActive ? "bg-mist" : "hover:bg-mist"}`}
+                          >
+                            <button type="button" onClick={() => select(item)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+                              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ring-4 ${style.bg} ${style.fg} ${style.ring}`}>
+                                <ItemIcon size={16} weight="bold" />
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-sm font-medium text-ink">
+                                  <Highlight text={item.title} query={query} />
+                                </span>
+                                <span className="block truncate text-xs text-muted">{item.subtitle}</span>
+                              </span>
                             </button>
-                          )}
 
-                          {item.badge && (
-                            <span className="shrink-0 rounded-full bg-paper px-2 py-0.5 text-[11px] font-medium text-muted">
-                              {item.badge}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
+                            {item.group === "Tenants" && !!item.relatedMaintenanceCount && (
+                              <button
+                                type="button"
+                                onClick={() => jumpToMaintenance(item.title)}
+                                className="shrink-0 rounded-full bg-mist px-2.5 py-1 text-[11px] font-medium text-muted opacity-0 transition-opacity group-hover:opacity-100"
+                              >
+                                {item.relatedMaintenanceCount} maintenance
+                              </button>
+                            )}
+
+                            {item.badge && (
+                              <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${BADGE_STYLE[item.badge] ?? "bg-paper text-muted"}`}>
+                                {item.badge}
+                              </span>
+                            )}
+
+                            {isActive && (
+                              <ArrowElbowDownLeft size={13} weight="bold" className="hidden shrink-0 text-muted/60 sm:block" />
+                            )}
+                          </motion.div>
+                        );
+                      })}
+                    </motion.div>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
           </div>
         </div>
+
+        {/* Keyboard hint footer — quiet, only shows once there's something to navigate. */}
+        {flatVisible.length > 0 && (
+          <div className="hidden shrink-0 items-center justify-center gap-4 border-t border-line py-2.5 text-xs text-muted sm:flex">
+            <span className="flex items-center gap-1">
+              <ArrowUp size={12} weight="bold" />
+              <ArrowDown size={12} weight="bold" /> navigate
+            </span>
+            <span className="flex items-center gap-1">
+              <ArrowElbowDownLeft size={12} weight="bold" /> select
+            </span>
+            <span className="flex items-center gap-1">esc close</span>
+          </div>
+        )}
       </motion.div>
-    </div>
+    </motion.div>
   );
 }

@@ -1,4 +1,4 @@
-import { cloneElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { AnimatePresence, motion, type Variants } from "framer-motion";
 import {
@@ -168,14 +168,24 @@ function AssistantMarkdown({ content, trailingCaret }: { content: string; traili
   if (trailingCaret && blocks.length > 0) {
     const lastIndex = blocks.length - 1;
     const last = blocks[lastIndex];
-    if (last.type === "p") {
-      const children = Array.isArray(last.props.children) ? last.props.children : [last.props.children];
-      blocks[lastIndex] = cloneElement(last, null, ...children, trailingCaret);
+    const lastParagraph =
+      last.type === "p" ? (last as React.ReactElement<{ children?: React.ReactNode }, "p">) : null;
+
+    if (lastParagraph) {
+      blocks[lastIndex] = (
+        <p key={lastParagraph.key ?? `p-${lastIndex}`}>
+          {lastParagraph.props.children}
+          {trailingCaret}
+        </p>
+      );
     } else {
-      blocks.push(<p key="caret-line">{trailingCaret}</p>);
+      blocks.push(
+        <p key="caret-line">
+          {trailingCaret}
+        </p>
+      );
     }
   }
-
   return <div className="space-y-2">{blocks}</div>;
 }
 

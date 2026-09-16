@@ -173,6 +173,7 @@ export function useAssistant(tenantId?: string) {
           return;
         }
       }
+      if (!activeId) return;
       const requestConversationId = activeId;
 
       setTurns((prev) => [...prev, { id: crypto.randomUUID(), role: "user", content: trimmed, createdAt: new Date().toISOString() }]);
