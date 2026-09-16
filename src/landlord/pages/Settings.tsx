@@ -258,8 +258,8 @@ export default function Settings() {
                 label="Property name"
                 desc={
                   propertyNameChangesRemaining > 0
-                    ? `Used across the dashboard — tenants added on the Tenants page are assigned to this property automatically. You can change this ${propertyNameChangesRemaining} more time${propertyNameChangesRemaining === 1 ? "" : "s"}.`
-                    : "You've used all 3 name changes for this property — contact us if it needs to change again."
+                    ? `Used across the dashboard - tenants added on the Tenants page are assigned to this property automatically. You can change this ${propertyNameChangesRemaining} more time${propertyNameChangesRemaining === 1 ? "" : "s"}.`
+                    : "You've used all 3 name changes for this property - contact us if it needs to change again."
                 }
               >
                 <input
@@ -315,7 +315,7 @@ export default function Settings() {
                     <p className="mt-0.5 text-xs text-muted">K{currentTier.monthlyPriceK}/month</p>
                   </div>
                 ) : (
-                  <p className="text-sm font-medium text-ink">{subscriptionPlan || "—"}</p>
+                  <p className="text-sm font-medium text-ink">{subscriptionPlan || "-"}</p>
                 )}
               </Row>
             </SettingsPanel>
@@ -324,7 +324,7 @@ export default function Settings() {
           {activeGroup.label === "Billing & rent" && (
             <>
               <SettingsPanel>
-                <Row label="Billing period" desc="Fixed at monthly — not configurable.">
+                <Row label="Billing period" desc="Fixed at monthly - not configurable.">
                   <p className="text-sm font-medium text-ink">{billingPeriod}</p>
                 </Row>
                 <Row label="Due date" desc="Day of the month rent is due.">
@@ -423,13 +423,13 @@ export default function Settings() {
                 <SectionLabel>SMS alerts</SectionLabel>
               </div>
               <SettingsPanel>
-                <Row label="Alert phone number" desc="Where SMS alerts are sent — can be different from the phone number shown on invoices.">
+                <Row label="Alert phone number" desc="Where SMS alerts are sent.">
                   <PhoneNumberInput
                     value={notificationPhone}
                     onChange={(v) => { setNotificationPhone(v); flash(); }}
                   />
                 </Row>
-                <Row label="Payment summaries" desc="Sends an SMS only when there's new payment activity — payments are grouped into a summary, never sent one by one.">
+                <Row label="Payment summaries" desc="Sends an SMS only when there's new payment activity - payments are grouped into a summary, never sent one by one.">
                   <div className="flex gap-2">
                     {paymentSmsModes.map((m) => (
                       <button
@@ -465,7 +465,7 @@ export default function Settings() {
                 <Row label="Welcome SMS for new tenants" desc="Sends the tenant a welcome message with their portal link when they're added.">
                   <Toggle checked={sendOnboardingSms} onChange={(v) => { setSendOnboardingSms(v); flash(); }} />
                 </Row>
-                <Row label="Payment receipt SMS" desc="Sends the tenant a receipt with their new outstanding balance after any payment — online or logged manually.">
+                <Row label="Payment receipt SMS" desc="Sends the tenant a receipt with their new outstanding balance after any payment - online or logged manually.">
                   <Toggle checked={sendPaymentReceiptSms} onChange={(v) => { setSendPaymentReceiptSms(v); flash(); }} />
                 </Row>
               </SettingsPanel>
