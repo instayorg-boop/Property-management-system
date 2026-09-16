@@ -9,6 +9,7 @@ import {
   deleteExpenseRow,
   insertCategory,
   updateCategoryRow,
+  deleteCategoryRow,
   type Category,
   type Expense,
 } from "../lib/expenses";
@@ -30,6 +31,7 @@ type ExpensesContextValue = {
   addCategory: (name: string) => Category;
   renameCategory: (id: string, name: string) => void;
   setCategoryActive: (id: string, active: boolean) => void;
+  deleteCategory: (id: string) => void;
   categoryName: (id: string) => string;
 };
 
@@ -135,11 +137,24 @@ export function ExpensesProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  // Only ever invoked for a category with zero expenses against it — the modal that calls this
+  // hides the delete action otherwise (see ManageCategoriesModal), so this stays a plain
+  // optimistic remove rather than needing to worry about orphaning real expense records.
+  const deleteCategory = (id: string) => {
+    const removed = categories.find((c) => c.id === id);
+    setCategories((prev) => prev.filter((c) => c.id !== id));
+    void deleteCategoryRow(id).catch((err) => {
+      console.error("Failed to delete category", err);
+      if (removed) setCategories((prev) => [...prev, removed]);
+      showToast("Couldn't delete that category — please try again.", "error");
+    });
+  };
+
   const categoryName = (id: string) => categories.find((c) => c.id === id)?.name ?? "Uncategorized";
 
   return (
     <ExpensesContext.Provider
-      value={{ expenses, categories, isReady, addExpense, updateExpense, deleteExpense, addCategory, renameCategory, setCategoryActive, categoryName }}
+      value={{ expenses, categories, isReady, addExpense, updateExpense, deleteExpense, addCategory, renameCategory, setCategoryActive, deleteCategory, categoryName }}
     >
       {children}
     </ExpensesContext.Provider>

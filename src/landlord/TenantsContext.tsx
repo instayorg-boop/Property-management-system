@@ -52,7 +52,14 @@ type TenantsContextValue = {
   tenants: Tenant[];
   /** False until the initial Supabase fetch resolves — pages use this to show skeletons instead of an empty state. */
   isReady: boolean;
-  addTenant: (t: Omit<Tenant, "id">) => Tenant;
+  /** Returns the new tenant immediately (for optimistic UI / its id), plus `saved` — a promise
+   * that resolves once the INSERT actually commits. A caller that needs to write anything that
+   * depends on this tenant already existing in the DB (a ledger row via `updateTenant`/
+   * `logPayment`, which has a `tenant_id` FK) must await `saved` first — those writes and the
+   * INSERT above used to fire concurrently with no ordering guarantee, so the dependent write
+   * could reach Postgres before the tenant row committed and fail the FK check silently after
+   * the caller had already navigated away. */
+  addTenant: (t: Omit<Tenant, "id">) => Tenant & { saved: Promise<void> };
   updateTenant: (id: string, patch: Partial<Omit<Tenant, "id">>) => void;
   deleteTenant: (id: string) => void;
   moveOutTenant: (id: string, details: { moveOutDate: string; depositStatus: DepositStatus; depositResolutionNote: string }) => void;
@@ -161,13 +168,25 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
   // another landlord's payments land.
   useEffect(() => {
     if (!propertyId) return;
+    // One logical action (log payment, add adjustment, void) writes to `ledger_entries` and then
+    // `tenants` as separate sequential statements — each lands its own postgres_changes event, so
+    // an unguarded refetch here fires 2-3 near-simultaneous full-list refetches per action, each
+    // replacing the whole array and re-rendering everything reading useTenants(). That's the
+    // "flicker": an in-between refetch can land after the ledger write but before the tenants
+    // balance write, painting a stale intermediate state for one render before the next refetch
+    // corrects it. Debouncing collapses a burst of events (well within one action's round trip)
+    // into a single refetch of the settled state.
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const refetch = () => {
-      void listTenants(propertyId, propertyName)
-        .then((rows) => {
-          setTenants(rows);
-          void writeCachedView(TENANTS_VIEW_KEY, propertyId, rows);
-        })
-        .catch((e) => console.error("Failed to refresh tenants after a live update", e));
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        void listTenants(propertyId, propertyName)
+          .then((rows) => {
+            setTenants(rows);
+            void writeCachedView(TENANTS_VIEW_KEY, propertyId, rows);
+          })
+          .catch((e) => console.error("Failed to refresh tenants after a live update", e));
+      }, 250);
     };
     const channel = supabase
       .channel(`tenants-ledger:${propertyId}`)
@@ -175,28 +194,34 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "ledger_entries" }, refetch)
       .subscribe();
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       void supabase.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [propertyId]);
 
-  const addTenant = (t: Omit<Tenant, "id">): Tenant => {
+  const addTenant = (t: Omit<Tenant, "id">): Tenant & { saved: Promise<void> } => {
     const tenant: Tenant = { ...t, id: crypto.randomUUID(), portalToken: t.portalToken ?? generatePortalToken() };
     commitTenants((prev) => [tenant, ...prev]);
+    let saved: Promise<void>;
     if (propertyId) {
-      void insertTenant(propertyId, tenant.id, tenant)
-        .then(() => showToast(`${t.name || "Tenant"} added`, "success"))
+      saved = insertTenant(propertyId, tenant.id, tenant)
+        .then(() => {
+          showToast(`${t.name || "Tenant"} added`, "success");
+        })
         .catch((e) => {
           console.error("Failed to save tenant", e);
           commitTenants((prev) => prev.filter((x) => x.id !== tenant.id));
           showToast(`Couldn't save ${t.name || "this tenant"} — please try again.`, "error");
+          throw e;
         });
     } else {
       // propertyId isn't loaded yet, so this save has nowhere to go — don't let it disappear silently on reload.
       commitTenants((prev) => prev.filter((x) => x.id !== tenant.id));
       showToast(`Couldn't save ${t.name || "this tenant"} — the app is still loading. Please wait a moment and try again.`, "error");
+      saved = Promise.reject(new Error("propertyId not loaded"));
     }
-    return tenant;
+    return { ...tenant, saved };
   };
 
   const updateTenant = (id: string, patch: Partial<Omit<Tenant, "id">>) => {
@@ -507,6 +532,15 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
             await updateTenantRow(propertyId, id, tenantPatch);
           }
 
+          // Fire-and-forget, after the balance write above has landed — send-payment-receipt-sms
+          // reads tenants.owed_amount fresh, so this must come after the sync/fallback write, not
+          // before, or the receipt would quote the tenant's pre-payment balance.
+          payments.forEach(({ amount }) => {
+            void supabase.functions
+              .invoke("send-payment-receipt-sms", { body: { tenantId: id, amount } })
+              .catch((e) => console.error("Failed to send payment receipt SMS", e));
+          });
+
           showToast(newEvents.length > 1 ? "Payments logged" : "Payment logged", "success");
         } catch (e) {
           console.error("Failed to log payment", e);
@@ -634,6 +668,16 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
         if (penalty <= 0) return t;
         const entryId = crypto.randomUUID();
         const label = `Late penalty waived (${t.daysOverdue}d${reason ? `, ${reason}` : ""})`;
+        // The charge this penalty is actually accruing against — the same open-rent-charge lookup
+        // sync_tenant_balance_if_new_model itself uses (most recent due date among charges still
+        // owing something). Linking the waiver to it (via charge_id, origin='penalty_waiver') is
+        // what lets that RPC recognize the waiver and stop recomputing overdue days from the
+        // charge's original grace period alone — without this link, the sync call this function
+        // triggers right after would immediately recompute the same overdue days and undo the
+        // waiver before it ever reached the screen.
+        const openCharge = [...t.ledger]
+          .filter((row) => row.eventType === "charge" && row.status !== "paid")
+          .sort((a, b) => (b.dueDate ?? "").localeCompare(a.dueDate ?? ""))[0];
         const entry: LedgerRow = {
           id: entryId,
           label,
@@ -642,7 +686,8 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
           createdAt: new Date().toISOString(),
           eventType: "adjustment",
           affectsBalance: false,
-          origin: "landlord_manual",
+          origin: "penalty_waiver",
+          chargeId: openCharge?.id ?? null,
         };
         newEvent = {
           id: entryId,
@@ -651,9 +696,9 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
           amount: -penalty,
           eventType: "adjustment",
           affectsBalance: false,
-          origin: "landlord_manual",
+          origin: "penalty_waiver",
           source: "adjustment",
-          chargeId: null,
+          chargeId: openCharge?.id ?? null,
           idempotencyKey: `penalty_waiver:${entryId}`,
         };
         // 0, not undefined — tenantPatchToRow only writes daysOverdue to the DB when it's

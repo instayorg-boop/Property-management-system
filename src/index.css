@@ -30,6 +30,11 @@
 
 html {
   scroll-behavior: smooth;
+  /* Reserves the vertical scrollbar's width permanently instead of only when content is tall
+     enough to need it — without this, switching between a short page/tab and a tall one toggles
+     the scrollbar on/off, which shifts the entire page's available width and visibly nudges
+     everything (including anything mid-animation, like a sliding tab underline) left or right. */
+  scrollbar-gutter: stable;
 }
 
 body {
@@ -92,85 +97,167 @@ body {
   --chart-series-8: #e66767;
 }
 
-/* Tactile "raised" SaaS button — subtle surface gradient + inset highlight + a distinct lower
-   edge (the 0 2px 0 shadow) that reads as a physical lip, topped with a soft ambient shadow. */
+/* Flat SaaS button — solid surface (no gradient), no "lip" offset shadow — but keeps a subtle
+   inset bezel highlight for a touch of tactile depth, plus the same lift-on-hover/press-on-click
+   feel as before. */
 .raised-btn {
-  background: linear-gradient(180deg, #fbfbfc 0%, #f1f1f4 50%, #e9e9ee 100%);
-  border: 1px solid #ffffff;
+  background: #f1f1f4;
+  border: 1px solid #e3e3e8;
   box-shadow:
     inset 0 1px 1px rgba(255, 255, 255, 0.9),
     inset 0 -1px 1px rgba(0, 0, 0, 0.04),
-    0 2px 0 #d2d2d8,
-    0 7px 18px rgba(0, 0, 0, 0.1);
-  transition: transform 120ms ease, box-shadow 120ms ease;
+    0 1px 2px rgba(0, 0, 0, 0.06);
+  transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
 }
 .raised-btn:hover {
   transform: translateY(-1px);
+  background: #e9e9ee;
   box-shadow:
     inset 0 1px 1px rgba(255, 255, 255, 0.9),
     inset 0 -1px 1px rgba(0, 0, 0, 0.04),
-    0 3px 0 #d2d2d8,
-    0 9px 20px rgba(0, 0, 0, 0.12);
+    0 4px 10px rgba(0, 0, 0, 0.1);
 }
 .raised-btn:active {
-  transform: translateY(2px);
+  transform: translateY(1px);
   box-shadow:
     inset 0 1px 2px rgba(0, 0, 0, 0.12),
-    0 1px 0 rgba(0, 0, 0, 0.06);
+    0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
 .theme-dark .raised-btn {
-  background: linear-gradient(180deg, #303033 0%, #29292c 50%, #222225 100%);
+  background: #2a2a2d;
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow:
     inset 0 1px 1px rgba(255, 255, 255, 0.06),
     inset 0 -1px 1px rgba(0, 0, 0, 0.3),
-    0 2px 0 #17171a,
-    0 7px 18px rgba(0, 0, 0, 0.35);
+    0 1px 2px rgba(0, 0, 0, 0.3);
 }
 .theme-dark .raised-btn:hover {
+  background: #323235;
   box-shadow:
     inset 0 1px 1px rgba(255, 255, 255, 0.06),
     inset 0 -1px 1px rgba(0, 0, 0, 0.3),
-    0 3px 0 #17171a,
-    0 9px 20px rgba(0, 0, 0, 0.4);
+    0 4px 10px rgba(0, 0, 0, 0.35);
 }
 .theme-dark .raised-btn:active {
   box-shadow:
     inset 0 1px 2px rgba(0, 0, 0, 0.4),
-    0 1px 0 rgba(0, 0, 0, 0.2);
+    0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
-/* Same tactile construction as .raised-btn, in brand color for a primary CTA. */
+/* Same flat construction as .raised-btn, in brand color for a primary CTA. */
 .raised-btn-brand {
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--color-brand) 78%, white) 0%,
-    var(--color-brand) 55%,
-    color-mix(in srgb, var(--color-brand) 88%, black) 100%
-  );
-  border: 1px solid color-mix(in srgb, var(--color-brand) 60%, white);
+  background: var(--color-brand);
+  border: 1px solid color-mix(in srgb, var(--color-brand) 85%, black);
   color: #fff;
   box-shadow:
     inset 0 1px 1px rgba(255, 255, 255, 0.35),
     inset 0 -1px 1px rgba(0, 0, 0, 0.15),
-    0 2px 0 color-mix(in srgb, var(--color-brand) 92%, black),
-    0 7px 18px rgba(30, 58, 138, 0.35);
-  transition: transform 120ms ease, box-shadow 120ms ease;
+    0 1px 2px rgba(30, 58, 138, 0.25);
+  transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
 }
 .raised-btn-brand:hover {
   transform: translateY(-1px);
+  background: color-mix(in srgb, var(--color-brand) 90%, black);
   box-shadow:
     inset 0 1px 1px rgba(255, 255, 255, 0.35),
     inset 0 -1px 1px rgba(0, 0, 0, 0.15),
-    0 3px 0 color-mix(in srgb, var(--color-brand) 92%, black),
-    0 9px 20px rgba(30, 58, 138, 0.4);
+    0 4px 12px rgba(30, 58, 138, 0.35);
 }
 .raised-btn-brand:active {
-  transform: translateY(2px);
+  transform: translateY(1px);
   box-shadow:
     inset 0 1px 2px rgba(0, 0, 0, 0.25),
-    0 1px 0 rgba(0, 0, 0, 0.15);
+    0 1px 2px rgba(30, 58, 138, 0.25);
+}
+
+/* Same flat-with-bezel construction as .raised-btn, in amber for a penalty/overdue-tied action
+   ("Waive penalty") — without this, a plain border+background utility class reads as noticeably
+   flatter than the primary/secondary buttons sitting right next to it. */
+.raised-btn-warning {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #b45309;
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.6),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.03),
+    0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+}
+.raised-btn-warning:hover {
+  transform: translateY(-1px);
+  background: #fef3c7;
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.6),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.03),
+    0 4px 10px rgba(180, 83, 9, 0.15);
+}
+.raised-btn-warning:active {
+  transform: translateY(1px);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.08),
+    0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.theme-dark .raised-btn-warning {
+  background: rgba(180, 83, 9, 0.15);
+  border: 1px solid rgba(217, 119, 6, 0.4);
+  color: #fbbf24;
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.05),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.2),
+    0 1px 2px rgba(0, 0, 0, 0.25);
+}
+.theme-dark .raised-btn-warning:hover {
+  background: rgba(180, 83, 9, 0.22);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.05),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.2),
+    0 4px 10px rgba(0, 0, 0, 0.3);
+}
+.theme-dark .raised-btn-warning:active {
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.3),
+    0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+/* A floating action button sitting directly on the page background (the assistant trigger) needs
+   real elevation, not the subtle desk-level shadow raised-btn uses for buttons that sit flush
+   inside a toolbar/form — without it a white circle on a near-white page reads as flat, like it's
+   printed on the background rather than floating above it. */
+/* Transform (hover lift / press) is driven by the trigger's own whileHover/whileTap in
+   AssistantPanel.tsx, not here — this class only owns the shadow so the two never fight over the
+   same property. */
+.floating-elevated {
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.9),
+    0 2px 6px rgba(0, 0, 0, 0.12),
+    0 10px 28px rgba(0, 0, 0, 0.22);
+  transition: box-shadow 120ms ease;
+}
+.floating-elevated:hover {
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.9),
+    0 3px 8px rgba(0, 0, 0, 0.14),
+    0 14px 34px rgba(0, 0, 0, 0.28);
+}
+.floating-elevated:active {
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.12),
+    0 2px 6px rgba(0, 0, 0, 0.12),
+    0 10px 28px rgba(0, 0, 0, 0.22);
+}
+.theme-dark .floating-elevated {
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.06),
+    0 2px 6px rgba(0, 0, 0, 0.4),
+    0 10px 28px rgba(0, 0, 0, 0.5);
+}
+.theme-dark .floating-elevated:hover {
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.06),
+    0 3px 8px rgba(0, 0, 0, 0.45),
+    0 14px 34px rgba(0, 0, 0, 0.55);
 }
 
 /* Scrollable list with no visible scrollbar track (still scrolls via wheel/touch/keyboard). */
@@ -195,6 +282,27 @@ body {
 }
 .pay-step {
   animation: pay-step-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Text-insertion-point caret at the end of an assistant reply that's still being revealed — a
+   deliberately small, quiet blink rather than a block cursor, so it reads as "still being written"
+   without calling attention to itself. */
+@keyframes caret-blink {
+  0%, 45% {
+    opacity: 1;
+  }
+  50%, 95% {
+    opacity: 0;
+  }
+}
+.streaming-caret {
+  display: inline-block;
+  width: 1.5px;
+  height: 1em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background-color: currentColor;
+  animation: caret-blink 1s step-end infinite;
 }
 
 /* Apple-style 12-blade activity indicator. */

@@ -3,7 +3,7 @@ import { Wallet } from "@phosphor-icons/react";
 import { usePayoutSummary } from "../usePayoutSummary";
 import { useIsOwner } from "../useIsOwner";
 
-/** Compact "K[amount] ready · Online payments" pill for the Accounting page header — the fast path
+/** Compact "K[amount] ready · Online payments" pill for the Expense Tracker page header — the fast path
  * to the dedicated Online payments page (/online-payments), where balance, method switching, and
  * the actual withdraw flow all live now (see that page's file comment for why it replaced opening
  * PayoutDetailDrawer directly from here). A small red dot appears if the most recent transfer

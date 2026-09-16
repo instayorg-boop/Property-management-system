@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import Sidebar from "./Sidebar";
-import TopBar from "./TopBar";
+import Header from "./Header";
 import { ThemeProvider, useTheme } from "../ThemeContext";
 import { ToastProvider } from "../ToastContext";
 import { ExpensesProvider } from "../ExpensesContext";
@@ -11,11 +11,13 @@ import { TenantsProvider } from "../TenantsContext";
 import { RoomsProvider } from "../RoomsContext";
 import { MaintenanceProvider } from "../MaintenanceContext";
 import { SettingsProvider } from "../SettingsContext";
+import { NotificationsProvider } from "../NotificationsContext";
 import { InvoicesProvider } from "../InvoicesContext";
 import { SidebarProvider, useSidebar } from "../SidebarContext";
 import ProductTour from "./ProductTour";
 import SyncToast from "./SyncToast";
 import { SyncStatusBadge } from "./SyncStatus";
+import AssistantPanel from "../../components/AssistantPanel";
 
 const FOCUSABLE_SELECTOR = 'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
 
@@ -69,6 +71,10 @@ function Shell() {
 
   return (
     <div className={`flex h-screen flex-col overflow-hidden ${isDark ? "theme-dark" : ""}`}>
+      {/* Full-width header spans the whole viewport, above both the sidebar and the content —
+          logo, search and account all live here rather than being boxed into the sidebar column. */}
+      <Header />
+
       {/* Standard full-bleed dashboard shell: sidebar and content sit flush, edge to edge, no
           outer padding, no rounded/bordered frame around the pair — just plain colour contrast
           (gray sidebar, white content) doing the separating. */}
@@ -82,11 +88,11 @@ function Shell() {
         )}
         <Sidebar ref={drawerRef} />
 
-        <main ref={mainRef} className="flex-1 overflow-y-auto bg-paper">
-          {/* Floating, fixed-position mobile menu trigger + notifications bell — they sit in line
-              with each page's PageHeader title row but stay put on scroll instead of scrolling
-              away with the page. The account menu lives in the sidebar, same as always. */}
-          <TopBar />
+        {/* scrollbar-gutter: stable — this is the actual scrolling container (the page never
+            scrolls), so a page like Settings whose content height changes when you switch tabs
+            would otherwise toggle this scrollbar on/off, shifting everything inside horizontally
+            (including anything mid-animation, like the Settings tab bar's sliding underline). */}
+        <main ref={mainRef} className="flex-1 overflow-y-auto bg-mist" style={{ scrollbarGutter: "stable" }}>
           {/*
             No AnimatePresence/exit here on purpose: waiting for the old page to fade out before
             mounting the new one (mode="wait") left a gap where the old page's height had already
@@ -107,6 +113,9 @@ function Shell() {
       <ProductTour />
       <SyncToast />
       <SyncStatusBadge />
+      {/* Assistant widget — read-only chat, lives on every dashboard page (never on the public
+          tenant payment portal, which has its own separate layout tree entirely). */}
+      <AssistantPanel />
     </div>
   );
 }
@@ -116,21 +125,23 @@ export default function DashboardLayout() {
     <ThemeProvider>
       <ToastProvider>
         <SettingsProvider>
-          <ExpensesProvider>
-            <StaffProvider>
-              <TenantsProvider>
-                <RoomsProvider>
-                  <MaintenanceProvider>
-                    <InvoicesProvider>
-                      <SidebarProvider>
-                        <Shell />
-                      </SidebarProvider>
-                    </InvoicesProvider>
-                  </MaintenanceProvider>
-                </RoomsProvider>
-              </TenantsProvider>
-            </StaffProvider>
-          </ExpensesProvider>
+          <NotificationsProvider>
+            <ExpensesProvider>
+              <StaffProvider>
+                <TenantsProvider>
+                  <RoomsProvider>
+                    <MaintenanceProvider>
+                      <InvoicesProvider>
+                        <SidebarProvider>
+                          <Shell />
+                        </SidebarProvider>
+                      </InvoicesProvider>
+                    </MaintenanceProvider>
+                  </RoomsProvider>
+                </TenantsProvider>
+              </StaffProvider>
+            </ExpensesProvider>
+          </NotificationsProvider>
         </SettingsProvider>
       </ToastProvider>
     </ThemeProvider>

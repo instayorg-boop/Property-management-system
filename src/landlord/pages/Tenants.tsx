@@ -21,6 +21,16 @@ function TrashIcon() {
  * different state (not just "behind on rent"), and needs to read as such at a glance. */
 const movedOutStyle = "bg-red-50 text-red-600";
 
+/** move_in_date/move_out_date are stored as free-text (whatever was typed, or an ISO date from a
+ * seed/import) rather than one fixed format — reformats to "1 Aug 2026" for display wherever it's
+ * parseable, falling back to the raw stored string rather than hiding it when it isn't. */
+function formatDisplayDate(value: string | null | undefined): string {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
 export default function Tenants() {
   const { tenants, isReady, deleteTenant } = useTenants();
   const navigate = useNavigate();
@@ -160,7 +170,7 @@ export default function Tenants() {
                   <div>
                     <p className="font-display font-semibold text-ink">{formatCurrency(t.rentAmount)}</p>
                     <p className="mt-0.5 text-xs text-muted">
-                      {t.active ? `Moved in ${t.moveInDate}` : `Moved out ${t.moveOutDate ?? ""}`}
+                      {t.active ? `Moved in ${formatDisplayDate(t.moveInDate)}` : `Moved out ${formatDisplayDate(t.moveOutDate)}`}
                     </p>
                   </div>
                   <div className="flex items-center gap-4">
@@ -239,7 +249,7 @@ export default function Tenants() {
                       <p className="text-ink">{t.roomType}</p>
                       <p className="mt-0.5 text-muted">{t.room}</p>
                     </td>
-                    <td className="px-6 py-4 text-muted">{t.moveInDate}</td>
+                    <td className="px-6 py-4 text-muted">{formatDisplayDate(t.moveInDate)}</td>
                     <td className="font-display px-6 py-4 font-medium text-ink">{formatCurrency(t.rentAmount)}</td>
                     <td className="px-6 py-4">
                       <span

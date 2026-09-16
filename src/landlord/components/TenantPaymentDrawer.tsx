@@ -4,6 +4,7 @@ import SlideOver from "./SlideOver";
 import Button from "./Button";
 import { useTenants, formatCurrency, type Tenant } from "../TenantsContext";
 import { useSettings } from "../SettingsContext";
+import { calcTotalOwed } from "../invoiceUtils";
 
 function monthLabel(date: Date) {
   return date.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
@@ -70,6 +71,7 @@ export default function TenantPaymentDrawer({
   const nextDue = dueDateIn(today.getFullYear(), today.getMonth() + 1, dueDay);
   const currentDue = dueDateIn(today.getFullYear(), today.getMonth(), dueDay);
   const overdueSince = tenant.daysOverdue ? new Date(today.getTime() - tenant.daysOverdue * 86400000) : null;
+  const totalOwed = calcTotalOwed(tenant);
 
   return (
     <SlideOver
@@ -104,11 +106,12 @@ export default function TenantPaymentDrawer({
             {paidUp
               ? `Paid up for ${monthLabel(today)}`
               : overdueSince
-                ? `${formatCurrency(tenant.owedAmount)} overdue since ${formatDate(overdueSince)}`
-                : `${formatCurrency(tenant.owedAmount)} due`}
+                ? `${formatCurrency(totalOwed)} overdue since ${formatDate(overdueSince)}`
+                : `${formatCurrency(totalOwed)} due`}
           </p>
           <p className={`mt-0.5 text-xs ${paidUp ? "text-emerald-700/70" : "text-amber-700/70"}`}>
             {paidUp ? `Next due ${formatDate(nextDue)}` : overdueSince ? `${tenant.daysOverdue} days overdue` : `Due ${formatDate(currentDue)}`}
+            {!paidUp && totalOwed > tenant.owedAmount && ` · includes ${formatCurrency(totalOwed - tenant.owedAmount)} late penalty`}
           </p>
         </div>
         <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${paidUp ? "bg-emerald-100 text-emerald-600" : "bg-amber-100 text-amber-600"}`}>
@@ -187,9 +190,9 @@ export default function TenantPaymentDrawer({
       <div className="mt-1 divide-y divide-line">
         {filteredLedger.length === 0 && <p className="py-4 text-sm text-muted">No payments recorded yet.</p>}
         {visibleLedger.map((row, i) => (
-          <div key={`${row.label}-${i}`} className="flex items-center justify-between py-2.5">
+          <div key={`${row.label}-${i}`} className={`flex items-center justify-between py-2.5 ${row.voidedAt ? "opacity-50" : ""}`}>
             <div className="flex items-center gap-1.5">
-              <span className="text-sm text-ink">{row.label}</span>
+              <span className={`text-sm text-ink ${row.voidedAt ? "line-through" : ""}`}>{row.label}</span>
               {/* Matches both wordings — older ledger rows were labeled "pro-rata" before that was
                   reworded to "partial month" for tenants who didn't recognize the term. */}
               {(row.label.toLowerCase().includes("pro-rata") || row.label.toLowerCase().includes("partial month")) && (
@@ -205,10 +208,14 @@ export default function TenantPaymentDrawer({
               <span className="text-sm text-muted">
                 {row.paidAmount !== undefined ? `${formatCurrency(row.paidAmount)} of ${formatCurrency(row.amount)}` : formatCurrency(row.amount)}
               </span>
-              {row.status && (
-                <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${ledgerStatusStyle[row.status]}`}>
-                  {ledgerStatusLabel[row.status]}
-                </span>
+              {row.voidedAt ? (
+                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500">Voided</span>
+              ) : (
+                row.status && (
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${ledgerStatusStyle[row.status]}`}>
+                    {ledgerStatusLabel[row.status]}
+                  </span>
+                )
               )}
             </div>
           </div>

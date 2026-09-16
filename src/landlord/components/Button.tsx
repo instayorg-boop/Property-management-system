@@ -1,6 +1,6 @@
 import { forwardRef, type ButtonHTMLAttributes } from "react";
 
-export type ButtonVariant = "primary" | "secondary" | "outline" | "danger" | "dangerSolid" | "ghost";
+export type ButtonVariant = "primary" | "secondary" | "outline" | "danger" | "dangerSolid" | "warning" | "ghost";
 export type ButtonSize = "sm" | "md";
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -26,6 +26,12 @@ const variantCls: Record<ButtonVariant, string> = {
   // generated CSS order isn't the same as the className string's order, which could render as
   // illegible red-on-red. This variant is the CSS itself, no override needed.
   dangerSolid: "bg-red-600 text-paper transition-colors hover:bg-red-700",
+  // For an action tied to a penalty/overdue state (e.g. "Waive penalty") — the same amber used
+  // for penalty/overdue styling elsewhere, so it reads as distinct from a neutral secondary action
+  // rather than looking identical to every other gray button next to it. Same tactile bezel/shadow
+  // treatment as raised-btn/raised-btn-brand (see .raised-btn-warning) so it doesn't look flat
+  // sitting next to them.
+  warning: "raised-btn-warning",
   ghost: "text-muted transition-colors hover:bg-mist hover:text-ink",
 };
 
@@ -42,7 +48,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
     <button
       ref={ref}
       type={type}
-      className={`inline-flex items-center justify-center gap-1.5 rounded-lg font-medium disabled:cursor-not-allowed disabled:opacity-50 ${sizeCls[size]} ${variantCls[variant]} ${className}`}
+      className={`inline-flex items-center justify-center gap-1.5 rounded-md font-medium disabled:cursor-not-allowed disabled:opacity-50 ${sizeCls[size]} ${variantCls[variant]} ${className}`}
       {...props}
     />
   );

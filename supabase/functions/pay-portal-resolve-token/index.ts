@@ -51,7 +51,10 @@ Deno.serve(async (req) => {
 
   const { data: tenant } = await supabase
     .from("tenants")
-    .select("id, name, phone, phones, property_id, active, rooms(number), properties(slug)")
+    // Disambiguated to the tenant's own room (tenants.room_id -> rooms.id) — rooms also has a
+    // reserved_for_tenant_id FK back to tenants (added by the room-reservations migration), which
+    // makes a plain `rooms(number)` embed ambiguous and PostgREST reject it with PGRST201/300.
+    .select("id, name, phone, phones, property_id, active, rooms!tenants_room_id_fkey(number), properties(slug)")
     .eq("portal_token", token)
     .maybeSingle();
 

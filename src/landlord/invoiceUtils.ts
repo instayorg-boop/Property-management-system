@@ -44,19 +44,26 @@ export function dailyRentRate(tenant: Tenant, now: Date = new Date()): number {
   return tenant.rentAmount / daysInMonth(now.getFullYear(), now.getMonth());
 }
 
-/** Late penalty accrued so far — days overdue × this tenant's own daily rent rate (see
- * `dailyRentRate`), the one place this formula lives so invoicing and any other "what do they owe
- * right now" view stay in sync. */
+/** Late penalty accrued so far — days overdue × the daily rate for that rent amount (rent /
+ * days-in-month). The one canonical formula so invoicing, the landlord's Rent list, and the
+ * tenant payment portal (see payPortal.ts's calcPortalPenalty, which mirrors this for the
+ * differently-shaped PortalTenant/DB row) all agree on what's owed right now. */
+export function calcLatePenalty(rentAmount: number, daysOverdue: number | undefined, now: Date = new Date()): number {
+  return daysOverdue && daysOverdue > 0 ? Math.round(daysOverdue * (rentAmount / daysInMonth(now.getFullYear(), now.getMonth()))) : 0;
+}
+
 export function calcPenalty(tenant: Tenant): number {
-  return tenant.daysOverdue && tenant.daysOverdue > 0 ? Math.round(tenant.daysOverdue * dailyRentRate(tenant)) : 0;
+  return calcLatePenalty(tenant.rentAmount, tenant.daysOverdue);
 }
 
 /** A tenant's true total outstanding balance right now: carried-over arrears (`owedAmount` already
  * rolls forward month to month, see the note on `calcTenantInvoice` below) plus any penalty accrued
- * since their grace period lapsed. Zero once they're paid up. */
+ * since their grace period lapsed. Reads `owedAmount` directly rather than short-circuiting on
+ * `status === "paid"` — a charge/adjustment added after a tenant is marked paid flips `owedAmount`
+ * positive again before the server has a chance to also flip `status`, and this must reflect that
+ * immediately rather than showing 0 until the status catches up. */
 export function calcTotalOwed(tenant: Tenant): number {
-  if (tenant.status === "paid") return 0;
-  return tenant.owedAmount + calcPenalty(tenant);
+  return Math.max(0, tenant.owedAmount) + calcPenalty(tenant);
 }
 
 export type InvoiceLineItem = { label: string; amount: number; tint?: boolean };

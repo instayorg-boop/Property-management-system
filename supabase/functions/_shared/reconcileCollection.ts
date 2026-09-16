@@ -1,11 +1,14 @@
 // Shared reconciliation logic for a successful collection — applies the same ledger_entries /
-// tenants.owed_amount / property_balances updates regardless of which path confirmed it first:
+// tenants.owed_amount / property_balances updates, and sends the tenant their payment-receipt SMS,
+// regardless of which path confirmed it first:
 // lenco-webhook (the real push from Lenco) or pay-portal-check-collection (the polling fallback
 // for when the webhook never arrives). Previously these were two separate copies of the same
 // logic that had already drifted — this one only fixed the webhook's copy, so a payment
 // confirmed via polling instead of the webhook still zeroed owed_amount outright, logged one
 // lump ledger row including the sending fee as rent, and never touched property_balances.
 // Kept in one place now so that class of bug can't happen again.
+
+import { sendPaymentReceiptSms } from "./paymentReceipt.ts";
 
 export type LineItem = { id: string | null; label: string; amount: number };
 export type CollectionForReconciliation = {
@@ -208,10 +211,7 @@ export async function reconcileSuccessfulCollection(supabase: SupabaseClient, co
   // gets written changes.
   if (await isNewModelTenant(supabase, collectionRow.tenant_id)) {
     await recordNewModelLencoPayment(supabase, collectionRow, rentPortion);
-    return;
-  }
-
-  if (lineItems && lineItems.length > 0) {
+  } else if (lineItems && lineItems.length > 0) {
     for (const item of lineItems) {
       if (item.id) {
         const { data: entry } = await supabase.from("ledger_entries").select("amount, paid_amount").eq("id", item.id).maybeSingle();
@@ -255,4 +255,8 @@ export async function reconcileSuccessfulCollection(supabase: SupabaseClient, co
     // through the same race-safe path as the line-items branch above.
     await applyTenantSettlement(supabase, collectionRow.tenant_id, null);
   }
+
+  // Fires after every branch above — each one has fully applied this payment's effect on
+  // owed_amount by this point, so the balance in the receipt is always the real post-payment one.
+  await sendPaymentReceiptSms(supabase, supabase, collectionRow.tenant_id, rentPortion);
 }

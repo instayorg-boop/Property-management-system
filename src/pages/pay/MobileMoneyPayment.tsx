@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ArrowLeft } from "@phosphor-icons/react";
 import { groupPortalLedger, type PortalTenant, type PortalLedgerRow } from "../../lib/payPortal";
+import { onlineFeeRateForRent } from "../../lib/pricing";
 import PortalHeader from "./PortalHeader";
 import PortalFooter from "./PortalFooter";
 
@@ -42,7 +43,16 @@ export type MobileMoneyPaymentProps = {
   /** Property/landlord photo — see PortalHeader's comment; omitted until upload exists. */
   avatarUrl?: string | null;
   onBack: () => void;
-  onPay: (input: { amount: number; fee: number; total: number; phone: string; operator: Operator }) => void;
+  onPay: (input: {
+    amount: number;
+    fee: number;
+    total: number;
+    phone: string;
+    operator: Operator;
+    /** Dev-only preview path — see pay-portal-collect-payment's comment. Never set from the real
+     * Pay button, only the `?dev=1` simulate buttons below. */
+    devSimulate?: "success" | "failed";
+  }) => void;
   /** Surfaced above the pay bar — e.g. a failed charge or invalid phone number from the caller. */
   error?: string | null;
   /** True from the moment Pay is tapped until the charge resolves — keeps the tenant on this same
@@ -75,6 +85,12 @@ export default function MobileMoneyPayment({
   const [phone, setPhone] = useState(tenant.phone ?? "");
   const [operator, setOperator] = useState<Operator>(tenant.phone ? detectOperator(tenant.phone) : "mtn");
 
+  // Dev-only preview mode — only reachable by deliberately adding ?dev=1 to a portal link, never
+  // shown to a real tenant. Lenco has no sandbox on this account, so this is the only way to see
+  // the success/failure/receipt screens without moving real money. Server-side no-ops unless the
+  // DEV_MODE_PAYMENTS function secret is also set.
+  const devMode = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("dev") === "1";
+
   // Re-anchor the stepper to the full balance whenever it changes (e.g. the ledger finishes
   // loading after this page has already mounted) — never leaves a stale amount from a prior value.
   useEffect(() => {
@@ -82,13 +98,20 @@ export default function MobileMoneyPayment({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [balanceOwed]);
 
-  const fee = Math.round(amount * 0.013 * 100) / 100;
+  // Band is chosen by the tenant's contracted monthly rent, not the amount being paid this
+  // transaction — matches the edge function, so this preview never disagrees with what's charged.
+  const feeRate = onlineFeeRateForRent(tenant.rentAmount);
+  const fee = Math.round(amount * feeRate * 100) / 100;
   const total = amount + fee;
   const isPartial = amount < balanceOwed;
 
+  // Same gap as RentStatement's coversText: no open ledger rows doesn't mean nothing's owed — this
+  // month's rent may simply not be logged as its own row yet.
   const purpose =
     openRows.length === 0
-      ? "Rent in advance"
+      ? balanceOwed > 0
+        ? "Current rent"
+        : "Rent in advance"
       : openRows.length === 1
         ? openRows[0].label
         : `${openRows
@@ -235,11 +258,30 @@ export default function MobileMoneyPayment({
         .mm-payment-page .pay-bar-value { font-family: var(--serif); font-weight: 500; font-size: 20px; font-variant-numeric: tabular-nums; white-space: nowrap; }
         .mm-payment-page .pay-btn {
           flex-shrink: 0; padding: 14px 26px; background: var(--action); color: var(--action-text);
-          border: none; border-radius: 2px; font-family: var(--sans); font-weight: 600; font-size: 15px; cursor: pointer;
+          border: 1px solid color-mix(in srgb, var(--action) 85%, black); border-radius: 2px;
+          font-family: var(--sans); font-weight: 600; font-size: 15px; cursor: pointer;
+          box-shadow:
+            inset 0 1px 1px rgba(255, 255, 255, 0.25),
+            inset 0 -1px 1px rgba(0, 0, 0, 0.15),
+            0 1px 2px rgba(30, 58, 138, 0.25);
+          transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
         }
-        .mm-payment-page .pay-btn:hover { opacity: 0.92; }
+        .mm-payment-page .pay-btn:hover {
+          transform: translateY(-1px);
+          background: color-mix(in srgb, var(--action) 90%, black);
+          box-shadow:
+            inset 0 1px 1px rgba(255, 255, 255, 0.25),
+            inset 0 -1px 1px rgba(0, 0, 0, 0.15),
+            0 4px 12px rgba(30, 58, 138, 0.35);
+        }
+        .mm-payment-page .pay-btn:active {
+          transform: translateY(1px);
+          box-shadow:
+            inset 0 1px 2px rgba(0, 0, 0, 0.25),
+            0 1px 2px rgba(30, 58, 138, 0.25);
+        }
         .mm-payment-page .pay-btn:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
-        .mm-payment-page .pay-btn:disabled { opacity: 0.75; cursor: not-allowed; }
+        .mm-payment-page .pay-btn:disabled { opacity: 0.75; cursor: not-allowed; transform: none; }
         .mm-payment-page .pay-btn-inner { display: inline-flex; align-items: center; gap: 8px; }
 
         .mm-payment-page .spinner {
@@ -288,6 +330,12 @@ export default function MobileMoneyPayment({
                     <td className="amt">{formatMoney(row.amount)}</td>
                   </tr>
                 ))}
+                {tenant.penaltyAmount > 0 && (
+                  <tr>
+                    <td>Late penalty ({tenant.daysOverdue}d overdue)</td>
+                    <td className="amt">{formatMoney(tenant.penaltyAmount)}</td>
+                  </tr>
+                )}
                 <tr className="owed-total">
                   <td>Balance owed</td>
                   <td className="amt">{formatMoney(balanceOwed)}</td>
@@ -331,7 +379,7 @@ export default function MobileMoneyPayment({
             <table>
               <tbody>
                 <tr className="fee">
-                  <td>Sending fee · 1.3% of amount</td>
+                  <td>Sending fee · {(feeRate * 100).toFixed(2)}% of amount</td>
                   <td className="amt">{formatMoney(fee)}</td>
                 </tr>
                 <tr className="total">
@@ -417,6 +465,27 @@ export default function MobileMoneyPayment({
               `Pay ${formatMoney(total)}`
             )}
           </button>
+
+          {devMode && (
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={() => onPay({ amount, fee, total, phone: phone || "0977000000", operator, devSimulate: "success" })}
+                style={{ flex: 1, padding: "8px", fontSize: 12, border: "1px dashed #2F5233", color: "#2F5233", background: "transparent", borderRadius: 4 }}
+              >
+                Dev: simulate success
+              </button>
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={() => onPay({ amount, fee, total, phone: phone || "0977000000", operator, devSimulate: "failed" })}
+                style={{ flex: 1, padding: "8px", fontSize: 12, border: "1px dashed #DC2626", color: "#DC2626", background: "transparent", borderRadius: 4 }}
+              >
+                Dev: simulate failure
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

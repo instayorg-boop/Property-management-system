@@ -42,6 +42,29 @@ function parseDisplayDate(value: string | null): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+/** Which month/year an existing charge's label is actually for, regardless of exact template —
+ * mirrors LogPaymentModal.tsx's periodOf/payPortal.ts's portalRowPeriod exactly, duplicated here
+ * because a Deno edge function can't import frontend code (same pattern as the fee-band mirror
+ * noted in pay-portal-collect-payment). Ledger labels aren't one fixed format: this generator
+ * writes "September 2026 rent", but LogPaymentModal writes "September Rent 2026", and AddTenant's
+ * move-in charge writes something else again — comparing billing_period_id/idempotency_key alone
+ * (both unique to *this* generator) missed a charge any of those other paths already logged for
+ * the same real-world month, which is exactly how a tenant ended up billed twice for September
+ * 2026 across six accounts: a manually/seed-logged charge with no billing_period_id at all,
+ * followed by this generator creating its own "second" charge for the same month. */
+function labelPeriod(label: string): { year: number; month: number } | null {
+  const yearMatch = label.match(/\d{4}/);
+  if (!yearMatch) return null;
+  const month = MONTH_NAMES.findIndex((name) => label.includes(name));
+  if (month === -1) return null;
+  return { year: Number(yearMatch[0]), month };
+}
+
 export type ChargePlan = {
   tenantId: string;
   billingPeriodId: string;
@@ -124,6 +147,33 @@ export async function generateRentCharge(
   const plan = planRentCharge(tenant, settings, periodDate);
   if (!plan) return { tenantId: tenant.id, status: "skipped", reason: "not active/eligible for this billing period" };
   if (options.dryRun) return { tenantId: tenant.id, status: "dry_run", plan };
+
+  // Cross-path duplicate guard: the idempotency_key unique index below only catches THIS generator
+  // running twice for the same tenant+period — it says nothing about a charge for that same real
+  // month already having been logged some other way (LogPaymentModal, AddTenant's move-in charge,
+  // a seed script), none of which write a billing_period_id or this generator's idempotency_key
+  // format. So check by billing_period_id (covers this generator re-running) OR by the label's own
+  // parsed month/year (covers every other path) against every non-voided charge this tenant has,
+  // before inserting a new one.
+  const targetYear = periodDate.getFullYear();
+  const targetMonth = periodDate.getMonth();
+  const { data: existingCharges, error: existingError } = await supabase
+    .from("ledger_entries")
+    .select("id, label, billing_period_id")
+    .eq("tenant_id", plan.tenantId)
+    .eq("event_type", "charge")
+    .is("voided_at", null);
+  if (existingError) {
+    return { tenantId: tenant.id, status: "error", message: existingError.message };
+  }
+  const alreadyCharged = (existingCharges ?? []).some((row: { label: string; billing_period_id: string | null }) => {
+    if (row.billing_period_id === plan.billingPeriodId) return true;
+    const period = labelPeriod(row.label);
+    return period !== null && period.year === targetYear && period.month === targetMonth;
+  });
+  if (alreadyCharged) {
+    return { tenantId: tenant.id, status: "already_exists", billingPeriodId: plan.billingPeriodId };
+  }
 
   const { data, error } = await supabase
     .from("ledger_entries")

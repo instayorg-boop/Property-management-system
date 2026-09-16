@@ -19,14 +19,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { generateRentCharge, type GenerateResult } from "../_shared/generateRentCharge.ts";
-
-function currentPeriodDate(): Date {
-  // Africa/Lusaka has no DST and matches the rest of the app's date handling (see
-  // pay-portal-scheduled-payouts' todayWeekday) — using it here keeps "today" consistent with the
-  // property's actual timezone rather than the function runtime's UTC clock.
-  const [month, , year] = new Date().toLocaleDateString("en-US", { timeZone: "Africa/Lusaka" }).split("/");
-  return new Date(Number(year), Number(month) - 1, 1);
-}
+import { currentPeriodDate } from "../_shared/billingPeriod.ts";
 
 function parsePeriodId(billingPeriodId: string): Date {
   const [year, month] = billingPeriodId.split("-").map(Number);

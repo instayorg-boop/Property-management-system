@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import LogPaymentModal from "../components/LogPaymentModal";
 import TenantSearchDrawer from "../components/TenantSearchDrawer";
 import TenantPaymentDrawer from "../components/TenantPaymentDrawer";
@@ -15,6 +16,8 @@ import { useMaintenance } from "../MaintenanceContext";
 import { useRoomsView } from "../RoomsContext";
 import { useSettings } from "../SettingsContext";
 import { getLencoBalance } from "../../lib/payoutApi";
+import { supabase } from "../../lib/supabaseClient";
+import { calcTotalOwed } from "../invoiceUtils";
 import {
   ArrowRight as ArrowIcon,
   Wrench as WrenchIcon,
@@ -23,9 +26,8 @@ import {
   Receipt as ReceiptIcon,
   UserPlus as UserPlusIcon,
   Plus as PlusIcon,
-  ChartBar as ChartBarIcon,
-  Wallet as WalletIcon,
   DoorOpen as DoorIcon,
+  Coins,
 } from "@phosphor-icons/react";
 import MetricCard from "../components/MetricCard";
 import SectionLabel from "../components/SectionLabel";
@@ -50,7 +52,7 @@ function Greeting({ onAction }: { propertyId: string | null; onAction: (action: 
   const [sheetOpen, setSheetOpen] = useState(false);
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 bg-paper px-4 pt-5 pb-6 sm:px-8">
+    <div className="flex flex-wrap items-center justify-between gap-4 bg-mist px-4 pt-5 pb-6 sm:px-8">
       <div>
         <h1 className="font-display text-2xl font-semibold tracking-tighter text-ink">
           Good {part} 👋🏼
@@ -139,9 +141,19 @@ const statusStyle: Record<string, string> = {
   Overdue: "bg-red-50 text-red-600",
   Partial: "bg-amber-50 text-amber-600",
   Unpaid: "bg-slate-100 text-slate-600",
+  // A credit/waiver reduces what's owed rather than being money the tenant paid in — its own
+  // color so it never reads as either a completed payment (green) or a problem (red).
+  Credit: "bg-brand-soft text-brand",
 };
 
 const ledgerStatusLabel: Record<string, string> = { paid: "Paid", overdue: "Overdue", partial: "Partial", unpaid: "Unpaid" };
+
+const methodLabel: Record<string, string> = {
+  cash: "Cash",
+  "mobile-money": "Mobile money",
+  "bank-transfer": "Bank transfer",
+  other: "Other",
+};
 
 type PaymentStep = "search" | "ledger" | "confirm";
 
@@ -189,21 +201,67 @@ export default function Dashboard() {
     return months.map(({ label, amount, expenses }) => ({ label, amount, expenses }));
   }, [tenants, expenses]);
 
-  // Every ledger entry across every tenant, newest first — replaces a hardcoded "recent payments" list.
+  // Every actual money-movement ledger entry across every tenant, newest first — replaces a
+  // hardcoded "recent payments" list. Deliberately narrower than "every ledger row": a charge
+  // that's still unpaid/overdue never involved money changing hands, so it's excluded rather than
+  // showing up as a red, sign-less amount under a widget titled "Recent payments". Likewise a
+  // penalty or a positive ad-hoc adjustment only changes what's *owed* — it isn't a payment either,
+  // so it's left out here (it still shows on the tenant's own ledger).
   const payments = useMemo(() => {
-    const rows: { tenantId: string; portalToken?: string; tenant: string; room: string; status: string; date: string; amount: string; createdAt: string }[] = [];
+    const rows: {
+      key: string;
+      tenantId: string;
+      portalToken?: string;
+      tenant: string;
+      room: string;
+      status: string;
+      method: string;
+      date: string;
+      amount: string;
+      isCredit: boolean;
+      createdAt: string;
+    }[] = [];
     for (const t of tenants) {
       for (const row of t.ledger) {
-        if (!row.createdAt) continue;
-        const collected = row.status === "partial" ? (row.paidAmount ?? 0) : row.amount;
+        // A voided entry is a record correction — it never happened financially (see
+        // voidLedgerEntry), so it must never read as recent activity here.
+        if (!row.createdAt || row.voidedAt) continue;
+
+        let value = 0;
+        let label: string;
+        // A credit/waiver forgives part of what's owed rather than being cash the tenant handed
+        // over — shown with its own label/color, never folded into "Paid".
+        let isCredit = false;
+
+        if (row.eventType === "payment") {
+          value = Math.abs(row.amount);
+          label = "Paid";
+        } else if (row.eventType === "credit") {
+          value = Math.abs(row.amount);
+          label = "Credit";
+          isCredit = true;
+        } else if (row.eventType === "penalty" || row.eventType === "adjustment") {
+          continue;
+        } else {
+          // Legacy row or a projected charge — one row per billing period; status carries whether
+          // (and how much of) it was actually collected.
+          if (row.status !== "paid" && row.status !== "partial") continue;
+          value = row.status === "partial" ? (row.paidAmount ?? 0) : row.amount;
+          if (value <= 0) continue;
+          label = ledgerStatusLabel[row.status] ?? "Paid";
+        }
+
         rows.push({
+          key: row.id,
           tenantId: t.id,
           portalToken: t.portalToken,
           tenant: t.name,
           room: t.room,
-          status: ledgerStatusLabel[row.status ?? "paid"] ?? "Paid",
+          status: label,
+          method: row.method ? (methodLabel[row.method] ?? row.method) : "Manual",
           date: new Date(row.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
-          amount: `${row.status === "paid" || row.status === "partial" ? "+" : ""}${formatCurrency(collected)}`,
+          amount: `${isCredit ? "" : "+"}${formatCurrency(value)}`,
+          isCredit,
           createdAt: row.createdAt,
         });
       }
@@ -230,6 +288,37 @@ export default function Dashboard() {
     };
   }, [propertyId]);
 
+  // Live updates — a mobile-money collection landing (lenco-webhook) or a payout going out changes
+  // this figure, and the card should reflect that without the landlord having to reload the whole
+  // dashboard. Debounced the same way TenantsContext's own ledger subscription is: a collection and
+  // its downstream writes can fire a short burst of change events for one real event, and each one
+  // triggering its own immediate refetch would flicker the balance between intermediate states.
+  useEffect(() => {
+    if (!propertyId) return;
+    let cancelled = false;
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const refetch = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        getLencoBalance(propertyId)
+          .then(({ available }) => {
+            if (!cancelled) setLencoAvailable(available);
+          })
+          .catch((e) => console.error("Failed to refresh Lenco balance after a live update", e));
+      }, 250);
+    };
+    const channel = supabase
+      .channel(`lenco-balance:${propertyId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "collections", filter: `property_id=eq.${propertyId}` }, refetch)
+      .on("postgres_changes", { event: "*", schema: "public", table: "payouts", filter: `property_id=eq.${propertyId}` }, refetch)
+      .subscribe();
+    return () => {
+      cancelled = true;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      void supabase.removeChannel(channel);
+    };
+  }, [propertyId]);
+
   const payout = useMemo<UpcomingPayout | null>(() => {
     if (!lencoAvailable || lencoAvailable <= 0) return null;
     const now = new Date();
@@ -249,14 +338,13 @@ export default function Dashboard() {
   const [movingOutTenant, setMovingOutTenant] = useState<Tenant | null>(null);
   const [addingExpense, setAddingExpense] = useState(false);
   const [collectionRange, setCollectionRange] = useState("6");
-  const [activeBar, setActiveBar] = useState<number | null>(null);
 
   // Unread maintenance reports — hide the whole card when empty.
   const unreadMaintenance = useMemo(() => reports.filter((r) => r.unread).slice(0, 5), [reports]);
 
   const outstanding = useMemo(() => {
     const behind = tenants.filter((t) => t.active && (t.status === "overdue" || t.status === "unpaid" || t.status === "partial"));
-    const total = behind.reduce((sum, t) => sum + t.owedAmount, 0);
+    const total = behind.reduce((sum, t) => sum + calcTotalOwed(t), 0);
     return { total, count: behind.length };
   }, [tenants]);
 
@@ -396,102 +484,50 @@ export default function Dashboard() {
                 ))}
               </div>
             ) : collections.length === 0 ? (
-              <div className="mt-6 flex h-48 flex-col items-center justify-center gap-3 text-center">
-                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
-                  <ChartBarIcon size={22} weight="duotone" />
-                </span>
-                <div>
-                  <p className="text-xs font-semibold text-ink">No income yet</p>
-                  <p className="mt-0.5 text-xs text-muted">Logged payments will show up here month by month.</p>
-                </div>
+              <div className="mt-6 flex h-48 flex-col items-center justify-center gap-1 text-center">
+                <p className="text-sm font-semibold text-ink">No income yet</p>
+                <p className="text-xs text-muted">Logged payments will show up here month by month.</p>
               </div>
-            ) : (() => {
-              const visibleCollections = collections.slice(-Number(collectionRange));
-              const maxAmount = Math.max(...visibleCollections.map((m) => Math.max(m.amount, m.expenses)));
-              const chartMax = Math.max(Math.ceil(maxAmount / 50000) * 50000, 50000);
-              const ticks = [4, 3, 2, 1, 0].map((i) => Math.round((chartMax / 4) * i));
-              return (
-                <div className="mt-6 flex h-48 gap-3">
-                  {/* Y-axis */}
-                  <div className="flex h-40 flex-col justify-between pb-6 text-right text-[11px] text-muted">
-                    {ticks.map((t) => (
-                      <span key={t}>K{(t / 1000).toFixed(0)}k</span>
-                    ))}
-                  </div>
-
-                  {/* Bars */}
-                  <div className="relative flex h-40 flex-1 items-end gap-3 border-l border-line pl-3">
-                    {/* Gridlines */}
-                    <div className="pointer-events-none absolute inset-0 left-3 flex flex-col justify-between">
-                      {ticks.map((t) => (
-                        <div key={t} className="border-t border-line/60" />
-                      ))}
-                    </div>
-
-                    <AnimatePresence mode="popLayout" initial={false}>
-                      {visibleCollections.map((m, i) => {
-                        // Expense tracking only reliably covers the current month right now — showing
-                        // an "expenses" bar on past months would imply a history we don't actually have.
-                        const isCurrentMonth = i === visibleCollections.length - 1;
-                        const isActive = activeBar === i;
+            ) : (
+              <div className="mt-6 h-48">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={collections.slice(-Number(collectionRange))} barGap={4} margin={{ left: 0 }}>
+                    <CartesianGrid vertical={false} stroke="var(--color-line)" />
+                    <XAxis
+                      dataKey="label"
+                      tickLine={false}
+                      axisLine={false}
+                      tick={{ fill: "var(--color-muted)", fontSize: 11 }}
+                      dy={6}
+                    />
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      tick={{ fill: "var(--color-muted)", fontSize: 11 }}
+                      tickFormatter={(v: number) => `K${v / 1000}k`}
+                      width={48}
+                    />
+                    <Tooltip
+                      cursor={{ fill: "var(--color-mist)" }}
+                      content={({ active, payload, label }) => {
+                        if (!active || !payload?.length) return null;
+                        const income = payload.find((p) => p.dataKey === "amount")?.value as number | undefined;
+                        const expenses = payload.find((p) => p.dataKey === "expenses")?.value as number | undefined;
                         return (
-                          <motion.div
-                            key={`${collectionRange}-${m.label}`}
-                            layout
-                            initial={{ opacity: 0, y: 12 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: 12 }}
-                            transition={{ duration: 0.25, delay: i * 0.04 }}
-                            className="relative flex h-full flex-1 flex-col items-center justify-end gap-2"
-                          >
-                            <AnimatePresence>
-                              {isActive && (
-                                <motion.div
-                                  initial={{ opacity: 0, y: 4, scale: 0.95 }}
-                                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                                  exit={{ opacity: 0, y: 4, scale: 0.95 }}
-                                  transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-                                  style={{ bottom: `calc(${(Math.max(m.amount, m.expenses) / chartMax) * 100}% + 8px)` }}
-                                  className="absolute z-10 -translate-x-0 whitespace-nowrap rounded-md bg-ink px-2.5 py-1.5 text-center shadow-lg"
-                                >
-                                  <p className="text-[11px] font-semibold text-paper">K{m.amount.toLocaleString()} income</p>
-                                  {isCurrentMonth && <p className="text-[11px] text-paper/70">K{m.expenses.toLocaleString()} expenses</p>}
-                                  <div className="absolute -bottom-1 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 bg-ink" />
-                                </motion.div>
-                              )}
-                            </AnimatePresence>
-
-                            <button
-                              type="button"
-                              onClick={() => setActiveBar(isActive ? null : i)}
-                              className="flex h-full w-full items-end justify-center gap-1"
-                            >
-                              <motion.div
-                                initial={{ height: 0 }}
-                                animate={{ height: `${(m.amount / chartMax) * 100}%` }}
-                                transition={{ duration: 0.5, delay: i * 0.04, ease: [0.16, 1, 0.3, 1] }}
-                                className={`rounded-t-full transition-opacity ${isCurrentMonth ? "w-2.5 bg-emerald-500" : `w-4 ${i % 2 === 0 ? "bg-emerald-500" : "bg-emerald-500/45"}`} ${
-                                  isActive ? "opacity-100" : "opacity-90 hover:opacity-100"
-                                }`}
-                              />
-                              {isCurrentMonth && (
-                                <motion.div
-                                  initial={{ height: 0 }}
-                                  animate={{ height: `${(m.expenses / chartMax) * 100}%` }}
-                                  transition={{ duration: 0.5, delay: i * 0.04 + 0.05, ease: [0.16, 1, 0.3, 1] }}
-                                  className={`w-2.5 rounded-t-full bg-red-700 transition-opacity ${isActive ? "opacity-100" : "opacity-90 hover:opacity-100"}`}
-                                />
-                              )}
-                            </button>
-                            <span className="absolute -bottom-6 text-[11px] text-muted">{m.label}</span>
-                          </motion.div>
+                          <div className="rounded-md bg-ink px-2.5 py-1.5 text-center shadow-lg">
+                            <p className="text-[11px] font-semibold text-paper">{label}</p>
+                            <p className="text-[11px] text-paper/90">K{(income ?? 0).toLocaleString()} income</p>
+                            {!!expenses && <p className="text-[11px] text-paper/70">K{expenses.toLocaleString()} expenses</p>}
+                          </div>
                         );
-                      })}
-                    </AnimatePresence>
-                  </div>
-                </div>
-              );
-            })()}
+                      }}
+                    />
+                    <Bar dataKey="amount" name="Income" fill="var(--color-success)" radius={[4, 4, 0, 0]} maxBarSize={18} />
+                    <Bar dataKey="expenses" name="Expenses" fill="var(--color-danger)" radius={[4, 4, 0, 0]} maxBarSize={18} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </div>
 
           {/* Recent payments table */}
@@ -517,14 +553,9 @@ export default function Dashboard() {
                 ))}
               </div>
             ) : payments.length === 0 ? (
-              <div className="mt-4 flex flex-col items-center justify-center gap-3 py-10 text-center">
-                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
-                  <ReceiptIcon size={22} weight="duotone" />
-                </span>
-                <div>
-                  <p className="text-xs font-semibold text-ink">No payments yet</p>
-                  <p className="mt-0.5 text-xs text-muted">Payments you log will show up here.</p>
-                </div>
+              <div className="mt-4 flex flex-col items-center justify-center gap-1 py-10 text-center">
+                <p className="text-sm font-semibold text-ink">No payments yet</p>
+                <p className="text-xs text-muted">Payments you log will show up here.</p>
               </div>
             ) : (
             <div className="overflow-x-auto">
@@ -533,21 +564,22 @@ export default function Dashboard() {
                 <tr className="text-xs text-muted">
                   <th className="pb-2 font-medium">Tenant</th>
                   <th className="pb-2 font-medium">Status</th>
+                  <th className="pb-2 font-medium">Method</th>
                   <th className="pb-2 font-medium">Date</th>
                   <th className="pb-2 text-right font-medium">Amount</th>
                 </tr>
               </thead>
               <tbody>
-                {payments.map((p, i) => {
+                {payments.map((p) => {
                   return (
                     <tr
-                      key={`${p.tenantId}-${p.createdAt}-${i}`}
+                      key={p.key}
                       onClick={() => navigate("/rent", { state: { openTenantId: p.tenantId } })}
                       className="cursor-pointer border-t border-line transition-colors duration-200 ease-in-out hover:bg-mist"
                     >
                       <td className="py-2.5">
                         <div className="flex items-center gap-2.5">
-                          
+
                           <div>
                             <Link
                               to={`/tenants/${p.portalToken ?? p.tenantId}`}
@@ -565,11 +597,10 @@ export default function Dashboard() {
                           {p.status}
                         </span>
                       </td>
+                      <td className="py-2.5 text-muted">{p.method}</td>
                       <td className="py-2.5 text-muted">{p.date}</td>
                       <td
-                        className={`py-2.5 text-right font-medium ${
-                          p.amount.startsWith("+") ? "text-emerald-600" : "text-red-600"
-                        }`}
+                        className={`py-2.5 text-right font-medium ${p.isCredit ? "text-brand" : "text-emerald-600"}`}
                       >
                         {p.amount}
                       </td>
@@ -587,39 +618,45 @@ export default function Dashboard() {
         <div className="space-y-4">
           
 
-          {/* Online payments balance */}
-          <div className="rounded-lg border border-line bg-paper p-5">
-            <SectionLabel>Online payments balance</SectionLabel>
+          {/* Online payments balance — its own brand-tinted surface (every other card on this page
+              is plain bg-paper) so the one number that's actually sitting in a payment gateway,
+              waiting to be moved, reads as different in kind from a stat card, not just another
+              tile in the column. */}
+          <div className="rounded-lg border border-brand/15 bg-brand-soft p-5">
             {!dataReady ? (
-              <div className="mt-3 space-y-2">
+              <div className="space-y-2">
                 <Skeleton className="h-4 w-2/3" />
+                <Skeleton className="h-7 w-1/2" />
                 <Skeleton className="h-3 w-full" />
-                <Skeleton className="h-3 w-1/2" />
-                <Skeleton className="mt-2 h-8 w-full rounded-lg" />
+                <Skeleton className="mt-2 h-9 w-full rounded-lg" />
               </div>
             ) : payout ? (
               <>
-                <p className="mt-2 font-display text-base font-semibold text-ink">{payout.status}</p>
-                <p className="mt-1 text-xs text-muted">{payout.amount} collected via mobile money, ready to transfer to your bank.</p>
-                <p className="mt-3 text-sm font-medium text-ink">{payout.date}</p>
+                <div className="flex items-center gap-2">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-paper text-brand">
+                    <Coins size={16} weight="duotone" />
+                  </span>
+                  <SectionLabel>Online payments balance</SectionLabel>
+                </div>
+                <p className="font-display mt-3 text-[32px] leading-none font-bold tracking-tight text-brand">{payout.amount}</p>
+                <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-paper px-2 py-0.5 text-[11px] font-semibold text-emerald-600">
+                  <CheckCircleIcon size={11} weight="fill" />
+                  {payout.status}
+                </span>
+                <p className="mt-2 text-xs text-ink/70">Collected via mobile money · {payout.date}</p>
                 <Button
-                  variant="secondary"
+                  variant="primary"
                   size="sm"
                   onClick={() => navigate("/online-payments")}
-                  className="mt-4 block w-full bg-mist text-center hover:bg-line/40"
+                  className="mt-4 block w-full text-center"
                 >
-                  View balance
+                  Transfer to bank
                 </Button>
               </>
             ) : (
-              <div className="flex flex-col items-center justify-center gap-3 py-6 text-center">
-                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
-                  <WalletIcon size={22} weight="duotone" />
-                </span>
-                <div>
-                  <p className="text-xs font-semibold text-ink">Nothing to transfer yet</p>
-                  <p className="mt-0.5 text-xs text-muted">Rent paid online through your payment link will show up here.</p>
-                </div>
+              <div className="flex flex-col items-center justify-center gap-1 py-8 text-center">
+                <p className="text-sm font-semibold text-ink">Nothing to transfer yet</p>
+                <p className="text-xs text-ink/70">Rent paid online through your payment link will show up here.</p>
               </div>
             )}
           </div>
@@ -709,7 +746,7 @@ export default function Dashboard() {
           <LogPaymentModal
             tenantName={payingTenant.name}
             room={`${payingTenant.room} · ${payingTenant.roomType}`}
-            outstanding={payingTenant.owedAmount || payingTenant.rentAmount}
+            outstanding={calcTotalOwed(payingTenant) || payingTenant.rentAmount}
             rentAmount={payingTenant.rentAmount}
             ledger={payingTenant.ledger}
             onClose={() => setPaymentStep("ledger")}

@@ -1,6 +1,7 @@
 import { supabase } from "./supabaseClient";
 import { edgeFunctionErrorMessage } from "./functionsError";
 import { RELATION_OPTIONS, type EmergencyContact, type RelationType } from "./tenants";
+import { calcLatePenalty } from "../landlord/invoiceUtils";
 
 // --- Portal session storage -------------------------------------------------------------------
 // localStorage, not sessionStorage: the "session" is really just the tenant's own permanent
@@ -72,7 +73,14 @@ export type PortalTenant = {
   roomType: string;
   status: "paid" | "overdue" | "unpaid" | "partial";
   rentAmount: number;
+  /** Total actually owed right now — carried-over balance plus any accrued late penalty (see
+   * `penaltyAmount`), so every portal screen (RentStatement, MobileMoneyPayment, PaymentSuccess)
+   * that reads this field already reflects the penalty without recomputing it. */
   owedAmount: number;
+  /** The late-penalty portion of `owedAmount` above, broken out so the UI can show it as its own
+   * line rather than silently folding it into the balance — mirrors calcPenalty/calcTotalOwed in
+   * invoiceUtils.ts (the landlord-side equivalent for the differently-shaped Tenant type). */
+  penaltyAmount: number;
   daysOverdue?: number;
   /** The tenant's own phone, on file — safe to surface only because getPortalTenant already
    * requires a verified OTP session; used to pre-fill the mobile-money payment step. */
@@ -123,6 +131,98 @@ export function groupPortalLedger(ledger: PortalLedgerRow[]): PortalLedgerRow[] 
       createdAt: latest.createdAt,
     };
   });
+}
+
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+/** Which month/year a row is actually FOR, parsed from its label — the RPC's labels are always a
+ * plain "<Month> <Year> rent"/"<Month> Rent <Year>" style string (or, for a standalone charge/
+ * credit like a damage charge, whatever the landlord typed), so parsing is the only signal
+ * available client-side; falls back to the row's own date if no month name/year is found in the
+ * label at all. */
+function portalRowPeriod(row: PortalLedgerRow): { year: number; month: number } {
+  const yearMatch = row.label.match(/\d{4}/);
+  const month = MONTH_NAMES.findIndex((name) => row.label.includes(name));
+  if (yearMatch && month !== -1) return { year: Number(yearMatch[0]), month };
+  const d = new Date(row.createdAt);
+  return { year: d.getFullYear(), month: d.getMonth() };
+}
+
+/** The dueDay-th of the given month, clamped to that month's length — identical to the landlord
+ * dashboard's own dueDateIn (TenantProfile.tsx), duplicated rather than imported since that one
+ * lives in a landlord-only file this portal code shouldn't depend on. */
+function dueDateIn(year: number, monthIndex0: number, dueDay: number): Date {
+  const lastDay = new Date(year, monthIndex0 + 1, 0).getDate();
+  return new Date(year, monthIndex0, Math.min(dueDay, lastDay));
+}
+
+/** The furthest-out month this tenant has a fully-paid ledger row for — mirrors
+ * TenantProfile.tsx's furthestPaidMonth exactly (same label-parsing, same "latest paid period"
+ * definition) so the portal and the landlord dashboard never disagree about when rent is next
+ * due. */
+function furthestPaidMonth(groupedLedger: PortalLedgerRow[]): { year: number; month: number } | null {
+  let furthest: { year: number; month: number } | null = null;
+  for (const row of groupedLedger) {
+    if (row.status !== "paid") continue;
+    const period = portalRowPeriod(row);
+    if (!furthest || period.year > furthest.year || (period.year === furthest.year && period.month > furthest.month)) {
+      furthest = period;
+    }
+  }
+  return furthest;
+}
+
+/** When this tenant's rent is next due — same computation as the landlord dashboard's own
+ * nextDueDate (TenantProfile.tsx): the month after whatever's furthest paid, or (nothing paid
+ * yet) this month if already overdue/unpaid, or next month if freshly paid up with no ledger
+ * history to read a period from. A paid-up tenant's due date is rolled forward until it's
+ * actually in the future, so a stale/unparseable ledger label can't leave it stuck in the past. */
+export function computePortalNextDueDate(
+  status: PortalTenant["status"],
+  ledger: PortalLedgerRow[],
+  propertyDueDay: number,
+  now: Date = new Date()
+): Date {
+  const paidThrough = furthestPaidMonth(groupPortalLedger(ledger));
+  let nextDueDate = paidThrough
+    ? dueDateIn(paidThrough.year, paidThrough.month + 1, propertyDueDay)
+    : status === "paid"
+      ? dueDateIn(now.getFullYear(), now.getMonth() + 1, propertyDueDay)
+      : dueDateIn(now.getFullYear(), now.getMonth(), propertyDueDay);
+
+  if (status === "paid") {
+    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    while (nextDueDate < todayMidnight) {
+      nextDueDate = dueDateIn(nextDueDate.getFullYear(), nextDueDate.getMonth() + 1, propertyDueDay);
+    }
+  }
+  return nextDueDate;
+}
+
+export type PortalLedgerGroup = { key: string; label: string; rows: PortalLedgerRow[] };
+
+/** Groups an already-deduped ledger (see groupPortalLedger) by the month each row is actually for
+ * — same structure as the landlord dashboard's own tenant ledger, so a tenant paying ahead (or
+ * catching up out of order) sees "October 2026" and "September 2026" as distinct, correctly
+ * ordered sections instead of one flat list sorted by whenever each row happened to be logged. */
+export function groupPortalLedgerByMonth(ledger: PortalLedgerRow[]): PortalLedgerGroup[] {
+  const byKey = new Map<string, PortalLedgerRow[]>();
+  for (const row of ledger) {
+    const { year, month } = portalRowPeriod(row);
+    const key = `${year}-${String(month).padStart(2, "0")}`;
+    const list = byKey.get(key) ?? [];
+    list.push(row);
+    byKey.set(key, list);
+  }
+  return [...byKey.keys()]
+    .sort((a, b) => b.localeCompare(a))
+    .map((key) => {
+      const [year, month] = key.split("-").map(Number);
+      return { key, label: `${MONTH_NAMES[month]} ${year}`, rows: byKey.get(key)! };
+    });
 }
 
 function roomLabel(number: string | null) {
@@ -201,6 +301,8 @@ export async function getPortalTenant(propertySlug: string, tenantId: string): P
   if (error) throw error;
   const row = data?.[0];
   if (!row) return null;
+  const isPaidUp = row.status === "paid";
+  const penaltyAmount = isPaidUp ? 0 : calcLatePenalty(row.rent_amount, row.days_overdue ?? undefined);
   return {
     id: row.id,
     name: row.name,
@@ -208,7 +310,8 @@ export async function getPortalTenant(propertySlug: string, tenantId: string): P
     roomType: row.room_type ?? "",
     status: row.status as PortalTenant["status"],
     rentAmount: row.rent_amount,
-    owedAmount: row.owed_amount,
+    owedAmount: isPaidUp ? 0 : row.owed_amount + penaltyAmount,
+    penaltyAmount,
     daysOverdue: row.days_overdue ?? undefined,
     phone: row.phone ?? null,
     moveInDate: row.move_in_date ?? null,
@@ -264,7 +367,13 @@ export async function initiateCollection(
   operator: "mtn" | "airtel" | "zamtel",
   /** The rent portion the tenant chose on the stepper — a cap, not a guarantee; the server clamps
    * it to what's actually owed and adds the fee itself. Omit to pay the full balance. */
-  amount?: number
+  amount?: number,
+  /** Dev-only: skips the real Lenco call and fakes this outcome instead, for previewing the
+   * success/failure/receipt UI without moving real money (Lenco has no sandbox on this account).
+   * Silently ignored server-side unless the DEV_MODE_PAYMENTS function secret is set — see
+   * pay-portal-collect-payment's comment. Only ever passed from a `?dev=1` URL, never shown to a
+   * real tenant. */
+  devSimulate?: "success" | "failed"
 ): Promise<CollectionResult> {
   const sessionToken = requireSessionToken(tenantId);
   const { data, error } = await supabase.functions.invoke<{
@@ -276,7 +385,7 @@ export async function initiateCollection(
     rentPortion?: number;
     isPartial?: boolean;
     error?: string;
-  }>("pay-portal-collect-payment", { body: { propertySlug, tenantId, phone, operator, sessionToken, amount } });
+  }>("pay-portal-collect-payment", { body: { propertySlug, tenantId, phone, operator, sessionToken, amount, devSimulate } });
   if (error || !data?.ok || !data?.collectionId) {
     throw new Error(await edgeFunctionErrorMessage(error, "Failed to start the payment."));
   }

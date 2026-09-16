@@ -1,5 +1,5 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import PageHeader from "../components/PageHeader";
 import LogPaymentModal from "../components/LogPaymentModal";
@@ -506,21 +506,12 @@ export default function Rent() {
               return (
                 <div
                   key={t.id}
-                  onClick={() => {
-                    setPayingTenant(t);
-                    setPaymentStep("ledger");
-                  }}
+                  onClick={() => navigate(`/tenants/${t.portalToken}`)}
                   className={`p-4 transition-colors active:bg-mist ${needsAction ? "bg-mist/50" : ""}`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <Link
-                        to={`/tenants/${t.portalToken}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="truncate text-sm font-medium text-ink hover:underline"
-                      >
-                        {t.name}
-                      </Link>
+                      <p className="truncate text-sm font-medium text-ink">{t.name}</p>
                       <p className="mt-0.5 text-xs text-muted">{t.room}</p>
                     </div>
                     <div className="shrink-0 text-right">
@@ -539,7 +530,7 @@ export default function Rent() {
                       ) : (
                         <p className="text-xs text-muted">{formatCurrency(t.rentAmount)}/mo</p>
                       )}
-                      <p className={`font-display mt-0.5 text-sm ${row.amountPaid === 0 ? "font-normal text-muted" : "font-medium text-ink"}`}>
+                      <p className={`font-display mt-0.5 text-sm ${row.amountPaid === 0 ? "font-normal text-muted" : "font-medium text-emerald-600"}`}>
                         {formatCurrency(row.amountPaid)} paid
                       </p>
                     </div>
@@ -560,8 +551,7 @@ export default function Rent() {
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setPayingTenant(t);
-                          setPaymentStep("ledger");
+                          navigate(`/tenants/${t.portalToken}`);
                         }}
                         className="font-semibold text-ink underline-offset-2 hover:underline"
                       >
@@ -619,23 +609,14 @@ export default function Rent() {
                   <tr
                     key={t.id}
                     className={`group cursor-pointer transition-colors duration-200 ease-in-out hover:bg-mist ${needsAction ? "bg-mist/50" : ""}`}
-                    onClick={() => {
-                      setPayingTenant(t);
-                      setPaymentStep("ledger");
-                    }}
+                    onClick={() => navigate(`/tenants/${t.portalToken}`)}
                   >
                     <td className="px-4 py-3">
-                      <Link to={`/tenants/${t.portalToken}`} onClick={(e) => e.stopPropagation()} className="font-medium text-ink hover:underline">
-                        {t.name}
-                      </Link>
+                      <p className="font-medium text-ink">{t.name}</p>
                       <p className="text-xs text-muted">{t.room}</p>
                     </td>
-                    <td className="px-4 py-3">
-                      <Link to="/rooms" onClick={(e) => e.stopPropagation()} className="text-ink hover:underline">
-                        {t.roomType}
-                      </Link>
-                    </td>
-                    <td className={`font-display px-4 py-3 whitespace-nowrap ${row.amountPaid === 0 ? "font-normal text-muted" : "font-medium text-ink"}`}>
+                    <td className="px-4 py-3 text-ink">{t.roomType}</td>
+                    <td className={`font-display px-4 py-3 whitespace-nowrap ${row.amountPaid === 0 ? "font-normal text-muted" : "font-medium text-emerald-600"}`}>
                       {formatCurrency(row.amountPaid)}
                     </td>
                     <td className="font-display px-4 py-3 whitespace-nowrap">
@@ -644,7 +625,7 @@ export default function Rent() {
                         return outstanding > 0 ? (
                           <span className="font-medium text-red-600">{formatCurrency(outstanding)}</span>
                         ) : (
-                          <span className="text-muted">—</span>
+                          <span className="text-muted">{formatCurrency(0)}</span>
                         );
                       })()}
                     </td>
@@ -672,8 +653,7 @@ export default function Rent() {
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setPayingTenant(t);
-                            setPaymentStep("ledger");
+                            navigate(`/tenants/${t.portalToken}`);
                           }}
                           className="font-semibold text-ink underline-offset-2 group-hover:underline"
                         >
@@ -755,7 +735,7 @@ export default function Rent() {
           <LogPaymentModal
             tenantName={payingTenant.name}
             room={`${payingTenant.room} · ${payingTenant.roomType}`}
-            outstanding={payingTenant.owedAmount || payingTenant.rentAmount}
+            outstanding={calcTotalOwed(payingTenant) || payingTenant.rentAmount}
             rentAmount={payingTenant.rentAmount}
             ledger={payingTenant.ledger}
             onClose={() => setPaymentStep("ledger")}

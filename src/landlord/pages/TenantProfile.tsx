@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -17,6 +17,7 @@ import {
   Paperclip,
   FileText,
   Link as LinkIcon,
+  BookmarkSimple,
 } from "@phosphor-icons/react";
 import PageHeader from "../components/PageHeader";
 import SectionLabel from "../components/SectionLabel";
@@ -27,7 +28,9 @@ import AdjustmentModal from "../components/AdjustmentModal";
 import WaivePenaltyModal from "../components/WaivePenaltyModal";
 import ConfirmDeleteTenantModal from "../components/ConfirmDeleteTenantModal";
 import ReactivateTenantModal from "../components/ReactivateTenantModal";
+import ReserveRoomModal from "../components/ReserveRoomModal";
 import Modal from "../components/Modal";
+import { useRooms, useRoomsView } from "../RoomsContext";
 import {
   useTenants,
   formatCurrency,
@@ -204,6 +207,16 @@ function StatCard({
 /** "Outstanding balance" is a running total, not itself labeled by period — this spells out what
  * it actually represents (this month's rent vs several months piled up) so it's never ambiguous
  * whether K3,600 owed means "3 months behind" or "rent just went up". */
+/** move_in_date/move_out_date are stored as free-text (whatever was typed, or an ISO date from a
+ * seed/import) rather than one fixed format — reformats to "1 Aug 2026" for display wherever it's
+ * parseable, falling back to the raw stored string rather than hiding it when it isn't. */
+function formatDisplayDate(value: string | null | undefined): string {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
 function outstandingCaption(
   owedAmount: number,
   rentAmount: number,
@@ -289,9 +302,8 @@ function ConfirmVoidLedgerEntryModal({
       }
     >
       <p className="text-sm text-muted">
-        "{entry.label}" ({formatCurrency(Math.abs(entry.amount))}) will be marked void and kept in
-        this tenant's history — it stays visible as voided rather than being erased. This doesn't
-        change their current balance on its own; it only corrects the record.
+        "{entry.label}" ({formatCurrency(Math.abs(entry.amount))}) will be voided, not deleted — it
+        stays visible in this tenant's history.
       </p>
       <div className="mt-3">
         <label className="mb-1.5 block text-xs font-medium text-muted">Reason (required)</label>
@@ -381,9 +393,12 @@ export default function TenantProfile() {
     voidLedgerEntry,
     addAdjustment,
     waivePenalty,
+    updateTenant,
   } = useTenants();
   const { reports } = useMaintenance();
   const { dueDay, propertyId } = useSettings();
+  const { reserveRoom, markReady } = useRooms();
+  const roomsView = useRoomsView();
 
   const [tab, setTab] = useState<Tab>("Financial ledger");
   const [historyFilter, setHistoryFilter] =
@@ -393,6 +408,7 @@ export default function TenantProfile() {
   const [showWaivePenalty, setShowWaivePenalty] = useState(false);
   const [showMoveOut, setShowMoveOut] = useState(false);
   const [showReactivate, setShowReactivate] = useState(false);
+  const [showReserve, setShowReserve] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [voidingEntry, setVoidingEntry] = useState<LedgerRow | null>(null);
@@ -405,6 +421,7 @@ export default function TenantProfile() {
   const documentInputRef = useRef<HTMLInputElement>(null);
 
   const tenant = tenants.find((t) => t.portalToken === code) ?? null;
+  const reservedRoom = tenant ? (roomsView.find((r) => r.reservedFor?.id === tenant.id) ?? null) : null;
 
   const refreshDocuments = () => {
     if (!tenant) return;
@@ -482,7 +499,9 @@ export default function TenantProfile() {
     );
   }
 
-  const tenantReports = reports.filter((r) => r.tenant === tenant.name);
+  // Legacy rows (from before tenant_id existed) fall back to a name match; anything filed since
+  // the fix carries the real tenant_id, so same-named tenants no longer bleed into each other.
+  const tenantReports = reports.filter((r) => (r.tenantId ? r.tenantId === tenant.id : r.tenant === tenant.name));
   // Includes any accrued late penalty (see calcTotalOwed) — the raw tenant.owedAmount field alone
   // undercounts once a tenant is overdue.
   const totalOwed = calcTotalOwed(tenant);
@@ -492,21 +511,45 @@ export default function TenantProfile() {
   const today = new Date();
   const paidThrough = furthestPaidMonth(tenant.ledger);
 
-  // The ledger only ever gets a row once a payment is actually logged — an active tenant who
-  // simply hasn't paid this month yet has no row at all, which read as "nothing due" rather than
-  // "due and unpaid". This synthesizes that one row from the tenant's live status, so the current
-  // period always shows up even before anything's been collected for it.
+  // A charge row's own period comes from billingPeriodId (falling back to parsing its label) —
+  // shared by the current-period-row gate below and the grouping logic further down, so both agree
+  // on which real charge covers which month.
+  function parsePeriod(label: string): { year: number; month: number } | null {
+    const yearMatch = label.match(/\d{4}/);
+    if (!yearMatch) return null;
+    const month = MONTH_NAMES.findIndex((name) => label.includes(name));
+    if (month === -1) return null;
+    return { year: Number(yearMatch[0]), month };
+  }
+
+  // The ledger used to only ever get a row once a payment was actually logged — an active tenant
+  // who simply hadn't paid this month yet had no row at all, which read as "nothing due" rather
+  // than "due and unpaid". This synthesizes that one row from the tenant's live status, so the
+  // current period always shows up even before anything's been collected for it.
+  //
+  // But generate-rent-charges (Phase 3B) now proactively writes a real 'charge' ledger row before
+  // any payment happens, so an unpaid tenant commonly already HAS a real row for the current
+  // month — synthesizing another one on top produced two rows for the same month ("September 2026
+  // rent" and a second "September 2026 + late penalty" row), reading as a duplicate charge rather
+  // than one debt with its penalty attached. So this only synthesizes when there's neither a paid
+  // row NOR an already-logged real charge for the current period.
   const currentPeriodCovered =
     !!paidThrough &&
     (paidThrough.year > today.getFullYear() ||
       (paidThrough.year === today.getFullYear() &&
         paidThrough.month >= today.getMonth()));
-  // Any late penalty accrued right now (see calcPenalty) is attached directly onto this same
-  // current-period row — as its own sub-line, not a separate floating row — so it's obvious which
-  // month it's actually for rather than reading as an unrelated line item.
+  const currentPeriodChargeRow = tenant.ledger.find((row) => {
+    if (row.eventType !== "charge" || row.voidedAt) return false;
+    const fromBillingPeriod = row.billingPeriodId?.match(/^(\d{4})-(\d{2})$/);
+    const period = fromBillingPeriod
+      ? { year: Number(fromBillingPeriod[1]), month: Number(fromBillingPeriod[2]) - 1 }
+      : parsePeriod(row.label);
+    return period?.year === today.getFullYear() && period?.month === today.getMonth();
+  });
+  const hasRealChargeThisPeriod = !!currentPeriodChargeRow;
   const penaltyAmount = calcPenalty(tenant);
-  const currentPeriodRow: (LedgerRow & { synthetic: true; penaltyAmount?: number }) | null =
-    tenant.active && !currentPeriodCovered
+  const currentPeriodRow: (LedgerRow & { synthetic: true }) | null =
+    tenant.active && !currentPeriodCovered && !hasRealChargeThisPeriod
       ? {
           id: "current-period",
           label: `${MONTH_NAMES[today.getMonth()]} ${today.getFullYear()}`,
@@ -518,7 +561,23 @@ export default function TenantProfile() {
           status: tenant.status === "paid" ? "unpaid" : tenant.status, // paid-up-but-uncovered can't happen, but guards the type
           source: "manual",
           synthetic: true,
-          penaltyAmount: penaltyAmount > 0 ? penaltyAmount : undefined,
+        }
+      : null;
+
+  // Any late penalty accrued right now (see calcPenalty) gets its own row — not text tucked under
+  // the charge's label — with its own Amount/Status/Balance columns like everything else on this
+  // ledger, so it's never something you have to notice was mentioned in passing rather than a real
+  // line item. chargeId links it into the current period's charge/due row purely for grouping.
+  const penaltyRow: (LedgerRow & { synthetic: true }) | null =
+    penaltyAmount > 0
+      ? {
+          id: "accrued-penalty",
+          label: `Late penalty (${tenant.daysOverdue}d overdue)`,
+          amount: penaltyAmount,
+          status: "unpaid",
+          source: "manual",
+          synthetic: true,
+          chargeId: currentPeriodChargeRow?.id ?? currentPeriodRow?.id ?? null,
         }
       : null;
 
@@ -539,10 +598,37 @@ export default function TenantProfile() {
         }
       : null;
 
-  const allRows: (LedgerRow & { synthetic?: boolean; penaltyAmount?: number })[] = [
+  // Every settling payment/adjustment linked to a charge gets its own visible row (not just voided
+  // ones) — a charge paid off by two separate mobile-money payments on two different days must show
+  // both, with their own dates, not one merged "K1,800 of K1,800 · Paid" line that erases exactly
+  // the thing a landlord looks at the ledger to answer: "when did they pay what". The charge row
+  // itself still shows its own total/outstanding as a summary; these are the history underneath it.
+  //
+  // Each payment row also carries `remainingAfter` — the charge's real running balance right after
+  // THAT payment landed, computed by walking this charge's non-voided payments oldest-first and
+  // deducting as we go. Without this, a K900-of-K1,800 partial payment displayed as its own row
+  // reads as "K900 of K900 · Paid" (trivially true of any payment on its own) with nothing to show
+  // it only covered half the charge — this is what actually answers "what was still owed after
+  // this particular payment".
+  const linkedRows: (LedgerRow & { remainingAfter?: number; parentChargeLabel?: string })[] = tenant.ledger.flatMap((chargeRow) => {
+    const events = chargeRow.linkedEvents ?? [];
+    let running = chargeRow.amount;
+    const oldestFirst = [...events].sort((a, b) => (a.createdAt ?? "").localeCompare(b.createdAt ?? ""));
+    const remainingById = new Map<string, number>();
+    for (const ev of oldestFirst) {
+      if (ev.voidedAt) continue; // a voided payment never actually reduced the balance
+      if (ev.eventType === "payment") running = Math.max(0, running - ev.amount);
+      remainingById.set(ev.id, running);
+    }
+    return events.map((ev) => ({ ...ev, remainingAfter: remainingById.get(ev.id), parentChargeLabel: chargeRow.label }));
+  });
+  type DisplayRow = LedgerRow & { synthetic?: boolean; remainingAfter?: number; parentChargeLabel?: string };
+  const allRows: DisplayRow[] = [
     ...(currentPeriodRow ? [currentPeriodRow] : []),
+    ...(penaltyRow ? [penaltyRow] : []),
     ...(depositDueRow ? [depositDueRow] : []),
     ...tenant.ledger,
+    ...linkedRows,
   ];
   const filteredLedger = allRows.filter(
     (row) =>
@@ -550,13 +636,83 @@ export default function TenantProfile() {
       statusLabel[row.status ?? "paid"] === historyFilter,
   );
 
+  // Group by the rent period the row is actually FOR, not by when it happened to be logged — two
+  // entries paid the same day (e.g. catching up on a missed month, or paying ahead) used to
+  // interleave by timestamp alone, so an older month could land above a newer one just because it
+  // was logged more recently. A charge row's own period comes from billingPeriodId (falling back
+  // to parsing its label); anything that settles/adjusts a specific charge (a payment, a waived
+  // penalty) inherits that charge's period via chargeId. Anything with neither an explicit link nor
+  // a month name in its own label (a standalone credit/damage charge, an older-format penalty
+  // waiver from before waivers linked to their charge, the security deposit) still belongs to
+  // SOME month — the one it actually happened in — so it falls back to its own createdAt's
+  // calendar month rather than a catch-all "Other" bucket, which is only ever a true last resort
+  // (a row with no createdAt at all — shouldn't happen, but the type allows it).
+  const chargePeriodById = new Map<string, { year: number; month: number }>();
+  for (const row of filteredLedger) {
+    if (row.eventType !== "charge" && !row.synthetic) continue;
+    const fromBillingPeriod = row.billingPeriodId?.match(/^(\d{4})-(\d{2})$/);
+    const period = fromBillingPeriod
+      ? { year: Number(fromBillingPeriod[1]), month: Number(fromBillingPeriod[2]) - 1 }
+      : parsePeriod(row.label);
+    if (period) chargePeriodById.set(row.id, period);
+  }
+  function periodKeyOf(row: DisplayRow): string {
+    if (row.id === "deposit-due") return "account"; // still-owed reminder, nothing dated to group it by yet
+    const own =
+      chargePeriodById.get(row.id) ??
+      (row.chargeId ? chargePeriodById.get(row.chargeId) : undefined) ??
+      parsePeriod(row.label);
+    if (own) return `${own.year}-${String(own.month).padStart(2, "0")}`;
+    if (row.createdAt) {
+      const d = new Date(row.createdAt);
+      return `${d.getFullYear()}-${String(d.getMonth()).padStart(2, "0")}`;
+    }
+    return "other";
+  }
+  function periodLabelOf(key: string): string {
+    if (key === "account") return "Account";
+    if (key === "other") return "Other";
+    const [year, month] = key.split("-").map(Number);
+    return `${MONTH_NAMES[month]} ${year}`;
+  }
+  const groupedLedger: { key: string; label: string; rows: DisplayRow[] }[] = [];
+  {
+    const byKey = new Map<string, DisplayRow[]>();
+    for (const row of filteredLedger) {
+      const key = periodKeyOf(row);
+      const list = byKey.get(key) ?? [];
+      list.push(row);
+      byKey.set(key, list);
+    }
+    // Real month keys sort newest-first ("2026-09" > "2026-08" as plain strings, since both are
+    // fixed-width YYYY-MM); "other" and "account" have no real chronology, so they're pinned last.
+    const keys = [...byKey.keys()].sort((a, b) => {
+      if (a === "other" || a === "account") return b === "other" || b === "account" ? a.localeCompare(b) : 1;
+      if (b === "other" || b === "account") return -1;
+      return b.localeCompare(a);
+    });
+    for (const key of keys) {
+      const rows = byKey.get(key)!;
+      // Within a month, rows read top-to-bottom newest-first — the most recent event at the top,
+      // the oldest at the bottom — matching the rest of the ledger's newest-first convention,
+      // rather than grouping all charges first and payments after regardless of when each landed.
+      rows.sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+      groupedLedger.push({ key, label: periodLabelOf(key), rows });
+    }
+  }
+
   /** What's still left on one row specifically — 0 for a fully paid row, the live tenant balance
-   * plus any attached late penalty for the synthesized current-period row (which can include
-   * carried-over arrears, not just this month's rent), the deposit amount itself for that
-   * synthesized row, and amount-minus-paid for a partial one. */
-  function rowOutstanding(row: LedgerRow & { synthetic?: boolean; penaltyAmount?: number }): number {
-    if (row.id === "deposit-due") return row.amount;
-    if (row.synthetic) return tenant!.owedAmount + (row.penaltyAmount ?? 0);
+   * for the synthesized current-period row (which can include carried-over arrears, not just this
+   * month's rent), the full amount for the deposit-due/accrued-penalty rows (neither has ever been
+   * paid against), and amount-minus-paid for a partial one. */
+  function rowOutstanding(row: DisplayRow): number {
+    if (row.voidedAt) return 0;
+    if (row.id === "deposit-due" || row.id === "accrued-penalty") return row.amount;
+    if (row.synthetic) return tenant!.owedAmount;
+    // A payment linked to a charge shows what's still left on THAT charge right after it landed —
+    // 0 once it's the payment that finished the charge off, not just "—" because the payment itself
+    // was received in full.
+    if (row.remainingAfter !== undefined) return row.remainingAfter;
     if (row.status === "partial")
       return Math.max(0, row.amount - (row.paidAmount ?? 0));
     if (row.status === "overdue" || row.status === "unpaid") return row.amount;
@@ -597,13 +753,14 @@ export default function TenantProfile() {
 
       <div className="space-y-5 px-4 pb-10 sm:px-8">
         {/* Breadcrumb */}
-        <Link
-          to="/tenants"
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
           className="flex w-fit items-center gap-1.5 text-sm text-muted transition-colors hover:text-ink hover:underline"
         >
           <ArrowLeft size={14} weight="bold" />
-          Back to {"tenants"}
-        </Link>
+          Back
+        </button>
 
         {/* Name + quick actions — the number that matters (outstanding balance) lives in the stat
             row below, not buried in a card; this row is identity only. */}
@@ -621,18 +778,24 @@ export default function TenantProfile() {
               {tenant.active ? (
                 <span className="flex items-center gap-1.5">
                   <CalendarBlank size={14} weight="duotone" />
-                  Tenant since {tenant.moveInDate}
+                  Tenant since {formatDisplayDate(tenant.moveInDate)}
                 </span>
               ) : (
                 <span className="rounded-full bg-red-50 px-2.5 py-0.5 text-[11px] font-semibold text-red-600">
-                  Moved out {tenant.moveOutDate ?? ""}
+                  Moved out {formatDisplayDate(tenant.moveOutDate)}
+                </span>
+              )}
+              {reservedRoom && (
+                <span className="flex items-center gap-1 rounded-full bg-brand-soft px-2.5 py-0.5 text-[11px] font-semibold text-brand">
+                  <BookmarkSimple size={11} weight="fill" />
+                  Room {reservedRoom.number} reserved{tenant.reservationFeeCollected ? ` · ${formatCurrency(tenant.reservationFeeAmount ?? 0)} held` : ""}
                 </span>
               )}
               {/* Its own tag, separate from "Outstanding balance" — a deposit that hasn't been
                   collected is never folded into that figure (it's rent-only, see owedAmount), so
                   without this a landlord had no way to see it was still owed at a glance. */}
               {tenant.depositAmount > 0 && tenant.depositStatus === "Not collected" && (
-                <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700">
+                <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700">
                   Deposit not collected · {formatCurrency(tenant.depositAmount)}
                 </span>
               )}
@@ -677,15 +840,38 @@ export default function TenantProfile() {
                 <ArrowLeft size={16} weight="bold" className="rotate-180" />
               </button>
             ) : (
-              <button
-                type="button"
-                onClick={() => setShowReactivate(true)}
-                aria-label="Reactivate"
-                title="Reactivate tenant"
-                className="flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-ink"
-              >
-                <CheckCircle size={16} weight="bold" />
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowReactivate(true)}
+                  aria-label="Reactivate"
+                  title="Reactivate tenant"
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-ink"
+                >
+                  <CheckCircle size={16} weight="bold" />
+                </button>
+                {reservedRoom ? (
+                  <button
+                    type="button"
+                    onClick={() => markReady(reservedRoom.number)}
+                    aria-label="Cancel reservation"
+                    title={`Cancel reservation for Room ${reservedRoom.number}`}
+                    className="flex h-9 w-9 items-center justify-center rounded-lg text-brand transition-colors hover:bg-mist"
+                  >
+                    <BookmarkSimple size={16} weight="fill" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowReserve(true)}
+                    aria-label="Reserve a room"
+                    title="Reserve a room for this tenant"
+                    className="flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-ink"
+                  >
+                    <BookmarkSimple size={16} weight="bold" />
+                  </button>
+                )}
+              </>
             )}
             <button
               type="button"
@@ -953,25 +1139,39 @@ export default function TenantProfile() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-line">
-                            {filteredLedger.map((row) => {
+                            {groupedLedger.map((group) => (
+                              <Fragment key={group.key}>
+                                <tr className="bg-mist/60">
+                                  <td colSpan={6} className="px-0.5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
+                                    {group.label}
+                                  </td>
+                                </tr>
+                                {group.rows.map((row) => {
                               const outstanding = rowOutstanding(row);
                               // An adjustment (addAdjustment/waivePenalty) isn't a payment being
                               // settled — it has no real paid/overdue/unpaid/partial status, so it
                               // gets its own "Charge"/"Credit" tag instead of misreading as "Paid"
                               // (the ?? "paid" fallback every real row relies on).
                               const isAdjustment = row.source === "adjustment";
-                              const displayStatusLabel = isAdjustment
-                                ? row.amount >= 0
-                                  ? "Charge"
-                                  : "Credit"
-                                : row.synthetic && row.status === "unpaid"
-                                  ? "Due"
-                                  : statusLabel[row.status ?? "paid"];
+                              // A payment that only partly settled its charge reads as "Partial" here, not
+                              // "Paid" — it was received in full, but it didn't finish the charge, and the
+                              // balance column right next to it is what actually shows how much is left.
+                              const effectiveStatus: PaymentStatus =
+                                row.remainingAfter !== undefined ? (row.remainingAfter > 0 ? "partial" : "paid") : (row.status ?? "paid");
+                              const displayStatusLabel = row.voidedAt
+                                ? "Voided"
+                                : isAdjustment
+                                  ? row.amount >= 0
+                                    ? "Charge"
+                                    : "Credit"
+                                  : (row.synthetic || row.eventType === "charge") && row.status === "unpaid"
+                                    ? "Due"
+                                    : statusLabel[effectiveStatus];
                               const adjustmentStyle = row.amount >= 0 ? "bg-amber-50 text-amber-600" : "bg-blue-50 text-blue-600";
                               return (
                                 <tr
                                   key={row.id}
-                                  className="group transition-colors duration-200 ease-in-out hover:bg-mist"
+                                  className={`group transition-colors duration-200 ease-in-out hover:bg-mist ${row.voidedAt ? "opacity-50" : ""}`}
                                 >
                                   <td className="py-3.5 font-medium text-ink">
                                     {/* A charge/credit's or a manual payment's reason gets folded onto the
@@ -981,32 +1181,22 @@ export default function TenantProfile() {
                                     <button
                                       type="button"
                                       onClick={() => setViewingEntry(row)}
-                                      className="block max-w-[160px] truncate text-left align-middle decoration-dotted hover:underline sm:max-w-[280px]"
+                                      className={`block max-w-[160px] truncate text-left align-middle decoration-dotted hover:underline sm:max-w-[280px] ${row.voidedAt ? "line-through" : ""}`}
                                       title={row.label}
                                     >
                                       {row.label}
                                     </button>
-                                    {row.label === "Security deposit" && (
-                                      <span className="ml-2 rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-600">
-                                        Security deposit
-                                      </span>
-                                    )}
-                                    {!!row.penaltyAmount && (
-                                      <span className="mt-0.5 block text-xs font-normal text-amber-600">
-                                        + {formatCurrency(row.penaltyAmount)} late penalty ({tenant.daysOverdue}d overdue)
-                                      </span>
-                                    )}
                                   </td>
                                   <td className="font-display py-3.5 text-ink">
                                     {isAdjustment
                                       ? `${row.amount >= 0 ? "+" : "−"}${formatCurrency(Math.abs(row.amount))}`
-                                      : row.paidAmount !== undefined
+                                      : (row.eventType === "charge" || row.synthetic) && row.paidAmount !== undefined
                                         ? `${formatCurrency(row.paidAmount)} of ${formatCurrency(row.amount)}`
-                                        : formatCurrency(row.amount + (row.penaltyAmount ?? 0))}
+                                        : formatCurrency(row.amount)}
                                   </td>
                                   <td className="py-3.5">
                                     <span
-                                      className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${isAdjustment ? adjustmentStyle : paymentStatusStyle[row.status ?? "paid"]}`}
+                                      className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${row.voidedAt ? "bg-gray-100 text-gray-500" : isAdjustment ? adjustmentStyle : paymentStatusStyle[effectiveStatus]}`}
                                     >
                                       {displayStatusLabel}
                                     </span>
@@ -1089,7 +1279,7 @@ export default function TenantProfile() {
                                             charges, penalties) can be voided — a real, gateway-verified
                                             Lenco payment can't be, from here or otherwise. Void, never
                                             delete: see voidLedgerEntry for why. */}
-                                        {row.source !== "lenco" ? (
+                                        {row.voidedAt ? null : row.source !== "lenco" ? (
                                           <button
                                             type="button"
                                             onClick={() =>
@@ -1113,8 +1303,10 @@ export default function TenantProfile() {
                                     )}
                                   </td>
                                 </tr>
-                              );
-                            })}
+                                  );
+                                })}
+                              </Fragment>
+                            ))}
                           </tbody>
                         </table>
                       </div>
@@ -1291,6 +1483,22 @@ export default function TenantProfile() {
             onConfirm={(newMoveInDate) => {
               reactivateTenant(tenant.id, newMoveInDate);
               setShowReactivate(false);
+            }}
+          />
+        )}
+        {showReserve && (
+          <ReserveRoomModal
+            tenant={tenant}
+            onClose={() => setShowReserve(false)}
+            onConfirm={({ room, feeAmount, feeMethod, feeDate }) => {
+              reserveRoom(room, tenant.id);
+              updateTenant(tenant.id, {
+                reservationFeeAmount: feeAmount,
+                reservationFeeMethod: feeMethod,
+                reservationFeeDate: feeDate,
+                reservationFeeCollected: true,
+              });
+              setShowReserve(false);
             }}
           />
         )}

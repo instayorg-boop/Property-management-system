@@ -40,6 +40,7 @@ import {
 import { Skeleton } from "../components/Skeleton";
 import Button from "../components/Button";
 import FieldLabel, { FieldError } from "../components/FieldLabel";
+import { calcTotalOwed } from "../invoiceUtils";
 
 // ---------- Status vocabulary ----------
 // Every status is expressed three ways — color, a written label, and an icon — so the board is
@@ -440,7 +441,7 @@ function OccupantBlock({
             className={`h-1.5 w-1.5 rounded-full ${dotColor[occupant.status]}`}
           />
           {owing
-            ? `${formatCurrency(occupant.owedAmount)} owed`
+            ? `${formatCurrency(calcTotalOwed(occupant))} owed`
             : occupant.status === "partial"
               ? "Partly paid"
               : "Paid up"}
@@ -566,8 +567,9 @@ function RoomDetailDrawer({
 
       {room.status === "reserved" && (
         <p className="mt-5 text-sm text-muted">
-          Held for an upcoming booking — it won't show as available to assign
-          until released.
+          {room.reservedFor
+            ? `Held for ${room.reservedFor.name} — it won't show as available to assign until released.`
+            : "Held for an upcoming booking — it won't show as available to assign until released."}
         </p>
       )}
 
@@ -1311,7 +1313,7 @@ export default function Rooms() {
           <LogPaymentModal
             tenantName={payingTenant.name}
             room={payingTenant.room}
-            outstanding={payingTenant.owedAmount || payingTenant.rentAmount}
+            outstanding={calcTotalOwed(payingTenant) || payingTenant.rentAmount}
             rentAmount={payingTenant.rentAmount}
             ledger={payingTenant.ledger}
             onClose={() => setPayingTenant(null)}

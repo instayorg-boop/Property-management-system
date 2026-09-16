@@ -6,6 +6,7 @@ import {
   listRooms,
   markRoomReady,
   markRoomNotReady,
+  reserveRoomForTenant,
   deleteRoomRow,
   updateRoomTypeRow,
   deleteRoomTypeRow,
@@ -33,6 +34,8 @@ export type RoomView = {
   typeConfig: RoomTypeConfig;
   status: RoomStatus;
   beds: (Tenant | null)[];
+  /** Set when `status === "reserved"` — the inactive tenant this room is being held for. */
+  reservedFor: Tenant | null;
 };
 
 export function roomLabel(number: string) {
@@ -49,6 +52,9 @@ type RoomsContextValue = {
   markReady: (number: string) => void;
   /** Takes a vacant room out of service (cleaning/repairs) — the reverse of markReady. */
   markNotReady: (number: string) => void;
+  /** Holds a vacant room for a specific inactive tenant (e.g. away for the semester, paid to keep
+   * their bed). `markReady` releases it again — there's no separate "release" call. */
+  reserveRoom: (number: string, tenantId: string) => void;
   /** Removes a room from the inventory. Caller is responsible for only offering this on a vacant room. */
   deleteRoom: (number: string) => void;
   /** Adds a new room type and appends `roomCount` new rooms of it to the inventory. */
@@ -102,20 +108,29 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
   }, [propertyId]);
 
   const markReady = (number: string) => {
-    setRooms((prev) => prev.map((r) => (r.number === number ? { ...r, override: undefined } : r)));
+    setRooms((prev) => prev.map((r) => (r.number === number ? { ...r, override: undefined, reservedForTenantId: undefined } : r)));
     if (!propertyId) return;
     if (!navigator.onLine) {
       void enqueueAction({
         id: crypto.randomUUID(),
         type: "update_room",
         propertyId,
-        payload: { property_id: propertyId, number, override: null },
+        payload: { property_id: propertyId, number, override: null, reserved_for_tenant_id: null },
         baseUpdatedAt: null,
         priority: ACTION_PRIORITY.update_room,
       });
       return;
     }
     void markRoomReady(propertyId, number);
+  };
+
+  // Not offline-queued (unlike the other room mutators here) — reserving a room is tied to logging
+  // a reservation fee on the tenant record at the same time (see TenantProfile's reserve flow),
+  // and that combined action isn't itself offline-safe yet, so this keeps its own DB write simple
+  // and just requires being online.
+  const reserveRoom = (number: string, tenantId: string) => {
+    setRooms((prev) => prev.map((r) => (r.number === number ? { ...r, override: "reserved", reservedForTenantId: tenantId } : r)));
+    if (propertyId) void reserveRoomForTenant(propertyId, number, tenantId).catch((e) => console.error("Failed to reserve room", e));
   };
 
   const markNotReady = (number: string) => {
@@ -166,7 +181,7 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
 
   return (
     <RoomsContext.Provider
-      value={{ rooms, roomTypeConfigs, isReady, markReady, markNotReady, deleteRoom, addRoomType, updateRoomType, deleteRoomType }}
+      value={{ rooms, roomTypeConfigs, isReady, markReady, markNotReady, reserveRoom, deleteRoom, addRoomType, updateRoomType, deleteRoomType }}
     >
       {children}
     </RoomsContext.Provider>
@@ -202,7 +217,8 @@ export function useRoomsView(): RoomView[] {
       const occupants = tenants.filter((t) => t.active && t.room === label);
       const beds: (Tenant | null)[] = Array.from({ length: typeConfig.capacity }, (_, i) => occupants[i] ?? null);
       const status: RoomStatus = occupants.length > 0 ? "occupied" : (r.override ?? "vacant");
-      return { number: r.number, typeId: r.typeId, typeConfig, status, beds };
+      const reservedFor = status === "reserved" ? (tenants.find((t) => t.id === r.reservedForTenantId) ?? null) : null;
+      return { number: r.number, typeId: r.typeId, typeConfig, status, beds, reservedFor };
     });
   }, [rooms, roomTypeConfigs, tenants]);
 }

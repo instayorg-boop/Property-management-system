@@ -5,10 +5,10 @@ import PageHeader from "../components/PageHeader";
 import Modal from "../components/Modal";
 import ExpenseFormDrawer from "../components/ExpenseFormDrawer";
 import Lightbox from "../components/Lightbox";
-import PayoutPill from "../components/PayoutPill";
 import Pagination, { DEFAULT_PAGE_SIZE } from "../components/Pagination";
 import { useExpenses, type Expense, type Category } from "../ExpensesContext";
 import { useTenants, formatCurrency } from "../TenantsContext";
+import { calcTotalOwed } from "../invoiceUtils";
 import {
   Paperclip,
   MagnifyingGlass,
@@ -206,14 +206,119 @@ function CategoriesEmptyState({ existingNames, onAdd }: { existingNames: string[
   );
 }
 
+/** One category row — a colored identity dot, the name (or an inline rename field), and its
+ * actions. A category still in use on some expense can only be archived (hidden from new
+ * expenses, kept on old ones); an unused one can be deleted outright, which is the "simple to use
+ * remove" a landlord actually wants for a category they added by mistake or never ended up using.
+ * Actions are always visible rather than hover-only — a hover reveal doesn't exist on touch, and
+ * this list is short enough that showing them plainly costs nothing. */
+function CategoryRow({
+  category,
+  dotClassName,
+  inUse,
+  isRenaming,
+  renameValue,
+  onRenameValueChange,
+  onStartRename,
+  onCommitRename,
+  onCancelRename,
+  onToggleActive,
+  onRequestDelete,
+}: {
+  category: Category;
+  dotClassName: string;
+  inUse: boolean;
+  isRenaming: boolean;
+  renameValue: string;
+  onRenameValueChange: (v: string) => void;
+  onStartRename: () => void;
+  onCommitRename: () => void;
+  onCancelRename: () => void;
+  onToggleActive: () => void;
+  onRequestDelete: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-2.5 rounded-lg border border-line bg-paper px-3.5 py-2.5">
+      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${category.active ? dotClassName : "bg-muted"}`} />
+      {isRenaming ? (
+        <input
+          autoFocus
+          value={renameValue}
+          onChange={(e) => onRenameValueChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && renameValue.trim()) onCommitRename();
+            if (e.key === "Escape") onCancelRename();
+          }}
+          onBlur={() => (renameValue.trim() ? onCommitRename() : onCancelRename())}
+          className="min-w-0 flex-1 rounded border border-line bg-paper px-1.5 py-0.5 text-sm outline-none focus:border-brand"
+        />
+      ) : (
+        <span className={`min-w-0 flex-1 truncate text-sm font-medium ${category.active ? "text-ink" : "text-muted"}`}>{category.name}</span>
+      )}
+
+      <div className="flex shrink-0 items-center gap-0.5">
+        <button
+          type="button"
+          onClick={onStartRename}
+          aria-label={`Rename ${category.name}`}
+          className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition active:scale-90 hover:bg-mist hover:text-ink"
+        >
+          <PencilSimple size={13} />
+        </button>
+        {category.active && (
+          <button
+            type="button"
+            onClick={onToggleActive}
+            aria-label={`Archive ${category.name}`}
+            title="Archive — hides it from new expenses, keeps past ones"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition active:scale-90 hover:bg-mist hover:text-ink"
+          >
+            <Archive size={13} />
+          </button>
+        )}
+        {!category.active && (
+          <button
+            type="button"
+            onClick={onToggleActive}
+            aria-label={`Restore ${category.name}`}
+            title="Restore to active categories"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition active:scale-90 hover:bg-mist hover:text-ink"
+          >
+            <ArrowCounterClockwise size={13} />
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onRequestDelete}
+          disabled={inUse}
+          aria-label={`Delete ${category.name}`}
+          title={inUse ? "Used on existing expenses — archive it instead" : "Delete permanently"}
+          className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition active:scale-90 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted"
+        >
+          <Trash size={13} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ManageCategoriesModal({ onClose }: { onClose: () => void }) {
-  const { categories, addCategory, renameCategory, setCategoryActive } = useExpenses();
+  const { categories, expenses, addCategory, renameCategory, setCategoryActive, deleteCategory } = useExpenses();
   const { showToast } = useToast();
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [deletingCategory, setDeletingCategory] = useState<Category | null>(null);
+
+  // How many expenses currently point at each category — the single fact that decides whether a
+  // category can be deleted outright or only archived.
+  const usageCount = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const e of expenses) counts.set(e.categoryId, (counts.get(e.categoryId) ?? 0) + 1);
+    return counts;
+  }, [expenses]);
 
   const addAndAnnounce = (name: string) => {
     const trimmed = name.trim();
@@ -233,15 +338,34 @@ function ManageCategoriesModal({ onClose }: { onClose: () => void }) {
     setAdding(false);
   };
 
+  const commitRename = () => {
+    if (renamingId && renameValue.trim()) renameCategory(renamingId, renameValue.trim());
+    setRenamingId(null);
+  };
+
   const filtered = categories.filter((c) => c.name.toLowerCase().includes(query.toLowerCase()));
+  const activeCategories = filtered.filter((c) => c.active);
+  const archivedCategories = filtered.filter((c) => !c.active);
+
+  const rowProps = (c: Category) => ({
+    category: c,
+    dotClassName: categoryDotStyle(categories, c.id),
+    inUse: (usageCount.get(c.id) ?? 0) > 0,
+    isRenaming: renamingId === c.id,
+    renameValue,
+    onRenameValueChange: setRenameValue,
+    onStartRename: () => {
+      setRenamingId(c.id);
+      setRenameValue(c.name);
+    },
+    onCommitRename: commitRename,
+    onCancelRename: () => setRenamingId(null),
+    onToggleActive: () => setCategoryActive(c.id, !c.active),
+    onRequestDelete: () => setDeletingCategory(c),
+  });
 
   return (
-    <Modal
-      onClose={onClose}
-      title="Categories"
-      description="Archiving a category hides it from new expenses — past expenses under it stay on record."
-      maxWidth="max-w-xl"
-    >
+    <Modal onClose={onClose} title="Categories" description="Delete a category you don't use, or archive one with expense history to keep it out of new ones." maxWidth="max-w-xl">
       {categories.length === 0 ? (
         <CategoriesEmptyState existingNames={[]} onAdd={addAndAnnounce} />
       ) : (
@@ -296,70 +420,64 @@ function ManageCategoriesModal({ onClose }: { onClose: () => void }) {
             </div>
           )}
 
-          {/* Grid of categories — a colored dot carries identity (same palette as the badges on
-              the expense table), name, and hover actions instead of a bare list of rows. */}
           {filtered.length === 0 ? (
             <p className="mt-6 py-6 text-center text-sm text-muted">No categories match "{query}".</p>
           ) : (
-            <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {filtered.map((c) => (
-                <div
-                  key={c.id}
-                  className={`group flex items-center gap-2.5 rounded-lg border px-3.5 py-2.5 transition-colors ${
-                    c.active ? "border-line bg-paper" : "border-line bg-mist"
-                  }`}
-                >
-                  <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${categoryDotStyle(categories, c.id)}`} />
-                  {renamingId === c.id ? (
-                    <input
-                      autoFocus
-                      value={renameValue}
-                      onChange={(e) => setRenameValue(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && renameValue.trim()) {
-                          renameCategory(c.id, renameValue.trim());
-                          setRenamingId(null);
-                        }
-                        if (e.key === "Escape") setRenamingId(null);
-                      }}
-                      onBlur={() => {
-                        if (renameValue.trim()) renameCategory(c.id, renameValue.trim());
-                        setRenamingId(null);
-                      }}
-                      className="min-w-0 flex-1 rounded border border-line bg-paper px-1.5 py-0.5 text-sm outline-none focus:border-brand"
-                    />
-                  ) : (
-                    <span className={`min-w-0 flex-1 truncate text-sm font-medium ${c.active ? "text-ink" : "text-muted line-through"}`}>
-                      {c.name}
-                    </span>
-                  )}
+            <div className="mt-4 max-h-[26rem] space-y-5 overflow-y-auto pr-0.5">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {activeCategories.map((c) => (
+                  <CategoryRow key={c.id} {...rowProps(c)} />
+                ))}
+              </div>
 
-                  <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setRenamingId(c.id);
-                        setRenameValue(c.name);
-                      }}
-                      aria-label={`Rename ${c.name}`}
-                      className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition active:scale-90 hover:bg-mist hover:text-ink"
-                    >
-                      <PencilSimple size={13} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setCategoryActive(c.id, !c.active)}
-                      aria-label={c.active ? `Archive ${c.name}` : `Restore ${c.name}`}
-                      className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition active:scale-90 hover:bg-mist hover:text-ink"
-                    >
-                      {c.active ? <Archive size={13} /> : <ArrowCounterClockwise size={13} />}
-                    </button>
+              {/* Archived — its own labeled section instead of interleaved strike-through rows,
+                  so the list you actually use day to day (active) isn't cluttered by ones you
+                  already put away. */}
+              {archivedCategories.length > 0 && (
+                <div>
+                  <p className="mb-2 text-xs font-semibold tracking-wide text-muted uppercase">
+                    Archived ({archivedCategories.length})
+                  </p>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {archivedCategories.map((c) => (
+                      <CategoryRow key={c.id} {...rowProps(c)} />
+                    ))}
                   </div>
                 </div>
-              ))}
+              )}
             </div>
           )}
         </>
+      )}
+
+      {deletingCategory && (
+        <Modal
+          onClose={() => setDeletingCategory(null)}
+          maxWidth="max-w-sm"
+          title="Delete category?"
+          footer={
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setDeletingCategory(null)}>
+                Cancel
+              </Button>
+              <button
+                type="button"
+                onClick={() => {
+                  deleteCategory(deletingCategory.id);
+                  showToast(`${deletingCategory.name} deleted`, "success");
+                  setDeletingCategory(null);
+                }}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-paper transition-colors hover:bg-red-700"
+              >
+                Delete
+              </button>
+            </div>
+          }
+        >
+          <p className="text-sm text-muted">
+            This will permanently remove <span className="font-medium text-ink">{deletingCategory.name}</span>. This can't be undone.
+          </p>
+        </Modal>
       )}
     </Modal>
   );
@@ -600,7 +718,7 @@ export default function Accounting() {
   // Rent owed right now by active tenants who are behind — "Pending payments" on the stat row.
   const pending = useMemo(() => {
     const behind = tenants.filter((t) => t.active && (t.status === "overdue" || t.status === "unpaid" || t.status === "partial"));
-    return { total: behind.reduce((sum, t) => sum + t.owedAmount, 0), count: behind.length };
+    return { total: behind.reduce((sum, t) => sum + calcTotalOwed(t), 0), count: behind.length };
   }, [tenants]);
 
   const netProfit = rentCollected === null ? null : rentCollected - total;
@@ -608,9 +726,8 @@ export default function Accounting() {
   return (
     <>
       <PageHeader
-        title="Accounting"
+        title="Expense Tracker"
         description="Track expenses, income, and your property's cash flow."
-        actions={<PayoutPill />}
       />
 
       <div className="space-y-5 px-4 sm:px-8 pb-10">

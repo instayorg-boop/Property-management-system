@@ -38,6 +38,7 @@ import {
   type VacantRoom,
 } from "../RoomsContext";
 import { useSettings } from "../SettingsContext";
+import { supabase } from "../../lib/supabaseClient";
 import {
   uploadTenantDocument,
   listTenantDocuments,
@@ -998,7 +999,7 @@ export default function AddTenant() {
     hasValidPhone &&
     phonesAllValid;
 
-  const finalizeAndSave = () => {
+  const finalizeAndSave = async () => {
     if (!canSubmit || !selectedRoom) {
       setSubmitAttempted(true);
       return;
@@ -1084,6 +1085,26 @@ export default function AddTenant() {
       active: true,
       ledger: [],
     });
+
+    // The tenant row itself must actually commit before anything that depends on it existing
+    // (the deposit ledger row, the rent payment) is written — those inserts carry a tenant_id FK,
+    // and firing them concurrently with the tenant INSERT (no ordering guarantee) could hit
+    // Postgres before that row exists and fail after this page has already navigated away,
+    // reading as "the new tenant silently failed". If the tenant insert itself failed, addTenant
+    // already rolled back the optimistic row and showed an error toast — stop here rather than
+    // attempting dependent writes against a tenant that was never actually saved.
+    try {
+      await created.saved;
+    } catch {
+      return;
+    }
+
+    // Fire-and-forget — the server re-checks the onboarding-SMS setting, phone, and idempotency
+    // itself (see send-tenant-onboarding-sms), so a failure here shouldn't block or roll back tenant
+    // creation, just as a failed welcome SMS shouldn't undo the tenant being added.
+    void supabase.functions
+      .invoke("send-tenant-onboarding-sms", { body: { tenantId: created.id } })
+      .catch((e) => console.error("Failed to send tenant onboarding SMS", e));
 
     if (depositWasCollected) {
       updateTenant(created.id, {

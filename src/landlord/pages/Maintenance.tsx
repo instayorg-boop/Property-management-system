@@ -138,7 +138,9 @@ function RequestDrawer({
 }) {
   const { tenants } = useTenants();
   const navigate = useNavigate();
-  const reportedByTenant = tenants.find((t) => t.name === request.tenant);
+  const reportedByTenant = request.tenantId
+    ? tenants.find((t) => t.id === request.tenantId)
+    : tenants.find((t) => t.name === request.tenant);
 
   const [isEditing, setIsEditing] = useState(false);
   const [location, setLocation] = useState(request.location);
@@ -241,7 +243,7 @@ function RequestDrawer({
             </div>
 
             <Link
-              to="/accounting"
+              to="/expense-tracker"
               state={{
                 expensePrefill: {
                   name: `Repair — ${request.location}`,
@@ -363,6 +365,7 @@ function AddRequestDrawer({ onClose, onSave }: { onClose: () => void; onSave: (r
     if (!canSave) return;
     onSave({
       tenant: "Landlord",
+      tenantId: null,
       location: location.trim(),
       description: description.trim(),
       submittedAt: new Date().toISOString(),

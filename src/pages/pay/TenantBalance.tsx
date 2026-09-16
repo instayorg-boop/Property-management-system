@@ -3,10 +3,8 @@ import { useNavigate, useParams, Link } from "react-router-dom";
 import { Warning } from "@phosphor-icons/react";
 import { Skeleton as SkeletonBlock } from "../../landlord/components/Skeleton";
 import {
-  getPortalProperty,
   getPortalTenant,
   getPortalLedger,
-  resolvePortalToken,
   initiateCollection,
   getCollectionStatus,
   generatePortalReceipt,
@@ -17,17 +15,14 @@ import PayShell from "./PayShell";
 import RentStatement from "./RentStatement";
 import MobileMoneyPayment from "./MobileMoneyPayment";
 import PaymentFailed from "./PaymentFailed";
+import { usePortalIdentity } from "./usePortalIdentity";
 
 type FlowStep = "review" | "pay" | "failed";
 
 export default function TenantBalance() {
   const { token } = useParams();
   const navigate = useNavigate();
-  const [propertyName, setPropertyName] = useState("");
-  const [propertyLogoUrl, setPropertyLogoUrl] = useState<string | null>(null);
-  const [propertySlug, setPropertySlug] = useState<string | null>(null);
-  const [tenantId, setTenantId] = useState<string | null>(null);
-  const [notFound, setNotFound] = useState(false);
+  const { propertySlug, tenantId, propertyName, propertyLogoUrl, propertyDueDay, notFound } = usePortalIdentity(token);
   const [tenant, setTenant] = useState<PortalTenant | null | undefined>(undefined);
   const [ledger, setLedger] = useState<PortalLedgerRow[]>([]);
 
@@ -39,36 +34,6 @@ export default function TenantBalance() {
   const [submitting, setSubmitting] = useState(false);
   const [stillWaiting, setStillWaiting] = useState(false);
   const pollTimer = useRef<number | null>(null);
-
-  // This page IS the durable link (pay.instay.co/p/:token) — every load resolves the token fresh,
-  // the same way a listing page re-fetches by id rather than depending on some prior visit having
-  // left a still-valid session lying around. The token never expires (see the durable-token-session
-  // migration), so neither does this: reload, revisit next year, whatever — it just works.
-  useEffect(() => {
-    if (!token) return;
-    let cancelled = false;
-    (async () => {
-      const resolved = await resolvePortalToken(token);
-      if (cancelled) return;
-      if (!resolved) {
-        setNotFound(true);
-        return;
-      }
-      setPropertySlug(resolved.propertySlug);
-      setTenantId(resolved.tenantId);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
-
-  useEffect(() => {
-    if (!propertySlug) return;
-    getPortalProperty(propertySlug).then((property) => {
-      setPropertyName(property?.name ?? "");
-      setPropertyLogoUrl(property?.logoUrl ?? null);
-    });
-  }, [propertySlug]);
 
   useEffect(() => {
     if (!propertySlug || !tenantId) return;
@@ -194,14 +159,19 @@ export default function TenantBalance() {
       });
   };
 
-  const submitPayment = (chosenPhone: string, chosenOperator: "mtn" | "airtel" | "zamtel", chosenAmount: number) => {
+  const submitPayment = (
+    chosenPhone: string,
+    chosenOperator: "mtn" | "airtel" | "zamtel",
+    chosenAmount: number,
+    devSimulate?: "success" | "failed"
+  ) => {
     if (!propertySlug) return;
     setPhone(chosenPhone);
     setProvider(chosenOperator);
     setPaymentError(null);
     setStillWaiting(false);
     setSubmitting(true);
-    initiateCollection(propertySlug, tenant.id, chosenPhone, chosenOperator, chosenAmount)
+    initiateCollection(propertySlug, tenant.id, chosenPhone, chosenOperator, chosenAmount, devSimulate)
       .then(({ collectionId, status, amount, feeAmount, rentPortion, isPartial }) => {
         const charged = { amount, feeAmount, rentPortion, isPartial };
         if (status === "successful") {
@@ -235,6 +205,10 @@ export default function TenantBalance() {
         ledger={ledger}
         propertyName={propertyName}
         avatarUrl={propertyLogoUrl}
+        token={token ?? ""}
+        propertySlug={propertySlug ?? ""}
+        tenantId={tenant.id}
+        dueDay={propertyDueDay}
         onPay={() => setFlowStep("pay")}
       />
     );
@@ -270,13 +244,13 @@ export default function TenantBalance() {
       submitting={submitting}
       stillWaiting={stillWaiting}
       onBack={() => setFlowStep("review")}
-      onPay={({ amount, phone: chosenPhone, operator }) => {
+      onPay={({ amount, phone: chosenPhone, operator, devSimulate }) => {
         if (paymentError) setPaymentError(null);
-        if (chosenPhone.trim().length < 9) {
+        if (!devSimulate && chosenPhone.trim().length < 9) {
           setPaymentError("Enter a valid phone number.");
           return;
         }
-        submitPayment(chosenPhone, operator, amount);
+        submitPayment(chosenPhone, operator, amount, devSimulate);
       }}
     />
   );

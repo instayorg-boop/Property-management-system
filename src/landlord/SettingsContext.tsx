@@ -10,6 +10,16 @@ export type NotificationPrefs = {
   overdueEscalated: boolean;
 };
 
+/** SMS-specific prefs for the non-payment events — payment SMS is controlled separately by
+ * `paymentSmsMode` since it needs a digest choice, not just on/off. */
+export type SmsNotificationPrefs = {
+  newMaintenanceReport: boolean;
+  upcomingPayout: boolean;
+  overdueEscalated: boolean;
+};
+
+export type PaymentSmsMode = "off" | "hourly_digest" | "daily_digest";
+
 export type PaymentMethod = {
   type: "mtn" | "airtel" | "cash" | "bank" | "other";
   number?: string;
@@ -31,7 +41,13 @@ type SettingsContextValue = {
   setCollectionTargetPct: (v: number) => void;
   /** The active property this dashboard session is scoped to. */
   propertyName: string;
-  setPropertyName: (v: string) => void;
+  /** Rejected (thrown) once `propertyNameChangesRemaining` hits 0 — the DB enforces this too, so
+   * this call is the source of truth for whether it actually took, not just a UI gate. */
+  setPropertyName: (v: string) => Promise<void>;
+  /** How many more times the property name can be changed — starts at 3, enforced server-side by a
+   * trigger (see 20261001000000_locked_settings_fields.sql), mirrored here so the UI can disable
+   * the field and explain why before the landlord even tries. */
+  propertyNameChangesRemaining: number;
   /** The stable payment-portal URL segment (/pay/:propertySlug) — set once at creation, never
    * re-derived from the editable propertyName. Use this, not slugify(propertyName), anywhere a
    * portal link is built. */
@@ -81,6 +97,19 @@ type SettingsContextValue = {
   notificationPrefs: NotificationPrefs;
   setNotificationPref: (key: keyof NotificationPrefs, value: boolean) => void;
 
+  // SMS — the alert phone is separate from landlordPhone (shown on invoices) so a landlord can
+  // route SMS alerts to a different line than the one printed for tenants.
+  notificationPhone: string;
+  setNotificationPhone: (v: string) => void;
+  paymentSmsMode: PaymentSmsMode;
+  setPaymentSmsMode: (v: PaymentSmsMode) => void;
+  smsNotificationPrefs: SmsNotificationPrefs;
+  setSmsNotificationPref: (key: keyof SmsNotificationPrefs, value: boolean) => void;
+  sendOnboardingSms: boolean;
+  setSendOnboardingSms: (v: boolean) => void;
+  sendPaymentReceiptSms: boolean;
+  setSendPaymentReceiptSms: (v: boolean) => void;
+
   // Online payments (Lenco payout account)
   lencoConnected: boolean;
   setLencoConnected: (v: boolean) => void;
@@ -114,6 +143,7 @@ const SettingsContext = createContext<SettingsContextValue | null>(null);
 
 function fromRow(row: SettingsRow) {
   const prefs = (row.notification_prefs ?? {}) as Partial<NotificationPrefs>;
+  const smsPrefs = (row.sms_notification_prefs ?? {}) as Partial<SmsNotificationPrefs>;
   return {
     invoicesOn: row.invoices_on,
     collectionTargetPct: row.collection_target_pct,
@@ -134,6 +164,15 @@ function fromRow(row: SettingsRow) {
       upcomingPayout: prefs.upcomingPayout ?? true,
       overdueEscalated: prefs.overdueEscalated ?? true,
     },
+    notificationPhone: row.notification_phone ?? "",
+    paymentSmsMode: (row.payment_sms_mode as PaymentSmsMode) ?? "daily_digest",
+    smsNotificationPrefs: {
+      newMaintenanceReport: smsPrefs.newMaintenanceReport ?? true,
+      upcomingPayout: smsPrefs.upcomingPayout ?? true,
+      overdueEscalated: smsPrefs.overdueEscalated ?? true,
+    },
+    sendOnboardingSms: row.send_onboarding_sms ?? true,
+    sendPaymentReceiptSms: row.send_payment_receipt_sms ?? true,
     lencoConnected: row.lenco_connected,
     bankName: row.bank_name ?? "",
     accountNumber: row.account_number ?? "",
@@ -154,6 +193,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [invoicesOn, setInvoicesOnState] = useState(false);
   const [collectionTargetPct, setCollectionTargetPctState] = useState(90);
   const [propertyName, setPropertyNameState] = useState("Kabulonga House");
+  const [propertyNameChangeCount, setPropertyNameChangeCount] = useState(0);
   const [propertyAddress, setPropertyAddressState] = useState("Plot 14, Kabulonga, Lusaka");
   const [propertyType, setPropertyTypeState] = useState("");
   // The payment-portal URL segment — set once at property creation and never re-derived from the
@@ -187,6 +227,16 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     overdueEscalated: true,
   });
 
+  const [notificationPhone, setNotificationPhoneState] = useState("");
+  const [paymentSmsMode, setPaymentSmsModeState] = useState<PaymentSmsMode>("daily_digest");
+  const [smsNotificationPrefs, setSmsNotificationPrefsState] = useState<SmsNotificationPrefs>({
+    newMaintenanceReport: true,
+    upcomingPayout: true,
+    overdueEscalated: true,
+  });
+  const [sendOnboardingSms, setSendOnboardingSmsState] = useState(true);
+  const [sendPaymentReceiptSms, setSendPaymentReceiptSmsState] = useState(true);
+
   const [lencoConnected, setLencoConnectedState] = useState(false);
   const [bankName, setBankNameState] = useState("");
   const [accountNumber, setAccountNumberState] = useState("");
@@ -218,6 +268,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setEscalationDaysState(s.escalationDays);
     setContactOrderState(s.contactOrder);
     setNotificationPrefsState(s.notificationPrefs);
+    setNotificationPhoneState(s.notificationPhone);
+    setPaymentSmsModeState(s.paymentSmsMode);
+    setSmsNotificationPrefsState(s.smsNotificationPrefs);
+    setSendOnboardingSmsState(s.sendOnboardingSms);
+    setSendPaymentReceiptSmsState(s.sendPaymentReceiptSms);
     setLencoConnectedState(s.lencoConnected);
     setBankNameState(s.bankName);
     setAccountNumberState(s.accountNumber);
@@ -256,6 +311,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
         setPropertyId(property.id);
         setPropertyNameState(property.name);
+        setPropertyNameChangeCount(property.name_change_count ?? 0);
         setPropertyAddressState(property.address ?? "");
         setPropertyTypeState(property.property_type ?? "");
         setPropertySlugState(property.slug ?? "");
@@ -311,9 +367,14 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setCollectionTargetPctState(v);
     persist({ collection_target_pct: v });
   };
-  const setPropertyName = (v: string) => {
+  const setPropertyName = async (v: string) => {
+    if (!propertyId || v === propertyName) return;
+    // Not optimistic — this one can actually be rejected (the 3-change limit), and the DB trigger
+    // is the source of truth, not this count mirrored client-side. Only reflect the change once
+    // the write is confirmed.
+    await updateProperty(propertyId, { name: v });
     setPropertyNameState(v);
-    if (propertyId) void updateProperty(propertyId, { name: v });
+    setPropertyNameChangeCount((c) => c + 1);
   };
   const setPropertyAddress = (v: string) => {
     setPropertyAddressState(v);
@@ -428,6 +489,30 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  const setNotificationPhone = (v: string) => {
+    setNotificationPhoneState(v);
+    persist({ notification_phone: v });
+  };
+  const setPaymentSmsMode = (v: PaymentSmsMode) => {
+    setPaymentSmsModeState(v);
+    persist({ payment_sms_mode: v });
+  };
+  const setSmsNotificationPref = (key: keyof SmsNotificationPrefs, value: boolean) => {
+    setSmsNotificationPrefsState((prev) => {
+      const next = { ...prev, [key]: value };
+      persist({ sms_notification_prefs: next });
+      return next;
+    });
+  };
+  const setSendOnboardingSms = (v: boolean) => {
+    setSendOnboardingSmsState(v);
+    persist({ send_onboarding_sms: v });
+  };
+  const setSendPaymentReceiptSms = (v: boolean) => {
+    setSendPaymentReceiptSmsState(v);
+    persist({ send_payment_receipt_sms: v });
+  };
+
   return (
     <SettingsContext.Provider
       value={{
@@ -439,6 +524,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         setCollectionTargetPct,
         propertyName,
         setPropertyName,
+        propertyNameChangesRemaining: Math.max(0, 3 - propertyNameChangeCount),
         propertySlug,
         propertyLogoUrl,
         uploadPropertyLogo,
@@ -472,6 +558,16 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         setContactOrder,
         notificationPrefs,
         setNotificationPref,
+        notificationPhone,
+        setNotificationPhone,
+        paymentSmsMode,
+        setPaymentSmsMode,
+        smsNotificationPrefs,
+        setSmsNotificationPref,
+        sendOnboardingSms,
+        setSendOnboardingSms,
+        sendPaymentReceiptSms,
+        setSendPaymentReceiptSms,
         lencoConnected,
         setLencoConnected,
         bankName,

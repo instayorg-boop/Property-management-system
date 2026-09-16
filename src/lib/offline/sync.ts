@@ -190,10 +190,12 @@ async function replayTenantUpdate(action: QueuedAction): Promise<ReplayResult> {
 /** Rooms are keyed by (property_id, number), not id — RoomRecord/RoomsContext never loads a
  * room's row id, only its display number, so this mirrors lib/rooms.ts's own update calls. */
 async function replayRoomUpdate(action: QueuedAction): Promise<ReplayResult> {
-  const payload = action.payload as { property_id: string; number: string; override: string | null };
+  const payload = action.payload as { property_id: string; number: string; override: string | null; reserved_for_tenant_id?: string | null };
+  const update: { override: string | null; reserved_for_tenant_id?: string | null } = { override: payload.override };
+  if (payload.reserved_for_tenant_id !== undefined) update.reserved_for_tenant_id = payload.reserved_for_tenant_id;
   const { error } = await supabase
     .from("rooms")
-    .update({ override: payload.override } as never)
+    .update(update as never)
     .eq("property_id", payload.property_id)
     .eq("number", payload.number);
   if (error) throw error;

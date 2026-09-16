@@ -21,6 +21,8 @@ import Terms from "./pages/Terms";
 import PaymentLayout from "./pages/pay/PaymentLayout";
 import TenantBalance from "./pages/pay/TenantBalance";
 import PaymentSuccess from "./pages/pay/PaymentSuccess";
+import AllStatements from "./pages/pay/AllStatements";
+import PortalDocuments from "./pages/pay/PortalDocuments";
 
 import DashboardLayout from "./landlord/components/DashboardLayout";
 import Dashboard from "./landlord/pages/Dashboard";
@@ -73,6 +75,8 @@ export default function App() {
         <Route element={<PaymentLayout />}>
           <Route path="/p/:token" element={<TenantBalance />} />
           <Route path="/p/:token/success" element={<PaymentSuccess />} />
+          <Route path="/p/:token/statements" element={<AllStatements />} />
+          <Route path="/p/:token/documents" element={<PortalDocuments />} />
         </Route>
 
         <Route element={<RequireAuth />}>
@@ -85,12 +89,13 @@ export default function App() {
             <Route path="/tenants/:code" element={<TenantProfile />} />
             <Route path="/rooms" element={<Rooms />} />
             <Route path="/maintenance" element={<Maintenance />} />
-            <Route path="/accounting" element={<Accounting />} />
+            <Route path="/expense-tracker" element={<Accounting />} />
             <Route path="/online-payments" element={<Payouts />} />
-            {/* Old path, from when this page lived under Accounting — kept as a redirect so any
+            {/* Old paths — "Accounting" was renamed to "Expense Tracker" — kept as redirects so any
                 existing bookmarks/links still land somewhere. */}
+            <Route path="/accounting" element={<Navigate to="/expense-tracker" replace />} />
             <Route path="/accounting/payouts" element={<Navigate to="/online-payments" replace />} />
-            <Route path="/expenses" element={<Navigate to="/accounting" replace />} />
+            <Route path="/expenses" element={<Navigate to="/expense-tracker" replace />} />
             {/* MVP: staff/payroll — see the note by the imports above. */}
             {/* <Route path="/staff" element={<Navigate to="/staff/employees" replace />} /> */}
             {/* <Route path="/staff/employees" element={<StaffEmployees />} /> */}

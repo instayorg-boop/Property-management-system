@@ -15,7 +15,15 @@ export type Expense = {
   source: "manual" | "payroll";
 };
 
-const DEFAULT_CATEGORY_NAMES = ["Utilities", "Maintenance & Repairs", "Legal Fees", "Taxes", "Other"];
+const DEFAULT_CATEGORY_NAMES = [
+  "Maintenance & Repairs",
+  "Taxes",
+  "Operations & Security",
+  "Marketing",
+  "Admin & Travel",
+  "Salaries",
+  "Finance & Mortgages",
+];
 
 type CategoryRow = Pick<Tables<"expense_categories">, "id" | "name" | "active">;
 function toCategory(row: CategoryRow): Category {
@@ -111,5 +119,13 @@ export async function updateCategoryRow(id: string, patch: Partial<Category>): P
   if (patch.name !== undefined) row.name = patch.name;
   if (patch.active !== undefined) row.active = patch.active;
   const { error } = await supabase.from("expense_categories").update(row).eq("id", id);
+  if (error) throw error;
+}
+
+/** Only ever called for a category with zero expenses against it (checked client-side before
+ * offering the button) — one with expense history is archived instead (see setCategoryActive),
+ * never hard-deleted, so those records always keep a real category to point at. */
+export async function deleteCategoryRow(id: string): Promise<void> {
+  const { error } = await supabase.from("expense_categories").delete().eq("id", id);
   if (error) throw error;
 }

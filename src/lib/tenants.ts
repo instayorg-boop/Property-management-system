@@ -87,6 +87,13 @@ export type Tenant = {
   depositDate: string;
   depositMethod: DepositMethod;
   depositStatus: DepositStatus;
+  /** A non-refundable fee logged to hold a specific room for an inactive tenant (e.g. away for the
+   * semester) — deliberately separate from the rent ledger, mirroring how the deposit fields sit
+   * outside `ledger_entries` too. Set via reserveRoom on TenantProfile, not part of normal billing. */
+  reservationFeeAmount?: number;
+  reservationFeeDate?: string;
+  reservationFeeMethod?: DepositMethod;
+  reservationFeeCollected?: boolean;
   notes: string;
   onTimeCount: number;
   totalMonthsCount: number;
@@ -173,7 +180,12 @@ const TENANT_COLUMNS =
   "id, name, phones, emergency_contacts, move_in_date, move_out_date, rent_amount, status, " +
   "days_overdue, owed_amount, deposit_amount, deposit_date, deposit_method, deposit_status, " +
   "deposit_resolution_note, notes, on_time_count, total_months_count, active, due_day, grace_period_days, " +
-  "portal_token, rooms(number), room_types(name), institutions(name)";
+  "reservation_fee_amount, reservation_fee_date, reservation_fee_method, reservation_fee_collected, " +
+  // rooms!tenants_room_id_fkey disambiguates against rooms.reserved_for_tenant_id (added by the
+  // room-reservations migration) — a plain rooms(number) embed is ambiguous now and PostgREST
+  // rejects the whole query (PGRST201) rather than picking one, which silently broke every tenant
+  // read that used this column list.
+  "portal_token, rooms!tenants_room_id_fkey(number), room_types(name), institutions(name)";
 
 type TenantRow = Pick<
   Tables<"tenants">,
@@ -181,6 +193,7 @@ type TenantRow = Pick<
   | "rent_amount" | "status" | "days_overdue" | "owed_amount" | "deposit_amount" | "deposit_date"
   | "deposit_method" | "deposit_status" | "deposit_resolution_note" | "notes" | "on_time_count"
   | "total_months_count" | "active" | "due_day" | "grace_period_days" | "portal_token"
+  | "reservation_fee_amount" | "reservation_fee_date" | "reservation_fee_method" | "reservation_fee_collected"
 > & {
   rooms: { number: string } | null;
   room_types: { name: string } | null;
@@ -227,6 +240,10 @@ function toTenant(row: TenantRow, propertyName: string, ledger: LedgerRow[]): Te
     depositDate: row.deposit_date ?? "",
     depositMethod: (row.deposit_method as DepositMethod) ?? "cash",
     depositStatus: row.deposit_status as DepositStatus,
+    reservationFeeAmount: row.reservation_fee_amount ?? undefined,
+    reservationFeeDate: row.reservation_fee_date ?? undefined,
+    reservationFeeMethod: (row.reservation_fee_method as DepositMethod) ?? undefined,
+    reservationFeeCollected: row.reservation_fee_collected ?? false,
     notes: row.notes ?? "",
     onTimeCount: row.on_time_count,
     totalMonthsCount: row.total_months_count,
@@ -278,6 +295,7 @@ function projectLegacyRow(row: RawLedgerEntryRow): LedgerRow {
     createdAt: row.created_at,
     method: (row.method as PaymentMethod | null) ?? null,
     source: toSource(row.source),
+    voidedAt: row.voided_at,
   };
 }
 
@@ -290,9 +308,10 @@ function projectLegacyRow(row: RawLedgerEntryRow): LedgerRow {
  *
  * Algorithm:
  *  1. event_type IS NULL -> legacy row, passed through unchanged (projectLegacyRow).
- *  2. voided_at IS NOT NULL on a new-model row -> dropped entirely; a voided event must not affect
- *     the projected financial state (nothing currently sets voided_at on a new row, so this is
- *     inert today, but the projection already honors it).
+ *  2. voided_at IS NOT NULL -> the row still projects and displays (voidedAt carries through so
+ *     the UI can badge it "Voided") but never affects the projected financial state: a voided
+ *     linked payment/adjustment is excluded from the sum that settles its charge, so voiding never
+ *     changes what's owed — it only ever changes what's shown as history.
  *  3. event_type = 'charge' -> becomes one projected charge-shaped row. Its `paidAmount`/`status`
  *     are derived from every non-voided, affects_balance-true event whose charge_id points at it
  *     (summed as signed amounts against the charge's own positive amount — a `payment` row's
@@ -314,12 +333,6 @@ export function projectLedgerRows(rows: RawLedgerEntryRow[]): LedgerRow[] {
   const standalone: RawLedgerEntryRow[] = [];
 
   for (const row of rows) {
-    // A voided row — legacy or new-model alike — is excluded from the projection entirely. This
-    // check runs before the legacy/new-model split specifically so that voiding (see
-    // voidLedgerEntry) works uniformly for both row shapes; a legacy row was never checked for
-    // voided_at before this, since nothing used to set it on one.
-    if (row.voided_at) continue;
-
     if (row.event_type == null) {
       legacy.push(projectLegacyRow(row));
       continue;
@@ -345,7 +358,9 @@ export function projectLedgerRows(rows: RawLedgerEntryRow[]): LedgerRow[] {
   const projectedCharges: LedgerRow[] = [];
   for (const charge of charges.values()) {
     const linked = linkedByCharge.get(charge.id) ?? [];
-    const net = linked.reduce((sum, ev) => sum + ev.amount, 0); // payments are negative, adjustments signed
+    // Voided linked events stay in `linked` (and so in `linkedEvents` below) so they're still
+    // visible on the charge's history, but never count toward what's actually settled.
+    const net = linked.filter((ev) => !ev.voided_at).reduce((sum, ev) => sum + ev.amount, 0); // payments are negative, adjustments signed
     const remaining = Math.max(0, charge.amount + net);
     const paidAmount = round2(charge.amount - remaining);
     const status: PaymentStatus = remaining <= 0 ? "paid" : paidAmount > 0 ? "partial" : "unpaid";
@@ -464,6 +479,10 @@ export async function tenantPatchToRow(propertyId: string, patch: Partial<Omit<T
   if (patch.depositMethod !== undefined) row.deposit_method = patch.depositMethod;
   if (patch.depositStatus !== undefined) row.deposit_status = patch.depositStatus;
   if (patch.depositResolutionNote !== undefined) row.deposit_resolution_note = patch.depositResolutionNote ?? null;
+  if (patch.reservationFeeAmount !== undefined) row.reservation_fee_amount = patch.reservationFeeAmount ?? null;
+  if (patch.reservationFeeDate !== undefined) row.reservation_fee_date = patch.reservationFeeDate ?? null;
+  if (patch.reservationFeeMethod !== undefined) row.reservation_fee_method = patch.reservationFeeMethod ?? null;
+  if (patch.reservationFeeCollected !== undefined) row.reservation_fee_collected = patch.reservationFeeCollected;
   if (patch.notes !== undefined) row.notes = patch.notes;
   if (patch.onTimeCount !== undefined) row.on_time_count = patch.onTimeCount;
   if (patch.totalMonthsCount !== undefined) row.total_months_count = patch.totalMonthsCount;

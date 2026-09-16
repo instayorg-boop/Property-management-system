@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { MagnifyingGlass as SearchIcon } from "@phosphor-icons/react";
 import SlideOver from "./SlideOver";
 import { useTenants, formatCurrency, type Tenant } from "../TenantsContext";
+import { calcTotalOwed } from "../invoiceUtils";
 
 const statusStyle: Record<string, string> = {
   paid: "bg-emerald-50 text-emerald-600",
@@ -73,7 +74,7 @@ export default function TenantSearchDrawer({
               <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[t.status]}`}>
                 {statusLabel[t.status]}
               </span>
-              <p className="mt-1 text-xs text-muted">{formatCurrency(t.owedAmount || t.rentAmount)}</p>
+              <p className="mt-1 text-xs text-muted">{formatCurrency(calcTotalOwed(t) || t.rentAmount)}</p>
             </div>
           </button>
         ))}

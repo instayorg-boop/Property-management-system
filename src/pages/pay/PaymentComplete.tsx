@@ -13,8 +13,9 @@ export type PaymentCompleteProps = {
   tenantId: string;
   room: string;
   paidAmount: number;
-  /** The rent-only portion of paidAmount and the 1.3% sending fee — shown as separate receipt line
-   * items, matching the receipt PDF's layout rather than one lump figure. */
+  /** The rent-only portion of paidAmount and the sending fee (rate depends on the tenant's rent
+   * band — see src/lib/pricing.ts) — shown as separate receipt line items, matching the receipt
+   * PDF's layout rather than one lump figure. */
   rentPortion: number;
   feeAmount: number;
   /** Whatever's left owing after this payment — 0 means it fully cleared the balance. */

@@ -155,20 +155,10 @@ Deno.serve(async (req) => {
       // "InvalidPhoneNumber", "UserInBlacklist", "InsufficientBalance" etc.
       if (!smsResponse.ok || (smsRecipientStatus && smsRecipientStatus !== "Success")) {
         console.error("[pay-portal-request-otp] Africa's Talking rejected the SMS", smsResponse.status, smsResponseText);
-        // ⚠️ TEMPORARY, requested explicitly: the sandbox app has no simulated credit right now
-        // (InsufficientBalance), which would otherwise block all portal testing until it's topped
-        // up. Falling back to the same devCode response used when no key is configured at all, so
-        // the rest of the flow/UI can be tested. REVERT this fallback (go back to returning the 502
-        // below) once the Africa's Talking balance is topped up — leaving it in means a real send
-        // failure would silently hand the code back in the API response instead of erroring.
-        return new Response(JSON.stringify({ ok: true, maskedPhone: maskPhone(phone), devCode: code }), {
-          status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-        // return new Response(
-        //   JSON.stringify({ error: "Failed to send the code. Try again shortly.", detail: smsResponseText, atStatus: smsResponse.status }),
-        //   { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        // );
+        return new Response(
+          JSON.stringify({ error: "Failed to send the code. Try again shortly.", detail: smsResponseText, atStatus: smsResponse.status }),
+          { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
     } catch (err) {
       console.error("[pay-portal-request-otp] failed to reach Africa's Talking", String(err));

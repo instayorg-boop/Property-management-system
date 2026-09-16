@@ -247,9 +247,12 @@ export default function LogPaymentModal({
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            {/* Only the current unsettled month (plus "Other") is directly selectable — a tenant
-                can't skip ahead to a later month while this one still owes. Paying several months
-                at once is the "months to pay" stepper below, not a different month choice. */}
+            {/* Every not-yet-settled month is selectable, not just the earliest one — a landlord
+                who actually collected October's rent while September is still open needs to be
+                able to log it against October specifically, not have it silently default to
+                September. "Months to pay" (advance) below still only applies when the earliest
+                month is selected, since paying ahead only makes sense starting from what's owed
+                first. */}
             <label className="mb-1.5 block text-xs font-medium text-muted">What's this for?</label>
             <Select
               value={labelChoice}
@@ -259,7 +262,7 @@ export default function LogPaymentModal({
                 if (v !== CUSTOM) setAmount(String(remainingFor(v) || ""));
               }}
               options={[
-                ...(currentLabel ? [{ value: currentLabel, label: currentLabel }] : []),
+                ...options.map((o) => ({ value: o.label, label: o.label })),
                 { value: CUSTOM, label: "Other…" },
               ]}
               className="w-full"

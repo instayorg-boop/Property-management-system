@@ -7,6 +7,7 @@ import {
 } from "@phosphor-icons/react";
 import { useRoomsView, roomLabel } from "../../RoomsContext";
 import { useTenants, type PaymentStatus, type Tenant } from "../../TenantsContext";
+import { calcTotalOwed } from "../../invoiceUtils";
 import Button from "../../components/Button";
 
 export function DownloadIcon() {
@@ -126,7 +127,7 @@ export function useArrears(): ArrearsRow[] {
             tenant: t.name,
             room: t.room,
             daysOverdue: t.daysOverdue ?? 0,
-            owed: t.owedAmount,
+            owed: calcTotalOwed(t),
             contactName: contact?.name ?? "—",
             contactPhone: contact?.phones[0] ?? "",
           };

@@ -7,7 +7,7 @@
  * rule. No photo uploaded yet means no avatar renders, not a placeholder ring. */
 export default function PortalHeader({ propertyName, avatarUrl }: { propertyName?: string | null; avatarUrl?: string | null }) {
   return (
-    <div className="bg-white flex w-md items-center justify-between px-5 py-3.5">
+    <div className="bg-transparent flex  sm:max-w-27.5 w-full px-4 justify-between  pt-6">
       <div className="text-left">
         <p className="font-display text-lg font-semibold leading-tight text-ink">Instay</p>
         <p className="text-[10px] font-semibold tracking-wide text-muted uppercase">For tenants</p>
@@ -15,7 +15,7 @@ export default function PortalHeader({ propertyName, avatarUrl }: { propertyName
       
       {propertyName && (
         <div className="">
-          {avatarUrl && <img src={avatarUrl} alt="" className="h-9 w-9 shrink-0 rounded-full object-cover" />}
+          {avatarUrl && <img src="" alt="" className="h-9 w-9 shrink-0 rounded-full object-cover hidden " />}
         </div>
       )}
       

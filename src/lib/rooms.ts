@@ -14,6 +14,10 @@ export type RoomRecord = {
   number: string;
   typeId: string;
   override?: "reserved" | "not-ready";
+  /** Set alongside `override: "reserved"` — which specific (inactive) tenant this room is being
+   * held for, so the Rooms page can show "Reserved for X" instead of a bare label. Cleared whenever
+   * the reservation is released, same as `override`. */
+  reservedForTenantId?: string;
 };
 
 type RoomTypeRow = Pick<Tables<"room_types">, "id" | "name" | "capacity" | "rent" | "deposit_amount" | "deposit_refundability">;
@@ -28,12 +32,13 @@ function toRoomTypeConfig(row: RoomTypeRow): RoomTypeConfig {
   };
 }
 
-type RoomRow = Pick<Tables<"rooms">, "number" | "room_type_id" | "override">;
+type RoomRow = Pick<Tables<"rooms">, "number" | "room_type_id" | "override" | "reserved_for_tenant_id">;
 function toRoomRecord(row: RoomRow): RoomRecord {
   return {
     number: row.number,
     typeId: row.room_type_id,
     override: (row.override as RoomRecord["override"]) ?? undefined,
+    reservedForTenantId: row.reserved_for_tenant_id ?? undefined,
   };
 }
 
@@ -50,7 +55,7 @@ export async function listRoomTypeConfigs(propertyId: string): Promise<RoomTypeC
 export async function listRooms(propertyId: string): Promise<RoomRecord[]> {
   const { data, error } = await supabase
     .from("rooms")
-    .select("number, room_type_id, override")
+    .select("number, room_type_id, override, reserved_for_tenant_id")
     .eq("property_id", propertyId)
     .order("number", { ascending: true });
   if (error) throw error;
@@ -58,9 +63,10 @@ export async function listRooms(propertyId: string): Promise<RoomRecord[]> {
 }
 
 export async function markRoomReady(propertyId: string, number: string): Promise<void> {
+  // Also clears any stale reservation link — "ready" means fully open again, not held for anyone.
   const { error } = await supabase
     .from("rooms")
-    .update({ override: null })
+    .update({ override: null, reserved_for_tenant_id: null })
     .eq("property_id", propertyId)
     .eq("number", number);
   if (error) throw error;
@@ -71,6 +77,19 @@ export async function markRoomNotReady(propertyId: string, number: string): Prom
   const { error } = await supabase
     .from("rooms")
     .update({ override: "not-ready" })
+    .eq("property_id", propertyId)
+    .eq("number", number);
+  if (error) throw error;
+}
+
+/** Holds a vacant room for a specific inactive tenant (e.g. a student home for the break who's
+ * paid to keep their bed) — distinct from assigning a room, which only happens via reactivation or
+ * a new tenant's own room_id. Releasing it (see markRoomReady) clears both the override and the
+ * tenant link together, so a room can never end up "reserved" with no one it's reserved for. */
+export async function reserveRoomForTenant(propertyId: string, number: string, tenantId: string): Promise<void> {
+  const { error } = await supabase
+    .from("rooms")
+    .update({ override: "reserved", reserved_for_tenant_id: tenantId })
     .eq("property_id", propertyId)
     .eq("number", number);
   if (error) throw error;

@@ -1,5 +1,5 @@
-import { forwardRef, useEffect, useRef, useState } from "react";
-import { NavLink, Link, useLocation, useNavigate } from "react-router-dom";
+import { forwardRef, useState } from "react";
+import { NavLink, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   SquaresFour,
@@ -8,33 +8,26 @@ import {
   DoorOpen,
   Wrench,
   IdentificationBadge,
-  Wallet,
-  CreditCard,
+  Receipt,
+  Coins,
   ChartBar,
   GearSix,
   CaretDown,
   Lifebuoy,
   UserCircle,
   SignOut,
-  X,
-  DotsThreeVertical,
-  Bell as BellIcon,
-  Camera,
 } from "@phosphor-icons/react";
 import { useSidebar } from "../SidebarContext";
 import { useMaintenance } from "../MaintenanceContext";
 import { useTenants } from "../TenantsContext";
-import { useSettings } from "../SettingsContext";
-import { signOut as signOutRequest } from "../../lib/auth";
-import NotificationsPanel from "./NotificationsPanel";
 
 const icons = {
   dashboard: SquaresFour,
   rent: CurrencyCircleDollar,
   tenants: UsersThree,
   rooms: DoorOpen,
-  accounting: Wallet,
-  onlinePayments: CreditCard,
+  accounting: Receipt,
+  onlinePayments: Coins,
   staff: IdentificationBadge,
   maintenance: Wrench,
   reports: ChartBar,
@@ -65,7 +58,7 @@ const groups: { label: string; items: NavItem[] }[] = [
       { label: "Tenants", to: "/tenants", icon: "tenants" },
       { label: "Rooms", to: "/rooms", icon: "rooms" },
       { label: "Maintenance requests", to: "/maintenance", icon: "maintenance" },
-      { label: "Accounting", to: "/accounting", icon: "accounting" },
+      { label: "Expense Tracker", to: "/expense-tracker", icon: "accounting" },
       { label: "Online payments", to: "/online-payments", icon: "onlinePayments" },
       // Staff/payroll — out of scope for the MVP. Re-enable by uncommenting this nav item plus
       // the matching routes in App.tsx (search "MVP: staff/payroll").
@@ -197,45 +190,12 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
   const { open, setOpen } = useSidebar();
   const { reports } = useMaintenance();
   const { tenants } = useTenants();
-  const { propertyName, propertyLogoUrl, uploadPropertyLogo } = useSettings();
-  const [uploadingLogo, setUploadingLogo] = useState(false);
-  const logoInputRef = useRef<HTMLInputElement>(null);
-  const navigate = useNavigate();
-  const [accountOpen, setAccountOpen] = useState(false);
-  const accountRef = useRef<HTMLDivElement>(null);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const notificationsRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!accountOpen && !notificationsOpen) return;
-    const onClick = (e: MouseEvent) => {
-      if (accountRef.current && !accountRef.current.contains(e.target as Node)) setAccountOpen(false);
-      if (notificationsRef.current && !notificationsRef.current.contains(e.target as Node)) setNotificationsOpen(false);
-    };
-    const onEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setAccountOpen(false);
-        setNotificationsOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", onClick);
-    document.addEventListener("keydown", onEscape);
-    return () => {
-      document.removeEventListener("mousedown", onClick);
-      document.removeEventListener("keydown", onEscape);
-    };
-  }, [accountOpen, notificationsOpen]);
 
   // How many things need a look on each nav item — shown as a count badge, not just a dot, so it's
   // clear at a glance how much is waiting rather than just that something is.
   const attention: Partial<Record<string, number>> = {
     "/maintenance": reports.filter((r) => r.unread).length,
     "/rent": tenants.filter((t) => t.active && (t.status === "overdue" || t.status === "unpaid")).length,
-  };
-
-  const handleSignOut = () => {
-    setOpen(false);
-    void signOutRequest().finally(() => navigate("/sign-in"));
   };
 
   return (
@@ -248,44 +208,7 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
         open ? "translate-x-0" : "-translate-x-full"
       }`}
     >
-      {/* Header — logo + notifications. Fixed real estate that never collides with a page's own
-          header actions (balance pills, buttons), unlike floating it over the content area. */}
-      <div className="flex items-center justify-between px-4 py-4">
-        <Link to="/dashboard" onClick={() => setOpen(false)} className="flex items-center gap-3">
-          <img src="https://rlmcuhejgfftcdshbrbe.supabase.co/storage/v1/object/public/Company%20assets/Instay%20Manage%20Logo.png" alt="Instay Manage" className="h-10" />
-          <p className="font-sans text-blue-700 text-xl font-bold leading-[1.08] tracking-[-0.09em]  ">Instay Manage</p>
-        </Link>
-
-        <div className="flex items-center gap-1">
-          <div ref={notificationsRef} className="relative">
-            <button
-              type="button"
-              onClick={() => setNotificationsOpen((v) => !v)}
-              aria-label="Notifications"
-              aria-expanded={notificationsOpen}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-ink"
-            >
-              <BellIcon size={17} weight="bold" />
-            </button>
-            {notificationsOpen && (
-              <div className="absolute top-full right-0 z-20 mt-2 max-w-[calc(100vw-1.5rem)]">
-                <NotificationsPanel onClose={() => setNotificationsOpen(false)} />
-              </div>
-            )}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setOpen(false)}
-            aria-label="Close menu"
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-ink lg:hidden"
-          >
-            <X size={16} weight="bold" />
-          </button>
-        </div>
-      </div>
-
-      <nav className="flex-1  space-y-3 overflow-y-auto px-3 pb-4 pt-2">
+      <nav className="flex-1 space-y-3 overflow-y-auto px-3 pb-4 pt-4">
         {groups.map((group) => (
           <div key={group.label}>
             <p className="px-3 pb-1.5 text-[11px] font-semibold tracking-wide text-muted/70 uppercase">
@@ -299,101 +222,6 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
           </div>
         ))}
       </nav>
-
-      {/* Compact account trigger — a small icon, not a permanent list of links. Everything that
-          used to be separate footer rows (Settings, Help, Log out) now lives inside the popup
-          this opens, anchored above the trigger since it's at the very bottom of the sidebar. */}
-      <div ref={accountRef} className="relative px-3 py-3">
-      <input
-        ref={logoInputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          e.target.value = "";
-          if (!file) return;
-          setUploadingLogo(true);
-          uploadPropertyLogo(file)
-            .catch((err) => console.error("Failed to upload property logo", err))
-            .finally(() => setUploadingLogo(false));
-        }}
-      />
-      <button
-            type="button"
-            onClick={() => setAccountOpen((v) => !v)}
-            aria-label="Open account menu"
-            aria-expanded={accountOpen}
-            className="flex items-center gap-2.5 rounded-md p-2  transition-colors bg-mist border border-gray-200  "
-          >
-            <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full">
-              {propertyLogoUrl ? (
-                <img src={propertyLogoUrl} alt="" className="h-9 w-9 rounded-full object-cover" />
-              ) : (
-                <UserCircle size={32} weight="fill" className="text-muted" />
-              )}
-              <span
-                role="button"
-                tabIndex={0}
-                aria-label="Change property photo"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  logoInputRef.current?.click();
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    logoInputRef.current?.click();
-                  }
-                }}
-                className="absolute -right-1 -bottom-1 flex h-4.5 w-4.5 items-center justify-center rounded-full border border-paper bg-ink text-paper transition-opacity hover:opacity-80"
-              >
-                <Camera size={9} weight="bold" />
-              </span>
-            </span>
-            <span className="hidden min-w-0 max-w-40 flex-col items-start text-left sm:flex">
-              <span className="w-full truncate text-sm font-semibold text-ink">{propertyName}</span>
-              <span className="w-full truncate text-xs text-muted">{uploadingLogo ? "Uploading…" : "Admin · Property account"}</span>
-            </span>
-            <DotsThreeVertical size={16} weight="bold" className="hidden shrink-0 text-muted sm:block" />
-          </button>
-
-        {accountOpen && (
-          <div className="absolute bottom-full left-3 z-10 mb-2 w-56 overflow-hidden rounded-lg border border-line bg-paper shadow-card">
-            <div className="px-4 pt-3.5 pb-3">
-              <p className="truncate text-sm font-semibold text-ink">{propertyName}</p>
-              <p className="text-xs text-muted">Property account</p>
-            </div>
-            <div className="h-px bg-line" />
-            <div className="p-1">
-              <Link
-                to="/settings"
-                onClick={() => {
-                  setAccountOpen(false);
-                  setOpen(false);
-                }}
-                className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist"
-              >
-                <GearSix size={16} weight="duotone" />
-                Settings
-              </Link>
-              
-            </div>
-          
-            <div className="p-1">
-              <button
-                type="button"
-                onClick={handleSignOut}
-                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
-              >
-                <SignOut size={16} weight="duotone" />
-                Log out
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
     </div>
   );
 });

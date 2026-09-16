@@ -6,6 +6,9 @@ export type MaintenanceStatus = "open" | "in-progress" | "resolved";
 export type MaintenanceReport = {
   id: string;
   tenant: string;
+  /** Real FK to tenants.id — null on legacy rows predating this column, or on landlord-authored
+   *  general reports with no specific tenant. Prefer this over name matching wherever possible. */
+  tenantId: string | null;
   location: string;
   description: string;
   submittedAt: string;
@@ -17,13 +20,23 @@ export type MaintenanceReport = {
 
 type ReportRow = Pick<
   Tables<"maintenance_reports">,
-  "id" | "tenant" | "location" | "description" | "submitted_at" | "status" | "unread" | "photo_urls" | "resolved_at"
+  | "id"
+  | "tenant"
+  | "tenant_id"
+  | "location"
+  | "description"
+  | "submitted_at"
+  | "status"
+  | "unread"
+  | "photo_urls"
+  | "resolved_at"
 >;
 
 function toReport(row: ReportRow): MaintenanceReport {
   return {
     id: row.id,
     tenant: row.tenant ?? "",
+    tenantId: row.tenant_id ?? null,
     location: row.location,
     description: row.description,
     submittedAt: row.submitted_at,
@@ -40,7 +53,7 @@ const REPORT_LIST_LIMIT = 500;
 export async function listReports(propertyId: string): Promise<MaintenanceReport[]> {
   const { data, error } = await supabase
     .from("maintenance_reports")
-    .select("id, tenant, location, description, submitted_at, status, unread, photo_urls, resolved_at")
+    .select("id, tenant, tenant_id, location, description, submitted_at, status, unread, photo_urls, resolved_at")
     .eq("property_id", propertyId)
     .order("submitted_at", { ascending: false })
     .limit(REPORT_LIST_LIMIT);
@@ -57,6 +70,7 @@ export async function insertReport(
     id,
     property_id: propertyId,
     tenant: report.tenant,
+    tenant_id: report.tenantId,
     location: report.location,
     description: report.description,
     submitted_at: report.submittedAt,

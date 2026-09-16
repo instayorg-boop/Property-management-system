@@ -700,6 +700,7 @@ export type Database = {
           status: string
           submitted_at: string
           tenant: string | null
+          tenant_id: string | null
           unread: boolean
         }
         Insert: {
@@ -714,6 +715,7 @@ export type Database = {
           status?: string
           submitted_at?: string
           tenant?: string | null
+          tenant_id?: string | null
           unread?: boolean
         }
         Update: {
@@ -728,11 +730,213 @@ export type Database = {
           status?: string
           submitted_at?: string
           tenant?: string | null
+          tenant_id?: string | null
           unread?: boolean
         }
         Relationships: [
           {
             foreignKeyName: "maintenance_reports_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_reports_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notifications: {
+        Row: {
+          body: string
+          category: string
+          created_at: string
+          id: string
+          metadata: Json
+          property_id: string
+          read_at: string | null
+          title: string
+          type: string
+        }
+        Insert: {
+          body: string
+          category: string
+          created_at?: string
+          id?: string
+          metadata?: Json
+          property_id: string
+          read_at?: string | null
+          title: string
+          type: string
+        }
+        Update: {
+          body?: string
+          category?: string
+          created_at?: string
+          id?: string
+          metadata?: Json
+          property_id?: string
+          read_at?: string | null
+          title?: string
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reminder_log: {
+        Row: {
+          billing_period_id: string
+          id: string
+          reminder_type: string
+          sent_at: string
+          tenant_id: string
+        }
+        Insert: {
+          billing_period_id: string
+          id?: string
+          reminder_type: string
+          sent_at?: string
+          tenant_id: string
+        }
+        Update: {
+          billing_period_id?: string
+          id?: string
+          reminder_type?: string
+          sent_at?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reminder_log_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notification_digest_state: {
+        Row: {
+          created_at: string
+          digest_type: string
+          id: string
+          last_processed_at: string | null
+          last_processed_notification_id: string | null
+          last_sent_at: string | null
+          property_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          digest_type: string
+          id?: string
+          last_processed_at?: string | null
+          last_processed_notification_id?: string | null
+          last_sent_at?: string | null
+          property_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          digest_type?: string
+          id?: string
+          last_processed_at?: string | null
+          last_processed_notification_id?: string | null
+          last_sent_at?: string | null
+          property_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_digest_state_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sms_send_log: {
+        Row: {
+          category: string
+          id: string
+          message: string
+          property_id: string
+          recipient_phone: string
+          sent_at: string
+          status: string
+        }
+        Insert: {
+          category: string
+          id?: string
+          message: string
+          property_id: string
+          recipient_phone: string
+          sent_at?: string
+          status: string
+        }
+        Update: {
+          category?: string
+          id?: string
+          message?: string
+          property_id?: string
+          recipient_phone?: string
+          sent_at?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sms_send_log_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pending_instant_sms: {
+        Row: {
+          created_at: string
+          id: string
+          notification_id: string | null
+          payload: Json
+          property_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          notification_id?: string | null
+          payload: Json
+          property_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          notification_id?: string | null
+          payload?: Json
+          property_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pending_instant_sms_notification_id_fkey"
+            columns: ["notification_id"]
+            isOneToOne: false
+            referencedRelation: "notifications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pending_instant_sms_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
             referencedRelation: "properties"
@@ -905,6 +1109,7 @@ export type Database = {
           id: string
           logo_url: string | null
           name: string
+          name_change_count: number
           owner_id: string | null
           property_type: string | null
           slug: string | null
@@ -915,6 +1120,7 @@ export type Database = {
           id?: string
           logo_url?: string | null
           name: string
+          name_change_count?: number
           owner_id?: string | null
           property_type?: string | null
           slug?: string | null
@@ -925,6 +1131,7 @@ export type Database = {
           id?: string
           logo_url?: string | null
           name?: string
+          name_change_count?: number
           owner_id?: string | null
           property_type?: string | null
           slug?: string | null
@@ -979,6 +1186,7 @@ export type Database = {
           number: string
           override: string | null
           property_id: string
+          reserved_for_tenant_id: string | null
           room_type_id: string
         }
         Insert: {
@@ -987,6 +1195,7 @@ export type Database = {
           number: string
           override?: string | null
           property_id: string
+          reserved_for_tenant_id?: string | null
           room_type_id: string
         }
         Update: {
@@ -995,6 +1204,7 @@ export type Database = {
           number?: string
           override?: string | null
           property_id?: string
+          reserved_for_tenant_id?: string | null
           room_type_id?: string
         }
         Relationships: [
@@ -1010,6 +1220,13 @@ export type Database = {
             columns: ["room_type_id"]
             isOneToOne: false
             referencedRelation: "room_types"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rooms_reserved_for_tenant_id_fkey"
+            columns: ["reserved_for_tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
             referencedColumns: ["id"]
           },
         ]
@@ -1036,12 +1253,17 @@ export type Database = {
           management_fee_rate: number
           minimum_wage_reference: number
           napsa_insurable_earnings_ceiling: number
+          notification_phone: string | null
           notification_prefs: Json
           onboarding_completed: boolean
           payment_methods: Json
+          payment_sms_mode: string
           payout_day: string | null
           property_id: string
           reminder_lead_days: number
+          send_onboarding_sms: boolean
+          send_payment_receipt_sms: boolean
+          sms_notification_prefs: Json
           subscription_plan: string | null
           subscription_renews_at: string | null
           updated_at: string
@@ -1067,12 +1289,17 @@ export type Database = {
           management_fee_rate?: number
           minimum_wage_reference?: number
           napsa_insurable_earnings_ceiling?: number
+          notification_phone?: string | null
           notification_prefs?: Json
           onboarding_completed?: boolean
           payment_methods?: Json
+          payment_sms_mode?: string
           payout_day?: string | null
           property_id: string
           reminder_lead_days?: number
+          send_onboarding_sms?: boolean
+          send_payment_receipt_sms?: boolean
+          sms_notification_prefs?: Json
           subscription_plan?: string | null
           subscription_renews_at?: string | null
           updated_at?: string
@@ -1098,12 +1325,17 @@ export type Database = {
           management_fee_rate?: number
           minimum_wage_reference?: number
           napsa_insurable_earnings_ceiling?: number
+          notification_phone?: string | null
           notification_prefs?: Json
           onboarding_completed?: boolean
           payment_methods?: Json
+          payment_sms_mode?: string
           payout_day?: string | null
           property_id?: string
           reminder_lead_days?: number
+          send_onboarding_sms?: boolean
+          send_payment_receipt_sms?: boolean
+          sms_notification_prefs?: Json
           subscription_plan?: string | null
           subscription_renews_at?: string | null
           updated_at?: string
@@ -1188,12 +1420,17 @@ export type Database = {
           name: string
           notes: string | null
           on_time_count: number
+          onboarding_sms_sent_at: string | null
           owed_amount: number
           phone: string | null
           phones: string[]
           portal_token: string
           property_id: string
           rent_amount: number
+          reservation_fee_amount: number | null
+          reservation_fee_collected: boolean
+          reservation_fee_date: string | null
+          reservation_fee_method: string | null
           room_id: string | null
           room_type_id: string | null
           status: string
@@ -1220,12 +1457,17 @@ export type Database = {
           name: string
           notes?: string | null
           on_time_count?: number
+          onboarding_sms_sent_at?: string | null
           owed_amount?: number
           phone?: string | null
           phones?: string[]
           portal_token?: string
           property_id: string
           rent_amount?: number
+          reservation_fee_amount?: number | null
+          reservation_fee_collected?: boolean
+          reservation_fee_date?: string | null
+          reservation_fee_method?: string | null
           room_id?: string | null
           room_type_id?: string | null
           status?: string
@@ -1252,12 +1494,17 @@ export type Database = {
           name?: string
           notes?: string | null
           on_time_count?: number
+          onboarding_sms_sent_at?: string | null
           owed_amount?: number
           phone?: string | null
           phones?: string[]
           portal_token?: string
           property_id?: string
           rent_amount?: number
+          reservation_fee_amount?: number | null
+          reservation_fee_collected?: boolean
+          reservation_fee_date?: string | null
+          reservation_fee_method?: string | null
           room_id?: string | null
           room_type_id?: string | null
           status?: string
