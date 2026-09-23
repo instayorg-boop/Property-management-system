@@ -189,7 +189,7 @@ export default function LogPaymentModal({
       }
  
       footer={
-        <Button variant="primary" disabled={!canConfirm} onClick={handleConfirm} className="w-full py-3">
+        <Button variant="primary" disabled={!canConfirm} onClick={handleConfirm} className="w-full py-3 ">
           {buttonLabel}
         </Button>
       }
@@ -212,14 +212,15 @@ export default function LogPaymentModal({
           ) : (
             <>
               <div className="flex items-stretch overflow-hidden rounded-lg bg-mist">
-                <button
+                <Button
+                  variant="primary"
                   type="button"
                   onClick={() => setAmount(String(Math.max(0, (Number(amount) || 0) - AMOUNT_STEP)))}
                   aria-label="Decrease amount"
                   className="flex w-11 shrink-0 items-center justify-center text-muted transition-colors hover:bg-line/40 hover:text-ink active:scale-95"
                 >
                   <Minus size={16} weight="bold" />
-                </button>
+                </Button>
                 <input
                   type="text"
                   inputMode="decimal"
@@ -227,14 +228,15 @@ export default function LogPaymentModal({
                   onChange={(e) => setAmount(e.target.value)}
                   className="w-full bg-transparent py-2.5 text-center text-base font-semibold text-ink outline-none"
                 />
-                <button
+                <Button
+                  variant="primary"
                   type="button"
                   onClick={() => setAmount(String(Math.min(cap || Infinity, (Number(amount) || 0) + AMOUNT_STEP)))}
                   aria-label="Increase amount"
                   className="flex w-11 shrink-0 items-center justify-center text-muted transition-colors hover:bg-line/40 hover:text-ink active:scale-95"
                 >
                   <Plus size={16} weight="bold" />
-                </button>
+                </Button>
               </div>
               {exceedsOutstanding && (
                 <p className="mt-1.5 text-xs text-red-500">

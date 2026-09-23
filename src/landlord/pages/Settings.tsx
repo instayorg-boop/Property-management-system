@@ -132,7 +132,7 @@ function groupFor(t: Tab) {
 // and aren't user-configurable) — deliberately no "instant" option
 // for payments (that's exactly the "blasting" this was built to avoid); off/hourly/daily only.
 const smsNotificationRows: { key: keyof SmsNotificationPrefs; label: string; desc: string }[] = [
-  { key: "newMaintenanceReport", label: "New maintenance report", desc: "Sent right away — these are rare enough not to need digesting." },
+  { key: "newMaintenanceReport", label: "New maintenance report", desc: "Sent right away - these are rare enough not to need digesting." },
   { key: "upcomingPayout", label: "Upcoming payout", desc: "A single text the day before your scheduled payout." },
   { key: "overdueEscalated", label: "Overdue tenant escalated to guardian", desc: "Sent once per billing period when a tenant crosses the escalation threshold." },
 ];

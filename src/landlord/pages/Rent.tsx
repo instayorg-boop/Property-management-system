@@ -19,6 +19,7 @@ import Button from "../components/Button";
 import MonthSwitcher from "../components/MonthSwitcher";
 import { PendingSyncTag } from "../components/SyncStatus";
 import { usePendingTenantIds } from "../../lib/offline/hooks";
+import rentphoto from "../../assets/Rent Empty state UI.png"
 
 function LinkIcon() {
   return <LinkSimple size={14} weight="bold" />;
@@ -282,360 +283,256 @@ export default function Rent() {
 
   return (
     <>
-      <PageHeader title="Rent" description="Log payments and monitor who's paid, overdue, or behind." />
+            <PageHeader title="Rent" description="Log payments and monitor who's paid, overdue or behind." />
 
-      <div className="space-y-5 px-4 sm:px-8 pb-10">
-        {invoiceMode ? (
-          <motion.div
-            key="invoice"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1], delay: 0.05 }}
-          >
-            <GenerateInvoicesOverlay
-              periodDate={monthDate}
-              periodLabel={month}
-              onCancel={() => setInvoiceMode(false)}
-              onSent={(count) => {
-                showToast(`Invoices sent to ${count} tenant${count === 1 ? "" : "s"}`);
-                setInvoiceMode(false);
-              }}
-            />
-          </motion.div>
-        ) : (
-          <motion.div
-            key="rent"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1], delay: 0.05 }}
-            className="space-y-5"
-          >
-        {/* Header row — one clear primary action (Log payment); Generate invoices and Share
-            payment link are occasional, not daily, so they sit in a quiet overflow menu instead
-            of competing with the primary button for attention. */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <MonthSwitcher
-            month={month}
-            monthOffset={monthOffset}
-            onPrev={() => setMonthOffset((o) => o - 1)}
-            onNext={() => setMonthOffset((o) => Math.min(0, o + 1))}
-            onJumpToNow={() => setMonthOffset(0)}
-          />
+<div className="space-y-5 px-4 sm:px-8 pb-10">
+  {invoiceMode ? (
+    <motion.div
+      key="invoice"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1], delay: 0.05 }}
+    >
+      <GenerateInvoicesOverlay
+        periodDate={monthDate}
+        periodLabel={month}
+        onCancel={() => setInvoiceMode(false)}
+        onSent={(count) => {
+          showToast(`Invoices sent to ${count} tenant${count === 1 ? "" : "s"}`);
+          setInvoiceMode(false);
+        }}
+      />
+    </motion.div>
+  ) : (
+    <motion.div
+      key="rent"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1], delay: 0.05 }}
+      className="space-y-5"
+    >
+                 {/* Header row */}
+                 <div className="flex flex-wrap items-center gap-3">
+              {(!tenantsReady || rentRows.length > 0) && (
+                <MonthSwitcher
+                  month={month}
+                  monthOffset={monthOffset}
+                  onPrev={() => setMonthOffset((o) => o - 1)}
+                  onNext={() => setMonthOffset((o) => Math.min(0, o + 1))}
+                  onJumpToNow={() => setMonthOffset(0)}
+                />
+              )}
 
-          <div className="flex items-center gap-2">
-            <div ref={moreMenuRef} className="relative">
-              <button
-                type="button"
-                onClick={() => setMoreMenuOpen((v) => !v)}
-                aria-label="More actions"
-                aria-expanded={moreMenuOpen}
-                className="flex h-9 w-9 items-center justify-center rounded-lg border border-line text-muted transition-colors hover:bg-mist hover:text-ink"
-              >
-                <DotsThreeVertical size={16} weight="bold" />
-              </button>
-              {moreMenuOpen && (
-                <div className="absolute top-full right-0 z-10 mt-1 w-52 overflow-hidden rounded-lg border border-line bg-paper py-1 shadow-card">
-                  {invoicesOn && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMoreMenuOpen(false);
-                        setInvoiceMode(true);
-                      }}
-                      className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm font-medium text-ink hover:bg-mist"
-                    >
-                      <Receipt size={15} weight="bold" />
-                      Generate invoices
-                    </button>
-                  )}
+              <div className="flex items-center gap-2 ml-auto">
+                <div ref={moreMenuRef} className="relative">
                   <button
                     type="button"
-                    onClick={copyLink}
-                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm font-medium text-ink hover:bg-mist"
+                    onClick={() => setMoreMenuOpen((v) => !v)}
+                    aria-label="More actions"
+                    aria-expanded={moreMenuOpen}
+                    className="flex h-9 w-9 items-center justify-center rounded-lg border border-line text-muted transition-colors hover:bg-mist hover:text-ink"
                   >
-                    <LinkIcon />
-                    {linkCopied ? "Link copied" : "Share payment link"}
+                    <DotsThreeVertical size={16} weight="bold" />
                   </button>
+                  {moreMenuOpen && (
+                    <div className="absolute top-full right-0 z-10 mt-1 w-52 overflow-hidden rounded-lg border border-line bg-paper py-1 shadow-card">
+                      {invoicesOn && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMoreMenuOpen(false);
+                            setInvoiceMode(true);
+                          }}
+                          className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm font-medium text-ink hover:bg-mist"
+                        >
+                          <Receipt size={15} weight="bold" />
+                          Generate invoices
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={copyLink}
+                        className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm font-medium text-ink hover:bg-mist"
+                      >
+                        <LinkIcon />
+                        {linkCopied ? "Link copied" : "Share payment link"}
+                      </button>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-            <Button variant="primary" onClick={() => setPaymentStep("search")} className="hover:scale-[1.02]">
-              <PlusIcon />
-              Log payment
-            </Button>
-          </div>
-        </div>
-
-        {/* Stat cards — card chrome renders immediately; only the figures inside shimmer while loading. */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {!tenantsReady ? (
-            <>
-              <div className="rounded-lg border border-line bg-paper p-4">
-                <Skeleton className="h-3 w-28" />
-                <Skeleton className="mt-2 h-7 w-24" />
+                <Button variant="primary" onClick={() => setPaymentStep("search")} className="hover:scale-[1.02]">
+                  <PlusIcon />
+                  Log payment
+                </Button>
               </div>
-              <div className="rounded-lg border border-line bg-paper p-4">
-                <Skeleton className="h-3 w-24" />
-                <Skeleton className="mt-2 h-7 w-24" />
-              </div>
-              <div className="rounded-lg border border-line bg-paper p-4">
-                <Skeleton className="h-3 w-16" />
-                <Skeleton className="mt-2 h-7 w-24" />
-              </div>
-              <div className="rounded-lg border border-line bg-paper p-4">
-                <Skeleton className="h-3 w-24" />
-                <Skeleton className="mt-2 h-7 w-16" />
-              </div>
-            </>
-          ) : (
-            <>
-              <MetricCard
-                label="Total expected rent"
-                value={formatCurrency(stats.totalExpected)}
-                caption={`Target for ${month}`}
-              />
-
-              <MetricCard
-                label="Rent collected"
-                value={formatCurrency(stats.collectedTotal)}
-                tone="success"
-                insight={
-                  <span className="flex w-full items-center gap-2">
-                    <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-emerald-100">
-                      <span
-                        className="block h-full rounded-full bg-emerald-500 transition-[width]"
-                        style={{ width: `${Math.min(100, stats.collectedPct)}%` }}
-                      />
-                    </span>
-                  </span>
-                }
-                caption={`${stats.collectedPct}% of target collected`}
-              />
-
-              <MetricCard
-                label="Still owed"
-                value={formatCurrency(stats.outstanding)}
-                tone={stats.outstandingSeverity === "none" ? "success" : stats.outstandingSeverity === "moderate" ? "warning" : "danger"}
-                insight={stats.outstandingSeverity === "none" ? "All paid up" : ""}
-                caption={
-                  stats.outstandingSeverity === "none"
-                    ? "Every active tenant is paid up"
-                    : `${stats.delinquentCount} tenant${stats.delinquentCount === 1 ? "" : "s"} behind on rent`
-                }
-              />
-
-              <MetricCard
-                label="Collection rate"
-                value={`${stats.collectedPct}%`}
-                trend={stats.trend !== null ? { direction: stats.trend >= 0 ? "up" : "down", value: `${stats.trend >= 0 ? "+" : ""}${stats.trend}%` } : undefined}
-                insight={stats.trend === null ? undefined : stats.trend >= 0 ? "Ahead of last month" : "Behind last month"}
-                caption={`Goal is ${collectionTargetPct}%`}
-              />
-            </>
-          )}
-        </div>
-
-        {/* Tenant table — search + filter tabs share the same bordered card as the table below,
-            not a separate floating row, matching the Tenants page's toolbar-attached-to-table look. */}
-        <div className="rounded-xl border border-line bg-paper">
-          {/* Toolbar */}
-          <div className="flex flex-col gap-3 border-b border-line p-6 sm:flex-row sm:items-center sm:justify-between">
-            {/* Borderless until focused — the field only asserts itself once you're typing in it */}
-            <div className="flex items-center gap-2.5 rounded-md bg-mist px-3.5 py-2.5 transition-colors focus-within:bg-paper focus-within:ring-2 focus-within:ring-brand/25 sm:w-64">
-              <SearchIcon />
-              <input
-                value={query}
-                onChange={(e) => {
-                  setQuery(e.target.value);
-                  setPage(1);
-                }}
-                placeholder="Search tenant or room"
-                className="w-full bg-transparent text-sm outline-none placeholder:text-muted"
-              />
             </div>
 
-            {/* Segmented control — the selected pill slides between tabs rather than blinking on/off */}
-            <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-              <div className="inline-flex gap-0.5 rounded-md bg-mist p-1">
-                {filters.map((f) => {
-                  const active = filter === f;
-                  return (
-                    <button
-                      key={f}
-                      type="button"
-                      onClick={() => {
-                        setFilter(f);
-                        setPage(1);
-                      }}
-                      className={`relative flex shrink-0 items-center gap-1.5 rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors ${
-                        active ? "text-ink" : "text-muted hover:text-ink"
-                      }`}
-                    >
-                      {active && (
-                        <motion.span
-                          layoutId="rent-filter-pill"
-                          transition={{ type: "spring", stiffness: 480, damping: 38 }}
-                          className="absolute inset-0 rounded-md bg-paper shadow-sm"
+      {!tenantsReady || rentRows.length > 0 ? (
+        <>
+          {/* Stat cards */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {!tenantsReady ? (
+              <>
+                <div className="rounded-lg border border-line bg-paper p-4">
+                  <Skeleton className="h-3 w-28" />
+                  <Skeleton className="mt-2 h-7 w-24" />
+                </div>
+                <div className="rounded-lg border border-line bg-paper p-4">
+                  <Skeleton className="h-3 w-24" />
+                  <Skeleton className="mt-2 h-7 w-24" />
+                </div>
+                <div className="rounded-lg border border-line bg-paper p-4">
+                  <Skeleton className="h-3 w-16" />
+                  <Skeleton className="mt-2 h-7 w-24" />
+                </div>
+                <div className="rounded-lg border border-line bg-paper p-4">
+                  <Skeleton className="h-3 w-24" />
+                  <Skeleton className="mt-2 h-7 w-16" />
+                </div>
+              </>
+            ) : (
+              <>
+                <MetricCard
+                  label="Total expected rent"
+                  value={formatCurrency(stats.totalExpected)}
+                  caption={`Target for ${month}`}
+                />
+
+                <MetricCard
+                  label="Rent collected"
+                  value={formatCurrency(stats.collectedTotal)}
+                  tone="success"
+                  insight={
+                    <span className="flex w-full items-center gap-2">
+                      <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-emerald-100">
+                        <span
+                          className="block h-full rounded-full bg-emerald-500 transition-[width]"
+                          style={{ width: `${Math.min(100, stats.collectedPct)}%` }}
                         />
-                      )}
-                      <span className="relative">{f}</span>
-                      {/* Only the active tab's count is coloured — five permanently-coloured counts
-                          sitting in a row read as noise, not information, when nothing's selected. */}
-                      <span className={`relative text-xs font-semibold tabular-nums ${active ? filterCountColor[f] : "text-muted"}`}>
-                        {filterCounts[f]}
                       </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-          {/* Mobile: cards — an HTML table doesn't have room to breathe on a phone screen */}
-          <div className="divide-y divide-line md:hidden">
-            {!tenantsReady &&
-              Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="space-y-2 p-4">
-                  <Skeleton className="h-4 w-1/2" />
-                  <Skeleton className="h-3 w-1/3" />
-                </div>
-              ))}
-            {tenantsReady && pageRows.map((row) => {
-              const t = row.tenant;
-              const needsAction = row.status !== "paid";
-              const discountNote = rentDiscountNote(t, roomTypeRent);
-              return (
-                <div
-                  key={t.id}
-                  onClick={() => navigate(`/tenants/${t.portalToken}`)}
-                  className={`p-4 transition-colors active:bg-mist ${needsAction ? "bg-mist/50" : ""}`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-ink">{t.name}</p>
-                      <p className="mt-0.5 text-xs text-muted">{t.room}</p>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[row.status]}`}>{statusLabel[row.status]}</span>
-                      {statusDetail(row, isCurrentMonth) && (
-                        <p className="mt-1 text-[11px] text-muted">{statusDetail(row, isCurrentMonth)}</p>
-                      )}
-                    </div>
-                  </div>
+                    </span>
+                  }
+                  caption={`${stats.collectedPct}% of target collected`}
+                />
 
-                  <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
-                    <div>
-                      <p className="text-xs text-ink">{t.roomType}</p>
-                      {discountNote ? (
-                        <p className="text-xs text-amber-600">{discountNote}</p>
-                      ) : (
-                        <p className="text-xs text-muted">{formatCurrency(t.rentAmount)}/mo</p>
-                      )}
-                      <p className={`font-display mt-0.5 text-sm ${row.amountPaid === 0 ? "font-normal text-muted" : "font-medium text-emerald-600"}`}>
-                        {formatCurrency(row.amountPaid)} paid
-                      </p>
-                    </div>
-                    {needsAction && isCurrentMonth ? (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setPayingTenant(t);
-                          setPaymentStep("confirm");
-                        }}
-                        className="font-semibold text-brand underline-offset-2 hover:underline"
-                      >
-                        Log payment
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(`/tenants/${t.portalToken}`);
-                        }}
-                        className="font-semibold text-ink underline-offset-2 hover:underline"
-                      >
-                        Details
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-            {tenantsReady && pageRows.length === 0 && (
-              <div className="flex flex-col items-center justify-center gap-3 px-4 py-10 text-center">
-                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
-                  <Receipt size={22} weight="duotone" />
-                </span>
-                <div>
-                  <p className="text-xs font-semibold text-ink">
-                    {rentRows.length === 0 ? "No tenants this month" : "No tenants match this filter"}
-                  </p>
-                  <p className="mt-0.5 text-xs text-muted">
-                    {rentRows.length === 0
-                      ? isCurrentMonth
-                        ? "Add a tenant to start tracking rent payments."
-                        : "No one was resident during this month."
-                      : "Try a different search or status filter."}
-                  </p>
-                </div>
-              </div>
+                <MetricCard
+                  label="Still owed"
+                  value={formatCurrency(stats.outstanding)}
+                  tone={stats.outstandingSeverity === "none" ? "success" : stats.outstandingSeverity === "moderate" ? "warning" : "danger"}
+                  insight={stats.outstandingSeverity === "none" ? "All paid up" : ""}
+                  caption={
+                    stats.outstandingSeverity === "none"
+                      ? "Every active tenant is paid up"
+                      : `${stats.delinquentCount} tenant${stats.delinquentCount === 1 ? "" : "s"} behind on rent`
+                  }
+                />
+
+                <MetricCard
+                  label="Collection rate"
+                  value={`${stats.collectedPct}%`}
+                  trend={stats.trend !== null ? { direction: stats.trend >= 0 ? "up" : "down", value: `${stats.trend >= 0 ? "+" : ""}${stats.trend}%` } : undefined}
+                  insight={stats.trend === null ? undefined : stats.trend >= 0 ? "Ahead of last month" : "Behind last month"}
+                  caption={`Goal is ${collectionTargetPct}%`}
+                />
+              </>
             )}
           </div>
 
-          {/* Desktop / tablet: table — bounded height with its own scroll, so the sticky header
-              has an actual scroll container to stick within (relying on the page/shell's own
-              scroll container doesn't work reliably here: overflow-x-auto below implicitly
-              resolves overflow-y to auto too, per the CSS spec, silently making this div its own
-              non-scrolling-looking-but-still-a-container context). Same pattern as Tenants.tsx. */}
-          <div className="hidden max-h-[70vh] overflow-auto md:block">
-          <table className="w-full text-left text-sm">
-            <thead className="sticky top-0 z-10 border-b border-line bg-paper text-[11px] text-muted uppercase">
-              <tr>
-                <th className="px-4 py-3 font-medium tracking-wide">Tenant</th>
-                <th className="px-4 py-3 font-medium tracking-wide">Room type</th>
-                <th className="px-4 py-3 font-medium tracking-wide whitespace-nowrap">Amount paid</th>
-                <th className="px-4 py-3 font-medium tracking-wide whitespace-nowrap">Outstanding balance</th>
-                <th className="px-4 py-3 font-medium tracking-wide">Status</th>
-                <th className="px-4 py-3 font-medium tracking-wide">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {!tenantsReady && Array.from({ length: 4 }).map((_, i) => <SkeletonRow key={i} cols={6} />)}
+          {/* Tenant table */}
+          <div className="rounded-xl border border-line bg-paper">
+            {/* Toolbar */}
+            <div className="flex flex-col gap-3 border-b border-line p-6 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-2.5 rounded-md bg-mist px-3.5 py-2.5 transition-colors focus-within:bg-paper focus-within:ring-2 focus-within:ring-brand/25 sm:w-64">
+                <SearchIcon />
+                <input
+                  value={query}
+                  onChange={(e) => {
+                    setQuery(e.target.value);
+                    setPage(1);
+                  }}
+                  placeholder="Search tenant or room"
+                  className="w-full bg-transparent text-sm outline-none placeholder:text-muted"
+                />
+              </div>
+
+              <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+                <div className="inline-flex gap-0.5 rounded-md bg-mist p-1">
+                  {filters.map((f) => {
+                    const active = filter === f;
+                    return (
+                      <button
+                        key={f}
+                        type="button"
+                        onClick={() => {
+                          setFilter(f);
+                          setPage(1);
+                        }}
+                        className={`relative flex shrink-0 items-center gap-1.5 rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                          active ? "text-ink" : "text-muted hover:text-ink"
+                        }`}
+                      >
+                        {active && (
+                          <motion.span
+                            layoutId="rent-filter-pill"
+                            transition={{ type: "spring", stiffness: 480, damping: 38 }}
+                            className="absolute inset-0 rounded-md bg-paper shadow-sm"
+                          />
+                        )}
+                        <span className="relative">{f}</span>
+                        <span className={`relative text-xs font-semibold tabular-nums ${active ? filterCountColor[f] : "text-muted"}`}>
+                          {filterCounts[f]}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Mobile: cards */}
+            <div className="divide-y divide-line md:hidden">
+              {!tenantsReady &&
+                Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="space-y-2 p-4">
+                    <Skeleton className="h-4 w-1/2" />
+                    <Skeleton className="h-3 w-1/3" />
+                  </div>
+                ))}
               {tenantsReady && pageRows.map((row) => {
                 const t = row.tenant;
                 const needsAction = row.status !== "paid";
+                const discountNote = rentDiscountNote(t, roomTypeRent);
                 return (
-                  <tr
+                  <div
                     key={t.id}
-                    className={`group cursor-pointer transition-colors duration-200 ease-in-out hover:bg-mist ${needsAction ? "bg-mist/50" : ""}`}
                     onClick={() => navigate(`/tenants/${t.portalToken}`)}
+                    className={`p-4 transition-colors active:bg-mist ${needsAction ? "bg-mist/50" : ""}`}
                   >
-                    <td className="px-4 py-3">
-                      <p className="font-medium text-ink">{t.name}</p>
-                      <p className="text-xs text-muted">{t.room}</p>
-                    </td>
-                    <td className="px-4 py-3 text-ink">{t.roomType}</td>
-                    <td className={`font-display px-4 py-3 whitespace-nowrap ${row.amountPaid === 0 ? "font-normal text-muted" : "font-medium text-emerald-600"}`}>
-                      {formatCurrency(row.amountPaid)}
-                    </td>
-                    <td className="font-display px-4 py-3 whitespace-nowrap">
-                      {(() => {
-                        const outstanding = isCurrentMonth ? calcTotalOwed(row.tenant) : row.owedAmount;
-                        return outstanding > 0 ? (
-                          <span className="font-medium text-red-600">{formatCurrency(outstanding)}</span>
-                        ) : (
-                          <span className="text-muted">{formatCurrency(0)}</span>
-                        );
-                      })()}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${statusStyle[row.status]}`}>{statusLabel[row.status]}</span>
-                        {pendingTenantIds.has(t.id) && <PendingSyncTag />}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-ink">{t.name}</p>
+                        <p className="mt-0.5 text-xs text-muted">{t.room}</p>
                       </div>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="shrink-0 text-right">
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[row.status]}`}>{statusLabel[row.status]}</span>
+                        {statusDetail(row, isCurrentMonth) && (
+                          <p className="mt-1 text-[11px] text-muted">{statusDetail(row, isCurrentMonth)}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
+                      <div>
+                        <p className="text-xs text-ink">{t.roomType}</p>
+                        {discountNote ? (
+                          <p className="text-xs text-amber-600">{discountNote}</p>
+                        ) : (
+                          <p className="text-xs text-muted">{formatCurrency(t.rentAmount)}/mo</p>
+                        )}
+                        <p className={`font-display mt-0.5 text-sm ${row.amountPaid === 0 ? "font-normal text-muted" : "font-medium text-emerald-600"}`}>
+                          {formatCurrency(row.amountPaid)} paid
+                        </p>
+                      </div>
                       {needsAction && isCurrentMonth ? (
                         <button
                           type="button"
@@ -655,132 +552,234 @@ export default function Rent() {
                             e.stopPropagation();
                             navigate(`/tenants/${t.portalToken}`);
                           }}
-                          className="font-semibold text-ink underline-offset-2 group-hover:underline"
+                          className="font-semibold text-ink underline-offset-2 hover:underline"
                         >
                           Details
                         </button>
                       )}
-                    </td>
-                  </tr>
+                    </div>
+                  </div>
                 );
               })}
               {tenantsReady && pageRows.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-4 py-10">
-                    <div className="flex flex-col items-center justify-center gap-3 text-center">
-                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
-                        <Receipt size={22} weight="duotone" />
-                      </span>
-                      <div>
-                        <p className="text-xs font-semibold text-ink">
-                          {rentRows.length === 0 ? "No tenants this month" : "No tenants match this filter"}
-                        </p>
-                        <p className="mt-0.5 text-xs text-muted">
-                          {rentRows.length === 0
-                            ? isCurrentMonth
-                              ? "Add a tenant to start tracking rent payments."
-                              : "No one was resident during this month."
-                            : "Try a different search or status filter."}
-                        </p>
-                      </div>
-                    </div>
-                  </td>
-                </tr>
+                <div className="flex flex-col items-center justify-center gap-3 px-4 py-10 text-center">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
+                    <Receipt size={22} weight="duotone" />
+                  </span>
+                  <div>
+                    <p className="text-xs font-semibold text-ink">No tenants match this filter</p>
+                    <p className="mt-0.5 text-xs text-muted">Try a different search or status filter.</p>
+                  </div>
+                  
+                </div>
               )}
-            </tbody>
-          </table>
+            </div>
+
+            {/* Desktop / tablet: table */}
+            <div className="hidden max-h-[70vh] overflow-auto md:block">
+              <table className="w-full text-left text-sm">
+                <thead className="sticky top-0 z-10 border-b border-line bg-paper text-[11px] text-muted uppercase">
+                  <tr>
+                    <th className="px-4 py-3 font-medium tracking-wide">Tenant</th>
+                    <th className="px-4 py-3 font-medium tracking-wide">Room type</th>
+                    <th className="px-4 py-3 font-medium tracking-wide whitespace-nowrap">Amount paid</th>
+                    <th className="px-4 py-3 font-medium tracking-wide whitespace-nowrap">Outstanding balance</th>
+                    <th className="px-4 py-3 font-medium tracking-wide">Status</th>
+                    <th className="px-4 py-3 font-medium tracking-wide">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-line">
+                  {!tenantsReady && Array.from({ length: 4 }).map((_, i) => <SkeletonRow key={i} cols={6} />)}
+                  {tenantsReady && pageRows.map((row) => {
+                    const t = row.tenant;
+                    const needsAction = row.status !== "paid";
+                    return (
+                      <tr
+                        key={t.id}
+                        className={`group cursor-pointer transition-colors duration-200 ease-in-out hover:bg-mist ${needsAction ? "bg-mist/50" : ""}`}
+                        onClick={() => navigate(`/tenants/${t.portalToken}`)}
+                      >
+                        <td className="px-4 py-3">
+                          <p className="font-medium text-ink">{t.name}</p>
+                          <p className="text-xs text-muted">{t.room}</p>
+                        </td>
+                        <td className="px-4 py-3 text-ink">{t.roomType}</td>
+                        <td className={`font-display px-4 py-3 whitespace-nowrap ${row.amountPaid === 0 ? "font-normal text-muted" : "font-medium text-emerald-600"}`}>
+                          {formatCurrency(row.amountPaid)}
+                        </td>
+                        <td className="font-display px-4 py-3 whitespace-nowrap">
+                          {(() => {
+                            const outstanding = isCurrentMonth ? calcTotalOwed(row.tenant) : row.owedAmount;
+                            return outstanding > 0 ? (
+                              <span className="font-medium text-red-600">{formatCurrency(outstanding)}</span>
+                            ) : (
+                              <span className="text-muted">{formatCurrency(0)}</span>
+                            );
+                          })()}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${statusStyle[row.status]}`}>{statusLabel[row.status]}</span>
+                            {pendingTenantIds.has(t.id) && <PendingSyncTag />}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          {needsAction && isCurrentMonth ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setPayingTenant(t);
+                                setPaymentStep("confirm");
+                              }}
+                              className="font-semibold text-brand underline-offset-2 hover:underline"
+                            >
+                              Log payment
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/tenants/${t.portalToken}`);
+                              }}
+                              className="font-semibold text-ink underline-offset-2 group-hover:underline"
+                            >
+                              Details
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {tenantsReady && pageRows.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-10">
+                        <div className="flex flex-col items-center justify-center gap-3 text-center">
+                          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
+                            <Receipt size={22} weight="duotone" />
+                          </span>
+                          <div>
+                            <p className="text-xs font-semibold text-ink">No tenants match this filter</p>
+                            <p className="mt-0.5 text-xs text-muted">Try a different search or status filter.</p>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {filteredRows.length > 0 && (
+              <Pagination
+                page={currentPage}
+                pageCount={pageCount}
+                pageSize={rowsPerPage}
+                totalItems={filteredRows.length}
+                onPageChange={setPage}
+                onPageSizeChange={(size) => {
+                  setRowsPerPage(size);
+                  setPage(1);
+                }}
+              />
+            )}
           </div>
-          {filteredRows.length > 0 && (
-            <Pagination
-              page={currentPage}
-              pageCount={pageCount}
-              pageSize={rowsPerPage}
-              totalItems={filteredRows.length}
-              onPageChange={setPage}
-              onPageSizeChange={(size) => {
-                setRowsPerPage(size);
-                setPage(1);
-              }}
-            />
-          )}
+        </>
+      ) : (
+        /* No tenants this month at all — standalone empty state, no stat cards, no table shape */
+        <div className="flex flex-col items-center justify-center gap-3  text-center">
+          <span className="flex  w-sm items-center justify-center  text-muted">
+            <img src={rentphoto} />
+          </span>
+          <div>
+              <p className="font-display text-xl font-bold tracking-tight text-brand">Track Rent & Payment History</p>    
+            <p className="mt-0.5 text-sm max-w-lg text-muted">
+              {isCurrentMonth ? "Monitor active rent statuses, view payment schedules and keep a clear record of paid, pending and overdue rent across your property." : "No one was resident during this month."}
+            </p>
+          </div>
+          <Button variant="primary" onClick={() => setPaymentStep("search")} className="hover:scale-[1.02]">
+                  <PlusIcon />
+                  Log payment
+                </Button>
         </div>
+      )}
+    </motion.div>
+  )}
+</div>
 
-          </motion.div>
-        )}
-      </div>
+<AnimatePresence>
+  {paymentStep === "search" && (
+    <TenantSearchDrawer
+      onClose={() => setPaymentStep(null)}
+      onPick={(t) => {
+        setPayingTenant(t);
+        setPaymentStep("ledger");
+      }}
+    />
+  )}
+  {paymentStep === "ledger" && payingTenant && (
+    <TenantPaymentDrawer
+      tenant={payingTenant}
+      onClose={() => {
+        setPaymentStep(null);
+        setPayingTenant(null);
+      }}
+      onLogPayment={() => setPaymentStep("confirm")}
+      onEdit={() => navigate(`/tenants/${payingTenant.portalToken}/edit`)}
+      onMoveOut={() => setMovingOutTenant(payingTenant)}
+    />
+  )}
+  {paymentStep === "confirm" && payingTenant && (
+    <LogPaymentModal
+      tenantName={payingTenant.name}
+      room={`${payingTenant.room} · ${payingTenant.roomType}`}
+      outstanding={calcTotalOwed(payingTenant) || payingTenant.rentAmount}
+      rentAmount={payingTenant.rentAmount}
+      ledger={payingTenant.ledger}
+      onClose={() => setPaymentStep("ledger")}
+      onConfirm={(payments) => {
+        logPayments(
+          payingTenant.id,
+          payments.map((payment) => ({
+            amount: payment.amount,
+            label: payment.label,
+            method: payment.method === "mobile" ? "mobile-money" : "cash",
+            paidAt: payment.date,
+          })),
+        );
+        setPaymentStep(null);
+        setPayingTenant(null);
+      }}
+    />
+  )}
+  {movingOutTenant && (
+    <MoveOutModal
+      tenant={movingOutTenant}
+      onClose={() => setMovingOutTenant(null)}
+      onConfirm={(details) => {
+        moveOutTenant(movingOutTenant.id, details);
+        setMovingOutTenant(null);
+        setPaymentStep(null);
+        setPayingTenant(null);
+      }}
+    />
+  )}
+</AnimatePresence>
 
-      <AnimatePresence>
-        {paymentStep === "search" && (
-          <TenantSearchDrawer
-            onClose={() => setPaymentStep(null)}
-            onPick={(t) => {
-              setPayingTenant(t);
-              setPaymentStep("ledger");
-            }}
-          />
-        )}
-        {paymentStep === "ledger" && payingTenant && (
-          <TenantPaymentDrawer
-            tenant={payingTenant}
-            onClose={() => {
-              setPaymentStep(null);
-              setPayingTenant(null);
-            }}
-            onLogPayment={() => setPaymentStep("confirm")}
-            onEdit={() => navigate(`/tenants/${payingTenant.portalToken}/edit`)}
-            onMoveOut={() => setMovingOutTenant(payingTenant)}
-          />
-        )}
-        {paymentStep === "confirm" && payingTenant && (
-          <LogPaymentModal
-            tenantName={payingTenant.name}
-            room={`${payingTenant.room} · ${payingTenant.roomType}`}
-            outstanding={calcTotalOwed(payingTenant) || payingTenant.rentAmount}
-            rentAmount={payingTenant.rentAmount}
-            ledger={payingTenant.ledger}
-            onClose={() => setPaymentStep("ledger")}
-            onConfirm={(payments) => {
-              logPayments(
-                payingTenant.id,
-                payments.map((payment) => ({
-                  amount: payment.amount,
-                  label: payment.label,
-                  method: payment.method === "mobile" ? "mobile-money" : "cash",
-                  paidAt: payment.date,
-                })),
-              );
-              setPaymentStep(null);
-              setPayingTenant(null);
-            }}
-          />
-        )}
-        {movingOutTenant && (
-          <MoveOutModal
-            tenant={movingOutTenant}
-            onClose={() => setMovingOutTenant(null)}
-            onConfirm={(details) => {
-              moveOutTenant(movingOutTenant.id, details);
-              setMovingOutTenant(null);
-              setPaymentStep(null);
-              setPayingTenant(null);
-            }}
-          />
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {toast && (
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
-            transition={{ duration: 0.15 }}
-            className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-ink px-4 py-2 text-xs font-medium text-paper shadow-card"
-          >
-            {toast}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </>
+<AnimatePresence>
+  {toast && (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 8 }}
+      transition={{ duration: 0.15 }}
+      className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-ink px-4 py-2 text-xs font-medium text-paper shadow-card"
+    >
+      {toast}
+    </motion.div>
+  )}
+</AnimatePresence>
+</>
+    
   );
 }

@@ -14,10 +14,12 @@ import { SettingsProvider } from "../SettingsContext";
 import { NotificationsProvider } from "../NotificationsContext";
 import { InvoicesProvider } from "../InvoicesContext";
 import { SidebarProvider, useSidebar } from "../SidebarContext";
+import { AssistantUiProvider } from "../AssistantUiContext";
 import ProductTour from "./ProductTour";
 import SyncToast from "./SyncToast";
 import { SyncStatusBadge } from "./SyncStatus";
 import AssistantPanel from "../../components/AssistantPanel";
+import MobileBottomNav from "./MobileBottomNav";
 
 const FOCUSABLE_SELECTOR = 'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
 
@@ -92,7 +94,11 @@ function Shell() {
             scrolls), so a page like Settings whose content height changes when you switch tabs
             would otherwise toggle this scrollbar on/off, shifting everything inside horizontally
             (including anything mid-animation, like the Settings tab bar's sliding underline). */}
-        <main ref={mainRef} className="flex-1 overflow-y-auto bg-mist" style={{ scrollbarGutter: "stable" }}>
+        <main
+          ref={mainRef}
+          className="flex-1 overflow-y-auto bg-mist pb-[calc(3.5rem+env(safe-area-inset-bottom,0px))] lg:pb-0"
+          style={{ scrollbarGutter: "stable" }}
+        >
           {/*
             No AnimatePresence/exit here on purpose: waiting for the old page to fade out before
             mounting the new one (mode="wait") left a gap where the old page's height had already
@@ -110,6 +116,7 @@ function Shell() {
           </motion.div>
         </main>
       </div>
+      <MobileBottomNav />
       <ProductTour />
       <SyncToast />
       <SyncStatusBadge />
@@ -133,7 +140,9 @@ export default function DashboardLayout() {
                     <MaintenanceProvider>
                       <InvoicesProvider>
                         <SidebarProvider>
-                          <Shell />
+                          <AssistantUiProvider>
+                            <Shell />
+                          </AssistantUiProvider>
                         </SidebarProvider>
                       </InvoicesProvider>
                     </MaintenanceProvider>

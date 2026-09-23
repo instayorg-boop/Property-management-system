@@ -14,6 +14,7 @@ import { Skeleton } from "../components/Skeleton";
 import Button from "../components/Button";
 import { PendingSyncTag } from "../components/SyncStatus";
 import { usePendingMaintenanceIds } from "../../lib/offline/hooks";
+import MaintenancePhoto from "../../assets/Maintance Empty State Ui.png";
 
 function SearchIcon() {
   return <MagnifyingGlass size={16} weight="bold" />;
@@ -225,9 +226,8 @@ function RequestDrawer({
                     key={s}
                     type="button"
                     onClick={() => onSetStatus(s)}
-                    className={`relative flex-1 rounded-md py-1.5 text-xs font-medium transition-colors ${
-                      active ? groupFilterActiveColor[s] : "text-muted hover:text-ink"
-                    }`}
+                    className={`relative flex-1 rounded-md py-1.5 text-xs font-medium transition-colors ${active ? groupFilterActiveColor[s] : "text-muted hover:text-ink"
+                      }`}
                   >
                     {active && (
                       <motion.span
@@ -489,6 +489,7 @@ export default function Maintenance() {
           </Button>
         </div>
 
+       {reports.length !== 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 rounded-lg border border-line bg-paper px-3 py-2">
             <SearchIcon />
@@ -511,9 +512,8 @@ export default function Maintenance() {
                     key={o.value}
                     type="button"
                     onClick={() => setGroupFilter(o.value)}
-                    className={`relative shrink-0 rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors ${
-                      active ? groupFilterActiveColor[o.value] : "text-muted hover:text-ink"
-                    }`}
+                    className={`relative shrink-0 rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors ${active ? groupFilterActiveColor[o.value] : "text-muted hover:text-ink"
+                      }`}
                   >
                     {active && (
                       <motion.span
@@ -529,6 +529,7 @@ export default function Maintenance() {
             </div>
           </div>
         </div>
+       )}
 
         {/* Grouped by status, each in its own collapsible section — collapse a group to focus on
             just the others, matching a Kanban-style board's status columns without needing an
@@ -546,13 +547,18 @@ export default function Maintenance() {
             ))}
           </div>
         ) : reports.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-line bg-paper px-4 py-14 text-center">
-            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
-              <Wrench size={22} weight="duotone" />
+          <div className="flex flex-col items-center justify-center gap-3  py-2 text-center">
+            <span className="flex w-md items-center justify-center  text-muted">
+              <img src={MaintenancePhoto} />
             </span>
             <div>
-              <p className="text-xs font-semibold text-ink">No maintenance requests yet</p>
-              <p className="mt-0.5 text-xs text-muted">Requests tenants submit will show up here.</p>
+              <p className="font-display text-xl font-bold tracking-tight text-brand">Complete Maintenance Visibility</p>
+              <p className="mt-0.5 text-sm max-w-lg text-muted">From appliance replacements to requests submited by tenants, maintain a complete log of every issue and repair across your property.</p>
+            </div>
+            <div className="flex items-center justify-end">
+              <Button variant="primary" onClick={() => setAddingRequest(true)} className="hover:scale-[1.02]">
+                + Add maintenance request
+              </Button>
             </div>
           </div>
         ) : (

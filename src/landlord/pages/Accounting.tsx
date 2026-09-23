@@ -30,6 +30,7 @@ import MetricCard from "../components/MetricCard";
 import Button from "../components/Button";
 import MonthSwitcher from "../components/MonthSwitcher";
 import { useToast } from "../ToastContext";
+import Expensephoto from "../../assets/Expenses Empty State Ui.png"
 
 // Shown as clickable chips in the empty state — landlord-relevant expense categories that aren't
 // already in the list. Clicking one adds it immediately; it's a starting point, not a limit.
@@ -163,11 +164,10 @@ function SuggestionChip({ name, onAdd, disabled }: { name: string; onAdd: () => 
       type="button"
       onClick={onAdd}
       disabled={disabled}
-      className={`flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm font-medium transition active:scale-95 ${
-        disabled
-          ? "cursor-default border-line bg-mist text-muted"
-          : "border-line bg-paper text-ink hover:border-brand hover:bg-brand-soft hover:text-brand"
-      }`}
+      className={`flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm font-medium transition active:scale-95 ${disabled
+        ? "cursor-default border-line bg-mist text-muted"
+        : "border-line bg-paper text-ink hover:border-brand hover:bg-brand-soft hover:text-brand"
+        }`}
     >
       {disabled ? <Check size={14} weight="bold" /> : <Plus size={14} weight="bold" />}
       {name}
@@ -569,9 +569,8 @@ function CategoryFilterMenu({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -4, scale: 0.98 }}
               transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
-              className={`absolute top-full z-20 mt-1.5 w-64 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-line bg-paper shadow-card ${
-                align === "left" ? "left-0" : "right-0"
-              }`}
+              className={`absolute top-full z-20 mt-1.5 w-64 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-line bg-paper shadow-card ${align === "left" ? "left-0" : "right-0"
+                }`}
             >
               <div className="flex items-center gap-2 border-b border-line px-3 py-2.5">
                 <SearchIcon />
@@ -598,9 +597,8 @@ function CategoryFilterMenu({
                     onSelect("all");
                     close();
                   }}
-                  className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors hover:bg-mist ${
-                    categoryFilter === "all" ? "font-medium text-brand" : "text-ink"
-                  }`}
+                  className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors hover:bg-mist ${categoryFilter === "all" ? "font-medium text-brand" : "text-ink"
+                    }`}
                 >
                   All categories
                   <span className="text-xs text-muted">{formatK(total)}</span>
@@ -614,9 +612,8 @@ function CategoryFilterMenu({
                       onSelect(c.category.id);
                       close();
                     }}
-                    className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-mist ${
-                      categoryFilter === c.category.id ? "font-medium text-brand" : "text-ink"
-                    }`}
+                    className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-mist ${categoryFilter === c.category.id ? "font-medium text-brand" : "text-ink"
+                      }`}
                   >
                     <span className="flex min-w-0 items-center gap-2">
                       <span className={`h-2.5 w-2.5 shrink-0 rounded-sm ${categoryDotStyle(categories, c.category.id)}`} />
@@ -689,6 +686,7 @@ export default function Accounting() {
   const pageCount = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
   const currentPage = Math.min(page, pageCount);
   const pageRows = filtered.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
+  const hasExpenses = monthExpenses.length > 0;
 
   const total = useMemo(() => monthExpenses.reduce((sum, e) => sum + e.amount, 0), [monthExpenses]);
 
@@ -727,29 +725,33 @@ export default function Accounting() {
     <>
       <PageHeader
         title="Expense Tracker"
-        description="Track expenses, income, and your property's cash flow."
+        description="Track expenses, income and your property's cash flow."
       />
 
       <div className="space-y-5 px-4 sm:px-8 pb-10">
         {/* Month switcher + primary actions */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <MonthSwitcher
-            month={month}
-            monthOffset={monthOffset}
-            onPrev={() => setMonthOffset((o) => o - 1)}
-            onNext={() => setMonthOffset((o) => Math.min(0, o + 1))}
-            onJumpToNow={() => setMonthOffset(0)}
-          />
+        <div className="flex flex-wrap items-center gap-3">
+          {(!isReady || hasExpenses) && (
+            <MonthSwitcher
+              month={month}
+              monthOffset={monthOffset}
+              onPrev={() => setMonthOffset((o) => o - 1)}
+              onNext={() => setMonthOffset((o) => Math.min(0, o + 1))}
+              onJumpToNow={() => setMonthOffset(0)}
+            />
+          )}
 
-          <div className="flex items-center gap-2">
-            <Button
-              variant="secondary"
-              className="gap-1.5"
-              onClick={() => downloadCsv(`expenses-${month.replace(" ", "-")}.csv`, filtered, categoryName)}
-            >
-              <DownloadSimple size={14} weight="bold" />
-              Export
-            </Button>
+          <div className="flex items-center gap-2 ml-auto">
+            {hasExpenses && (
+              <Button
+                variant="secondary"
+                className="gap-1.5"
+                onClick={() => downloadCsv(`expenses-${month.replace(" ", "-")}.csv`, filtered, categoryName)}
+              >
+                <DownloadSimple size={14} weight="bold" />
+                Export
+              </Button>
+            )}
             <Button variant="secondary" className="gap-1.5" onClick={() => setShowCategories(true)}>
               <SettingsIcon />
               Categories
@@ -767,288 +769,301 @@ export default function Accounting() {
           </div>
         </div>
 
-        {/* At-a-glance summary — the numbers an owner checks first, for the selected month */}
-        <div key={`stats-${month}`} className="pay-step grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {!isReady ? (
-            Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="rounded-lg border border-line bg-paper p-3.5">
-                <Skeleton className="h-3 w-20" />
-                <Skeleton className="mt-2 h-6 w-24" />
-              </div>
-            ))
-          ) : (
-            <>
-              <MetricCard
-                label="Total income"
-                value={<AnimatedValue value={rentCollected === null ? "—" : formatCurrency(rentCollected)} />}
-                caption={monthOffset === 0 ? "Collected so far this month" : "Only tracked for the current month"}
-              />
-              <MetricCard
-                label="Total expenses"
-                value={<AnimatedValue value={formatK(total)} />}
-                caption={`${monthExpenses.length} expense${monthExpenses.length === 1 ? "" : "s"} in ${month}`}
-              />
-              <MetricCard
-                label="Net profit"
-                value={<AnimatedValue value={netProfit === null ? "—" : formatCurrency(netProfit)} />}
-                tone={netProfit === null ? "default" : netProfit >= 0 ? "success" : "danger"}
-                caption="Income minus expenses"
-              />
-              <MetricCard
-                label="Pending payments"
-                value={<AnimatedValue value={formatCurrency(pending.total)} />}
-                tone={pending.count > 0 ? "warning" : "default"}
-                caption={pending.count > 0 ? `${pending.count} tenant${pending.count === 1 ? "" : "s"} behind` : "Nothing outstanding"}
-              />
-            </>
-          )}
-        </div>
-
-        {/* Transactions — search/filter toolbar attached to the table, same card-with-toolbar
-            pattern as Rent's and Tenants' tables. Click any row for the full detail (category,
-            receipt, description) in the same drawer "Add expense" uses, rather than cramming
-            every field into the row — the list only needs to be scannable, not exhaustive. */}
-        <div key={`table-${month}`} className="pay-step rounded-xl border border-line bg-paper">
-          {/* Toolbar */}
-          <div className="flex flex-col gap-3 border-b border-line p-4 sm:flex-row sm:items-center">
-            <div className="flex items-center gap-2.5 rounded-md bg-mist px-3.5 py-2.5 transition-colors focus-within:bg-paper focus-within:ring-2 focus-within:ring-brand/25 sm:w-64">
-              <SearchIcon />
-              <input
-                value={query}
-                onChange={(e) => {
-                  setQuery(e.target.value);
-                  setPage(1);
-                }}
-                placeholder="Search by name or description"
-                className="w-full bg-transparent text-sm outline-none placeholder:text-muted"
-              />
+        {!isReady || hasExpenses ? (
+          <>
+            {/* At-a-glance summary */}
+            <div key={`stats-${month}`} className="pay-step grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {!isReady ? (
+                Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="rounded-lg border border-line bg-paper p-3.5">
+                    <Skeleton className="h-3 w-20" />
+                    <Skeleton className="mt-2 h-6 w-24" />
+                  </div>
+                ))
+              ) : (
+                <>
+                  <MetricCard
+                    label="Total income"
+                    value={<AnimatedValue value={rentCollected === null ? "—" : formatCurrency(rentCollected)} />}
+                    caption={monthOffset === 0 ? "Collected so far this month" : "Only tracked for the current month"}
+                  />
+                  <MetricCard
+                    label="Total expenses"
+                    value={<AnimatedValue value={formatK(total)} />}
+                    caption={`${monthExpenses.length} expense${monthExpenses.length === 1 ? "" : "s"} in ${month}`}
+                  />
+                  <MetricCard
+                    label="Net profit"
+                    value={<AnimatedValue value={netProfit === null ? "—" : formatCurrency(netProfit)} />}
+                    tone={netProfit === null ? "default" : netProfit >= 0 ? "success" : "danger"}
+                    caption="Income minus expenses"
+                  />
+                  <MetricCard
+                    label="Pending payments"
+                    value={<AnimatedValue value={formatCurrency(pending.total)} />}
+                    tone={pending.count > 0 ? "warning" : "default"}
+                    caption={pending.count > 0 ? `${pending.count} tenant${pending.count === 1 ? "" : "s"} behind` : "Nothing outstanding"}
+                  />
+                </>
+              )}
             </div>
 
-            {/* Category filter — an "Add filter" trigger that opens a searchable, color-coded
-                dropdown instead of a row of chips that keeps growing as categories are added. */}
-            <CategoryFilterMenu
-              categories={categories}
-              byCategory={byCategory}
-              total={total}
-              categoryFilter={categoryFilter}
-              onSelect={(id) => {
-                setCategoryFilter(id);
-                setPage(1);
-              }}
-            />
-          </div>
-
-          {/* Mobile: cards — an HTML table doesn't have room to breathe on a phone screen */}
-          <div className="divide-y divide-line md:hidden">
-            {!isReady &&
-              Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="space-y-2 p-4">
-                  <Skeleton className="h-4 w-1/2" />
-                  <Skeleton className="h-3 w-1/3" />
+            {/* Transactions table */}
+            <div key={`table-${month}`} className="pay-step rounded-lg border border-line bg-paper">
+              <div className="flex flex-col gap-3 border-b border-line p-4 sm:flex-row sm:items-center">
+                <div className="flex items-center gap-2.5 rounded-md bg-mist px-3.5 py-2.5 transition-colors focus-within:bg-paper focus-within:ring-2 focus-within:ring-brand/25 sm:w-64">
+                  <SearchIcon />
+                  <input
+                    value={query}
+                    onChange={(e) => {
+                      setQuery(e.target.value);
+                      setPage(1);
+                    }}
+                    placeholder="Search by name or description"
+                    className="w-full bg-transparent text-sm outline-none placeholder:text-muted"
+                  />
                 </div>
-              ))}
-            {isReady &&
-              pageRows.map((e) => (
-                <div
-                  key={e.id}
-                  onClick={() => {
-                    setEditing(e);
-                    setShowForm(true);
+
+                <CategoryFilterMenu
+                  categories={categories}
+                  byCategory={byCategory}
+                  total={total}
+                  categoryFilter={categoryFilter}
+                  onSelect={(id) => {
+                    setCategoryFilter(id);
+                    setPage(1);
                   }}
-                  className="p-4 transition-colors active:bg-mist"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-ink">{e.name}</p>
-                      {e.description && <p className="mt-0.5 truncate text-xs text-muted">{e.description}</p>}
-                    </div>
-                    <p className="font-display shrink-0 text-sm font-medium text-ink">{formatK(e.amount)}</p>
-                  </div>
-                  <div className="mt-2 flex items-center gap-2">
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${categoryBadgeStyle(categories, e.categoryId)}`}>
-                      {categoryName(e.categoryId)}
-                    </span>
-                    {e.source === "payroll" && (
-                      <span className="rounded bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-600">Auto</span>
-                    )}
-                    <span className="text-xs text-muted">{formatDate(e.date)}</span>
-                    {e.photoUrl && (
-                      <button
-                        type="button"
-                        onClick={(ev) => {
-                          ev.stopPropagation();
-                          setViewingReceipt(e.photoUrl!);
-                        }}
-                        className="ml-auto flex items-center gap-1 text-muted transition-colors hover:text-brand"
-                        aria-label="View receipt"
-                      >
-                        <PaperclipIcon />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            {isReady && pageRows.length === 0 && (
-              <div className="flex flex-col items-center justify-center gap-3 px-4 py-10 text-center">
-                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
-                  <Receipt size={22} weight="duotone" />
-                </span>
-                <p className="text-xs font-semibold text-ink">No expenses found</p>
+                />
               </div>
-            )}
-          </div>
 
-          {/* Desktop / tablet: table */}
-          <div className="hidden overflow-x-auto md:block">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-line bg-paper text-[11px] text-muted uppercase">
-                <tr>
-                  <th className="px-4 py-3 font-medium tracking-wide">Name</th>
-                  <th className="px-4 py-3 font-medium tracking-wide">Category</th>
-                  <th className="px-4 py-3 font-medium tracking-wide">Date</th>
-                  <th className="px-4 py-3 font-medium tracking-wide">Receipt</th>
-                  <th className="px-4 py-3 text-right font-medium tracking-wide">Amount</th>
-                  <th className="px-4 py-3 font-medium tracking-wide"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line">
-                {!isReady && Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={6} />)}
+              <div className="divide-y divide-line md:hidden">
+                {!isReady &&
+                  Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="space-y-2 p-4">
+                      <Skeleton className="h-4 w-1/2" />
+                      <Skeleton className="h-3 w-1/3" />
+                    </div>
+                  ))}
                 {isReady &&
                   pageRows.map((e) => (
-                    <tr
+                    <div
                       key={e.id}
                       onClick={() => {
                         setEditing(e);
                         setShowForm(true);
                       }}
-                      className="cursor-pointer transition-colors duration-200 ease-in-out hover:bg-mist active:bg-mist/70"
+                      className="p-4 transition-colors active:bg-mist"
                     >
-                      <td className="px-4 py-3">
-                        <p className="flex items-center gap-1.5 font-medium text-ink">
-                          {e.name}
-                          {e.source === "payroll" && (
-                            <span className="rounded bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap text-violet-600">
-                              Auto
-                            </span>
-                          )}
-                        </p>
-                        {e.description && <p className="mt-0.5 text-xs text-muted">{e.description}</p>}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${categoryBadgeStyle(categories, e.categoryId)}`}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-ink">{e.name}</p>
+                          {e.description && <p className="mt-0.5 truncate text-xs text-muted">{e.description}</p>}
+                        </div>
+                        <p className="font-display shrink-0 text-sm font-medium text-ink">{formatK(e.amount)}</p>
+                      </div>
+                      <div className="mt-2 flex items-center gap-2">
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${categoryBadgeStyle(categories, e.categoryId)}`}>
                           {categoryName(e.categoryId)}
                         </span>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-muted">{formatDate(e.date)}</td>
-                      <td className="px-4 py-3">
-                        {e.photoUrl ? (
+                        {e.source === "payroll" && (
+                          <span className="rounded bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-600">Auto</span>
+                        )}
+                        <span className="text-xs text-muted">{formatDate(e.date)}</span>
+                        {e.photoUrl && (
                           <button
                             type="button"
                             onClick={(ev) => {
                               ev.stopPropagation();
                               setViewingReceipt(e.photoUrl!);
                             }}
-                            className="flex w-fit items-center gap-1 whitespace-nowrap rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 transition-colors hover:bg-blue-100"
+                            className="ml-auto flex items-center gap-1 text-muted transition-colors hover:text-brand"
+                            aria-label="View receipt"
                           >
                             <PaperclipIcon />
-                            View receipt
                           </button>
-                        ) : (
-                          <span className="flex w-fit items-center whitespace-nowrap rounded-full bg-mist px-1.5 py-0.5 text-[10px] font-medium text-muted/60">
-                            None
-                          </span>
                         )}
-                      </td>
-                      <td className="font-display px-4 py-3 text-right font-medium whitespace-nowrap text-ink">{formatK(e.amount)}</td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            type="button"
-                            onClick={(ev) => {
-                              ev.stopPropagation();
-                              setEditing(e);
-                              setShowForm(true);
-                            }}
-                            aria-label="Edit expense"
-                            className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-mist hover:text-ink"
-                          >
-                            <PencilSimple size={14} weight="duotone" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(ev) => {
-                              ev.stopPropagation();
-                              setDeletingExpense(e);
-                            }}
-                            aria-label="Delete expense"
-                            className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-red-50 hover:text-red-600"
-                          >
-                            <Trash size={14} weight="duotone" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                {isReady && pageRows.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-10">
-                      <div className="flex flex-col items-center justify-center gap-3 text-center">
-                        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
-                          <Receipt size={22} weight="duotone" />
-                        </span>
-                        <p className="text-xs font-semibold text-ink">No expenses found</p>
                       </div>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          {viewingReceipt && <Lightbox photos={[viewingReceipt]} startIndex={0} onClose={() => setViewingReceipt(null)} />}
-          {deletingExpense && (
-            <Modal
-              onClose={() => setDeletingExpense(null)}
-              maxWidth="max-w-sm"
-              title="Delete expense?"
-              footer={
-                <div className="flex justify-end gap-2">
-                  <Button variant="secondary" onClick={() => setDeletingExpense(null)}>
-                    Cancel
-                  </Button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      deleteExpense(deletingExpense.id);
-                      setDeletingExpense(null);
-                    }}
-                    className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-paper transition-colors hover:bg-red-700"
-                  >
-                    Delete
-                  </button>
-                </div>
-              }
-            >
-              <p className="text-sm text-muted">
-                This will permanently remove <span className="font-medium text-ink">{deletingExpense.name}</span>. This can't be
-                undone.
-              </p>
-            </Modal>
-          )}
+                    </div>
+                  ))}
+              </div>
 
-          {filtered.length > 0 && (
-            <Pagination
-              page={currentPage}
-              pageCount={pageCount}
-              pageSize={rowsPerPage}
-              totalItems={filtered.length}
-              onPageChange={setPage}
-              onPageSizeChange={(size) => {
-                setRowsPerPage(size);
-                setPage(1);
+              <div className="hidden overflow-x-auto md:block">
+                <table className="w-full text-left text-sm">
+                  <thead className="border-b border-line bg-paper text-[11px] text-muted uppercase">
+                    <tr>
+                      <th className="px-4 py-3 font-medium tracking-wide">Name</th>
+                      <th className="px-4 py-3 font-medium tracking-wide">Category</th>
+                      <th className="px-4 py-3 font-medium tracking-wide">Date</th>
+                      <th className="px-4 py-3 font-medium tracking-wide">Receipt</th>
+                      <th className="px-4 py-3 text-right font-medium tracking-wide">Amount</th>
+                      <th className="px-4 py-3 font-medium tracking-wide"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-line">
+                    {!isReady && Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={6} />)}
+                    {isReady &&
+                      pageRows.map((e) => (
+                        <tr
+                          key={e.id}
+                          onClick={() => {
+                            setEditing(e);
+                            setShowForm(true);
+                          }}
+                          className="cursor-pointer transition-colors duration-200 ease-in-out hover:bg-mist active:bg-mist/70"
+                        >
+                          <td className="px-4 py-3">
+                            <p className="flex items-center gap-1.5 font-medium text-ink">
+                              {e.name}
+                              {e.source === "payroll" && (
+                                <span className="rounded bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap text-violet-600">
+                                  Auto
+                                </span>
+                              )}
+                            </p>
+                            {e.description && <p className="mt-0.5 text-xs text-muted">{e.description}</p>}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${categoryBadgeStyle(categories, e.categoryId)}`}>
+                              {categoryName(e.categoryId)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-muted">{formatDate(e.date)}</td>
+                          <td className="px-4 py-3">
+                            {e.photoUrl ? (
+                              <button
+                                type="button"
+                                onClick={(ev) => {
+                                  ev.stopPropagation();
+                                  setViewingReceipt(e.photoUrl!);
+                                }}
+                                className="flex w-fit items-center gap-1 whitespace-nowrap rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 transition-colors hover:bg-blue-100"
+                              >
+                                <PaperclipIcon />
+                                View receipt
+                              </button>
+                            ) : (
+                              <span className="flex w-fit items-center whitespace-nowrap rounded-full bg-mist px-1.5 py-0.5 text-[10px] font-medium text-muted/60">
+                                None
+                              </span>
+                            )}
+                          </td>
+                          <td className="font-display px-4 py-3 text-right font-medium whitespace-nowrap text-ink">{formatK(e.amount)}</td>
+                          <td className="px-4 py-3 text-right whitespace-nowrap">
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                type="button"
+                                onClick={(ev) => {
+                                  ev.stopPropagation();
+                                  setEditing(e);
+                                  setShowForm(true);
+                                }}
+                                aria-label="Edit expense"
+                                className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-mist hover:text-ink"
+                              >
+                                <PencilSimple size={14} weight="duotone" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(ev) => {
+                                  ev.stopPropagation();
+                                  setDeletingExpense(e);
+                                }}
+                                aria-label="Delete expense"
+                                className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-red-50 hover:text-red-600"
+                              >
+                                <Trash size={14} weight="duotone" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    {isReady && pageRows.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="px-4 py-10">
+                          <div className="flex flex-col items-center justify-center gap-3 text-center">
+                            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
+                            <Receipt size={22} weight="duotone" />
+                            </span>
+                            <p className="text-xs font-semibold text-ink">No expenses found</p>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {viewingReceipt && <Lightbox photos={[viewingReceipt]} startIndex={0} onClose={() => setViewingReceipt(null)} />}
+              {deletingExpense && (
+                <Modal
+                  onClose={() => setDeletingExpense(null)}
+                  maxWidth="max-w-sm"
+                  title="Delete expense?"
+                  footer={
+                    <div className="flex justify-end gap-2">
+                      <Button variant="secondary" onClick={() => setDeletingExpense(null)}>
+                        Cancel
+                      </Button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          deleteExpense(deletingExpense.id);
+                          setDeletingExpense(null);
+                        }}
+                        className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-paper transition-colors hover:bg-red-700"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  }
+                >
+                  <p className="text-sm text-muted">
+                    This will permanently remove <span className="font-medium text-ink">{deletingExpense.name}</span>. This can't be
+                    undone.
+                  </p>
+                </Modal>
+              )}
+
+              {filtered.length > 0 && (
+                <Pagination
+                  page={currentPage}
+                  pageCount={pageCount}
+                  pageSize={rowsPerPage}
+                  totalItems={filtered.length}
+                  onPageChange={setPage}
+                  onPageSizeChange={(size) => {
+                    setRowsPerPage(size);
+                    setPage(1);
+                  }}
+                />
+              )}
+            </div>
+          </>
+        ) : (
+          /* True empty state — no expenses at all for this month, standalone, not nested in a table card */
+          <div className="flex flex-col items-center justify-center gap-3 py-4 text-center">
+            <span className="flex items-center justify-center w-md text-muted">
+             
+              <img src={Expensephoto}/>
+            </span>
+            <div>
+              <p className="font-display text-xl font-bold tracking-tight text-brand">Start tracking every rental expense</p>
+              <p className="mt-0.5 text-sm max-w-lg text-muted">Keep full control over your property finances by monitoring every outgoing cost across your rentals in one simple, organized view.</p>
+            </div> 
+
+            <Button
+              variant="primary"
+              onClick={() => {
+                setEditing(null);
+                setPrefill(undefined);
+                setShowForm(true);
               }}
-            />
-          )}
-        </div>
+            >
+              + Add expense
+            </Button>
+       
+             
+            </div>
+        )}
       </div>
 
       <AnimatePresence>

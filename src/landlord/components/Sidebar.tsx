@@ -204,7 +204,7 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
       role="dialog"
       aria-modal={open ? true : undefined}
       aria-label="Navigation"
-      className={`fixed inset-y-0 left-0 z-50 flex h-full w-64 max-w-[85vw] shrink-0 flex-col border-r border-line bg-paper transition-transform duration-200 lg:static lg:z-auto lg:h-full lg:w-64 lg:max-w-none lg:translate-x-0 ${
+      className={`fixed top-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px))] left-0 z-50 flex h-auto w-64 max-w-[85vw] shrink-0 flex-col border-r border-line bg-paper transition-transform duration-200 lg:static lg:inset-y-0 lg:z-auto lg:h-full lg:w-64 lg:max-w-none lg:translate-x-0 ${
         open ? "translate-x-0" : "-translate-x-full"
       }`}
     >

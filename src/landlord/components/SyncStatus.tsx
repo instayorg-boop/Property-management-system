@@ -62,7 +62,7 @@ export function SyncStatusBadge() {
 
   return (
     <>
-      <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center">
+      <div className="pointer-events-none fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] z-50 flex justify-center lg:bottom-6">
         <AnimatePresence>
           {visible && (
             <motion.div

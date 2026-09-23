@@ -13,6 +13,7 @@ import {
 } from "@phosphor-icons/react";
 import { useAssistant } from "../hooks/useAssistant";
 import { useTenants } from "../landlord/TenantsContext";
+import { useAssistantUi } from "../landlord/AssistantUiContext";
 
 const ASSISTANT_MASCOT_URL =
   "https://rlmcuhejgfftcdshbrbe.supabase.co/storage/v1/object/public/Company%20assets/Ai%20mascot%20logo.png";
@@ -270,11 +271,18 @@ export default function AssistantPanel() {
     return tenants.find((t) => t.portalToken === match[1]);
   }, [location.pathname, tenants]);
 
-  const [open, setOpen] = useState(false);
+  const { open, setOpen } = useAssistantUi();
   const [layout, setLayout] = useState<Layout>("floating");
   const [layoutMenuOpen, setLayoutMenuOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [input, setInput] = useState("");
+  // Phone/tablet: Chat tab opens this panel — fullscreen is the only layout that doesn't collide
+  // with the bottom nav. Desktop keeps whatever layout the landlord last picked.
+  useEffect(() => {
+    if (!open) return;
+    if (window.matchMedia("(max-width: 1023px)").matches) setLayout("fullscreen");
+  }, [open]);
+
   const layoutMenuRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -364,7 +372,7 @@ export default function AssistantPanel() {
           whileHover={{ y: -2 }}
           whileTap={{ scale: 0.96 }}
           transition={{ duration: 0.18, ease: EASE_STANDARD }}
-          className="floating-elevated group fixed right-5 bottom-5 z-40 h-14 w-14 overflow-hidden rounded-full bg-paper"
+          className="floating-elevated group fixed right-5 bottom-5 z-40 hidden h-14 w-14 overflow-hidden rounded-full bg-paper lg:block"
         >
           <img
             src={ASSISTANT_MASCOT_URL}

@@ -10,8 +10,8 @@ export default function Hero() {
 
   <div className="relative z-10 mx-auto flex max-w-5xl flex-col items-center px-6 pt-12 text-center lg:pt-20">
     {/* Title */}
-    <h1 className="max-w-2xl font-display  text-[2.6rem] font-semibold leading-[1.08] tracking-[-0.09em] text-white sm:text-6xl">
-      All in one property management system
+    <h1 className="max-w-4xl font-display  text-[2.6rem] font-semibold leading-[1.08] tracking-[-0.09em] text-white sm:text-6xl">
+    Property software that takes the manual work out of renting.
     </h1>
 
     {/* Description */}

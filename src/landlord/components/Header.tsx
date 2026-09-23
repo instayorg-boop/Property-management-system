@@ -113,9 +113,7 @@ export default function Header() {
             placeholder="Search tenants, rooms, maintenance…"
             className="w-full min-w-0 bg-transparent text-sm text-ink outline-none placeholder:text-muted"
           />
-          <span className="hidden shrink-0 rounded border border-line bg-paper px-1.5 py-0.5 text-[10px] font-medium text-muted lg:inline">
-            ⌘K
-          </span>
+          
         </div>
       </div>
 
@@ -151,16 +149,16 @@ export default function Header() {
             aria-expanded={accountOpen}
             className="flex items-center gap-2 rounded-md  p-1.5 transition-colors"
           >
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full">
               {propertyLogoUrl ? (
-                <img src={propertyLogoUrl} alt="" className="h-7 w-7 rounded-full object-cover" />
+                <img src={propertyLogoUrl} alt="" className="h-10 w-10 rounded-full border border-gray-200 object-cover" />
               ) : (
                 <UserCircle size={26} weight="fill" className="text-muted" />
               )}
             </span>
             <span className="hidden min-w-0 max-w-40 flex-col items-start text-left md:flex">
               <span className="w-full truncate text-sm font-semibold text-ink">{propertyName}</span>
-              <span className="w-full truncate text-xs text-muted">Admin · Property account</span>
+
             </span>
             <DotsThreeVertical size={16} weight="bold" className="hidden shrink-0 text-muted md:block" />
           </button>

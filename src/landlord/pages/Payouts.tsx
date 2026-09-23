@@ -878,7 +878,7 @@ function PayoutMethodsModal({
 
 const onlinePaymentsSteps: { label: string; Icon: PhosphorIcon }[] = [
   { label: "Set up online payments", Icon: LaptopIcon },
-  { label: "Add your bank account", Icon: Wallet },
+  { label: "Add your bank account/mobile money", Icon: Wallet },
   { label: "Accept payments", Icon: CoinsIcon },
 ];
 
@@ -953,9 +953,9 @@ function BankConnectWizard({
             transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
             className="py-10 text-center"
           >
-            <p className="font-display text-2xl font-semibold tracking-tight text-ink">Get payments online!</p>
+            <p className="font-display text-2xl font-semibold tracking-tight text-ink">Collect Rent Faster, Securely Online</p>
             <p className="mx-auto mt-2 max-w-sm text-sm text-muted">
-              Accept rent payments straight to your bank account through your payment link.
+            Automate rent collection with reminders, digital receipts and apply automatic late fees.
             </p>
 
             <div className="mt-8 grid grid-cols-3 gap-4">
