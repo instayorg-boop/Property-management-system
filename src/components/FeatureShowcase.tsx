@@ -3,7 +3,7 @@ import {
   ChevronRight,
   // Removed unused imports for icons that aren't in use now
 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 
 // Types
 interface DashedLineProps {

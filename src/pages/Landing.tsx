@@ -5,7 +5,7 @@ import IntegrationsSection from "../components/IntegrationsSection";
 import Footer from "../components/Footer";
 import PricingSection from "../components/PricingSection";
 import FaqSection from "../components/FaqSection";
-import Background from "../components/background";
+import Background from "../components/Background";
 
 export default function Landing() {
   return (
