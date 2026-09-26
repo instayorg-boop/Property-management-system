@@ -1,11 +1,25 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
 import SlideOver from "../components/SlideOver";
 import SectionLabel from "../components/SectionLabel";
 import Lightbox from "../components/Lightbox";
-import { MagnifyingGlass, Paperclip, Wrench, PencilSimple, Trash, CaretDown, CaretRight, X, Image, CheckCircle } from "@phosphor-icons/react";
+import {
+  MagnifyingGlass,
+  Paperclip,
+  Wrench,
+  PencilSimple,
+  Trash,
+  CaretDown,
+  CaretRight,
+  CaretUpDown,
+  X,
+  Image,
+  CheckCircle,
+  Check,
+  DotsThreeVertical,
+} from "@phosphor-icons/react";
 import { useMaintenance, type MaintenanceReport, type MaintenanceStatus } from "../MaintenanceContext";
 import { useTenants } from "../TenantsContext";
 import Modal from "../components/Modal";
@@ -22,21 +36,15 @@ function SearchIcon() {
 
 const statusLabel: Record<MaintenanceStatus, string> = { open: "Open", "in-progress": "In progress", resolved: "Resolved" };
 
-// "Open" reads as a soft coral/terracotta rather than a harsh alarm red — the whole page leans
-// warm, so even the most urgent status shouldn't feel like a system error.
 const statusStyle: Record<MaintenanceStatus, string> = {
   open: "bg-orange-50 text-orange-600",
   "in-progress": "bg-amber-50 text-amber-600",
   resolved: "bg-emerald-50 text-emerald-600",
 };
 
-/** Groups render in this order regardless of which statuses actually have reports right now. */
 const STATUS_GROUPS: MaintenanceStatus[] = ["open", "in-progress", "resolved"];
 
-/** The group header itself stays a neutral, warm-gray container — status now lives in the small
- * pill badge next to the label instead of washing the whole bar in color, which read as a harsh
- * system alert rather than a calm operational list. */
-const GROUP_HEADER_STYLE = "bg-paper hover:bg-mist";
+const GROUP_HEADER_STYLE = "bg-white hover:bg-mist";
 
 const groupFilterOptions: { value: "all" | MaintenanceStatus; label: string }[] = [
   { value: "all", label: "All" },
@@ -45,8 +53,6 @@ const groupFilterOptions: { value: "all" | MaintenanceStatus; label: string }[] 
   { value: "resolved", label: "Resolved" },
 ];
 
-/** The active filter's own text takes on that status's colour, instead of the same neutral ink
- * every tab gets — so "Open" selected actually reads coral, not just "selected". */
 const groupFilterActiveColor: Record<"all" | MaintenanceStatus, string> = {
   all: "text-ink",
   open: "text-orange-600",
@@ -54,8 +60,137 @@ const groupFilterActiveColor: Record<"all" | MaintenanceStatus, string> = {
   resolved: "text-emerald-600",
 };
 
-/** Small square thumbnail + "add another" tile — used for both adding a report (tenant portal
- * mirrors this pattern separately, kept isolated per docs/BACKEND.md) and editing an existing one. */
+const nextStatus: Record<MaintenanceStatus, MaintenanceStatus> = {
+  open: "in-progress",
+  "in-progress": "resolved",
+  resolved: "open",
+};
+
+type SortMode = "date" | "location-asc" | "location-desc";
+
+/** Native tri-state checkbox (checked / unchecked / indeterminate) — no Radix, just a styled
+ * input with a manual `indeterminate` DOM property set via ref, since that state can't be
+ * expressed as a plain attribute. */
+function RowCheckbox({
+  checked,
+  indeterminate = false,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  indeterminate?: boolean;
+  onChange: () => void;
+  label: string;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = indeterminate && !checked;
+  }, [indeterminate, checked]);
+
+  return (
+    <label className="relative flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center">
+      <input
+        ref={ref}
+        type="checkbox"
+        checked={checked}
+        onChange={onChange}
+        aria-label={label}
+        className="peer absolute inset-0 h-4 w-4 cursor-pointer appearance-none rounded border border-line bg-white transition-colors checked:border-ink checked:bg-ink indeterminate:border-ink indeterminate:bg-ink"
+      />
+      <Check
+        size={10}
+        weight="bold"
+        className="pointer-events-none relative hidden text-white peer-checked:block peer-indeterminate:block"
+      />
+    </label>
+  );
+}
+
+/** Small local dropdown menu — a button that toggles a floating panel, closed on outside click
+ * or Escape. Stands in for the Radix DropdownMenu without adding that dependency. */
+function RowActionsMenu({
+  onView,
+  onAdvance,
+  advanceLabel,
+  onDelete,
+}: {
+  onView: () => void;
+  onAdvance: () => void;
+  advanceLabel: string;
+  onDelete: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [open]);
+
+  const item = (fn: () => void) => () => {
+    fn();
+    setOpen(false);
+  };
+
+  return (
+    <div ref={containerRef} className="relative inline-block text-left">
+      <button
+        type="button"
+        aria-label="Row actions"
+        onClick={() => setOpen((v) => !v)}
+        className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-mist hover:text-ink"
+      >
+        <DotsThreeVertical size={16} weight="bold" />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.97, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.97, y: -4 }}
+            transition={{ duration: 0.12 }}
+            className="absolute right-0 z-30 mt-1 w-44 overflow-hidden rounded-lg border border-line bg-white py-1 shadow-lg"
+          >
+            <button
+              type="button"
+              onClick={item(onView)}
+              className="block w-full px-3 py-2 text-left text-xs font-medium text-ink transition-colors hover:bg-mist"
+            >
+              View details
+            </button>
+            <button
+              type="button"
+              onClick={item(onAdvance)}
+              className="block w-full px-3 py-2 text-left text-xs font-medium text-ink transition-colors hover:bg-mist"
+            >
+              {advanceLabel}
+            </button>
+            <button
+              type="button"
+              onClick={item(onDelete)}
+              className="block w-full px-3 py-2 text-left text-xs font-medium text-red-600 transition-colors hover:bg-red-50"
+            >
+              Delete
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 function PhotoPicker({ photoUrls, onChange }: { photoUrls: string[]; onChange: (urls: string[]) => void }) {
   const addPhoto = (file: File) => {
     uploadPhoto("maintenance-photos", file)
@@ -100,12 +235,20 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
-function ConfirmDeleteReportModal({ onClose, onConfirm }: { onClose: () => void; onConfirm: () => void }) {
+function ConfirmDeleteModal({
+  count,
+  onClose,
+  onConfirm,
+}: {
+  count: number;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
   return (
     <Modal
       onClose={onClose}
       maxWidth="max-w-sm"
-      title="Delete this report?"
+      title={count > 1 ? `Delete ${count} reports?` : "Delete this report?"}
       footer={
         <div className="flex justify-end gap-2">
           <Button variant="secondary" onClick={onClose}>
@@ -216,8 +359,6 @@ function RequestDrawer({
         ) : (
           <div className="space-y-2">
             <p className="text-[11px] font-medium text-muted">Tap a stage to move this request</p>
-            {/* Segmented control, not three separate bordered tiles — the active status slides
-                between options, matching the same pattern used across the rest of this page. */}
             <div className="inline-flex w-full gap-0.5 rounded-md bg-mist p-1">
               {(["open", "in-progress", "resolved"] as const).map((s) => {
                 const active = request.status === s;
@@ -226,8 +367,9 @@ function RequestDrawer({
                     key={s}
                     type="button"
                     onClick={() => onSetStatus(s)}
-                    className={`relative flex-1 rounded-md py-1.5 text-xs font-medium transition-colors ${active ? groupFilterActiveColor[s] : "text-muted hover:text-ink"
-                      }`}
+                    className={`relative flex-1 rounded-md py-1.5 text-xs font-medium transition-colors ${
+                      active ? groupFilterActiveColor[s] : "text-muted hover:text-ink"
+                    }`}
                   >
                     {active && (
                       <motion.span
@@ -304,11 +446,9 @@ function RequestDrawer({
             {pendingMaintenanceIds.has(request.id) && <PendingSyncTag />}
           </div>
 
-          {/* A note, not a plain filled box — a label above it and a left accent bar give it the
-              shape of an actual annotation rather than just a grey rectangle of text. */}
           <div className="mt-4">
             <SectionLabel>Description</SectionLabel>
-            <div className="mt-1.5  border-l-2 border-brand bg-mist py-2.5 pr-4 pl-3.5">
+            <div className="mt-1.5 border-l-2 border-brand bg-mist py-2.5 pr-4 pl-3.5">
               <p className="text-sm leading-relaxed text-ink">{request.description}</p>
             </div>
           </div>
@@ -337,13 +477,7 @@ function RequestDrawer({
 
       <AnimatePresence>
         {confirmingDelete && (
-          <ConfirmDeleteReportModal
-            onClose={() => setConfirmingDelete(false)}
-            onConfirm={() => {
-              setConfirmingDelete(false);
-              onDelete();
-            }}
-          />
+          <ConfirmDeleteModal count={1} onClose={() => setConfirmingDelete(false)} onConfirm={() => { setConfirmingDelete(false); onDelete(); }} />
         )}
       </AnimatePresence>
 
@@ -380,12 +514,7 @@ function AddRequestDrawer({ onClose, onSave }: { onClose: () => void; onSave: (r
       title="Add maintenance request"
       description="Log an issue noticed anywhere on the property."
       footer={
-        <Button
-          variant="primary"
-          onClick={submit}
-          disabled={!canSave}
-          className="w-full py-3 hover:scale-[1.01] disabled:hover:scale-100"
-        >
+        <Button variant="primary" onClick={submit} disabled={!canSave} className="w-full py-3 hover:scale-[1.01] disabled:hover:scale-100">
           Add maintenance request
         </Button>
       }
@@ -427,12 +556,11 @@ export default function Maintenance() {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [addingRequest, setAddingRequest] = useState(false);
-  // Every group starts expanded — collapsing is something you do per-visit to focus on one status,
-  // not a preference worth persisting (next time you land here, you want to see everything again).
-  const [collapsed, setCollapsed] = useState<Set<MaintenanceStatus>>(new Set());
-  // Which group(s) to show at all — "all" shows every section, picking a status hides the rest
-  // entirely rather than just collapsing them.
+  const [collapsed, setCollapsed] = useState<Set<MaintenanceStatus>>(new Set(["resolved"]));
   const [groupFilter, setGroupFilter] = useState<"all" | MaintenanceStatus>("all");
+  const [sortMode, setSortMode] = useState<SortMode>("date");
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
 
   const selected = reports.find((r) => r.id === selectedId) ?? null;
 
@@ -440,8 +568,12 @@ export default function Maintenance() {
     const rows = reports.filter(
       (r) => r.location.toLowerCase().includes(query.toLowerCase()) || r.description.toLowerCase().includes(query.toLowerCase())
     );
-    return [...rows].sort((a, b) => (a.submittedAt < b.submittedAt ? 1 : -1));
-  }, [reports, query]);
+    return [...rows].sort((a, b) => {
+      if (sortMode === "location-asc") return a.location.localeCompare(b.location);
+      if (sortMode === "location-desc") return b.location.localeCompare(a.location);
+      return a.submittedAt < b.submittedAt ? 1 : -1;
+    });
+  }, [reports, query, sortMode]);
 
   const grouped = useMemo(() => {
     const map = new Map<MaintenanceStatus, MaintenanceReport[]>();
@@ -461,12 +593,48 @@ export default function Maintenance() {
     });
   };
 
+  const cycleSortMode = () => {
+    setSortMode((prev) => (prev === "date" ? "location-asc" : prev === "location-asc" ? "location-desc" : "date"));
+  };
+
   const openRequest = (r: MaintenanceReport) => {
     setSelectedId(r.id);
     if (r.unread) markRead(r.id);
   };
 
-  // Arriving from the Dashboard's maintenance preview — open that request, then drop the nav state.
+  const toggleChecked = (id: string) => {
+    setCheckedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleGroupChecked = (rows: MaintenanceReport[], value: boolean) => {
+    setCheckedIds((prev) => {
+      const next = new Set(prev);
+      for (const r of rows) {
+        if (value) next.add(r.id);
+        else next.delete(r.id);
+      }
+      return next;
+    });
+  };
+
+  const clearChecked = () => setCheckedIds(new Set());
+
+  const bulkMarkResolved = () => {
+    checkedIds.forEach((id) => setStatus(id, "resolved"));
+    clearChecked();
+  };
+
+  const bulkDelete = () => {
+    checkedIds.forEach((id) => deleteReport(id));
+    setBulkDeleteConfirm(false);
+    clearChecked();
+  };
+
   useEffect(() => {
     const openId = (location.state as { openReportId?: string } | null)?.openReportId;
     if (openId) {
@@ -481,63 +649,58 @@ export default function Maintenance() {
     <>
       <PageHeader title="Maintenance requests" description="Review and resolve maintenance requests from tenants." />
 
-      <div className="space-y-5 px-4 sm:px-8 pb-10">
-        {/* Add stands alone on its own row; search + filters sit on the row below it, not beside it. */}
+      <div className="space-y-5 px-4 pb-24 sm:px-8">
         <div className="flex items-center justify-end">
           <Button variant="primary" onClick={() => setAddingRequest(true)} className="hover:scale-[1.02]">
             + Add maintenance request
           </Button>
         </div>
 
-       {reports.length !== 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 rounded-lg border border-line bg-paper px-3 py-2">
-            <SearchIcon />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search by location or description"
-              className="w-56 bg-transparent text-sm outline-none placeholder:text-muted"
-            />
-          </div>
+        {reports.length !== 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2 rounded-lg border border-line bg-white px-3 py-2">
+              <SearchIcon />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search by location or description"
+                className="w-56 bg-transparent text-sm outline-none placeholder:text-muted"
+              />
+            </div>
 
-          {/* Segmented control — matches the Tenants page's filter tabs: the active pill slides
-              between options instead of each button carrying its own border/fill. */}
-          <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-            <div className="inline-flex gap-0.5 rounded-md bg-mist p-1">
-              {groupFilterOptions.map((o) => {
-                const active = groupFilter === o.value;
-                return (
-                  <button
-                    key={o.value}
-                    type="button"
-                    onClick={() => setGroupFilter(o.value)}
-                    className={`relative shrink-0 rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors ${active ? groupFilterActiveColor[o.value] : "text-muted hover:text-ink"
+            <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+              <div className="inline-flex gap-0.5 rounded-md bg-mist p-1">
+                {groupFilterOptions.map((o) => {
+                  const active = groupFilter === o.value;
+                  return (
+                    <button
+                      key={o.value}
+                      type="button"
+                      onClick={() => setGroupFilter(o.value)}
+                      className={`relative shrink-0 rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                        active ? groupFilterActiveColor[o.value] : "text-muted hover:text-ink"
                       }`}
-                  >
-                    {active && (
-                      <motion.span
-                        layoutId="maintenance-filter-pill"
-                        transition={{ type: "spring", stiffness: 480, damping: 38 }}
-                        className="absolute inset-0 rounded-md bg-paper shadow-sm"
-                      />
-                    )}
-                    <span className="relative">{o.label}</span>
-                  </button>
-                );
-              })}
+                    >
+                      {active && (
+                        <motion.span
+                          layoutId="maintenance-filter-pill"
+                          transition={{ type: "spring", stiffness: 480, damping: 38 }}
+                          className="absolute inset-0 rounded-md bg-white shadow-sm"
+                        />
+                      )}
+                      <span className="relative">{o.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
-        </div>
-       )}
+        )}
 
-        {/* Grouped by status, each in its own collapsible section — collapse a group to focus on
-            just the others, matching a Kanban-style board's status columns without needing an
-            actual multi-column layout that wouldn't fit this page's width. */}
         {!isReady ? (
           <div className="space-y-3">
             {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="rounded-lg border border-line bg-paper p-4">
+              <div key={i} className="rounded-lg border border-line bg-white p-4">
                 <Skeleton className="h-4 w-32" />
                 <div className="mt-4 space-y-2">
                   <Skeleton className="h-3 w-full" />
@@ -547,13 +710,15 @@ export default function Maintenance() {
             ))}
           </div>
         ) : reports.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-3  py-2 text-center">
-            <span className="flex w-md items-center justify-center  text-muted">
+          <div className="flex flex-col items-center justify-center gap-3 py-2 text-center">
+            <span className="flex w-md items-center justify-center text-muted">
               <img src={MaintenancePhoto} />
             </span>
             <div>
               <p className="font-display text-xl font-bold tracking-tight text-brand">Complete Maintenance Visibility</p>
-              <p className="mt-0.5 text-sm max-w-lg text-muted">From appliance replacements to requests submited by tenants, maintain a complete log of every issue and repair across your property.</p>
+              <p className="mt-0.5 max-w-lg text-sm text-muted">
+                From appliance replacements to requests submited by tenants, maintain a complete log of every issue and repair across your property.
+              </p>
             </div>
             <div className="flex items-center justify-end">
               <Button variant="primary" onClick={() => setAddingRequest(true)} className="hover:scale-[1.02]">
@@ -566,8 +731,11 @@ export default function Maintenance() {
             {visibleGroups.map((status) => {
               const rows = grouped.get(status) ?? [];
               const isCollapsed = collapsed.has(status);
+              const allChecked = rows.length > 0 && rows.every((r) => checkedIds.has(r.id));
+              const someChecked = rows.some((r) => checkedIds.has(r.id));
+
               return (
-                <div key={status} className="overflow-hidden rounded-xl border border-line bg-paper">
+                <div key={status} className="overflow-hidden rounded-xl border border-line bg-white">
                   <button
                     type="button"
                     onClick={() => toggleGroup(status)}
@@ -598,7 +766,7 @@ export default function Maintenance() {
                           </p>
                         ) : (
                           <>
-                            {/* Mobile: cards — an HTML table doesn't have room to breathe on a phone screen */}
+                            {/* Mobile: cards */}
                             <div className="divide-y divide-line md:hidden">
                               {rows.map((r) => (
                                 <button
@@ -634,10 +802,11 @@ export default function Maintenance() {
                               ))}
                             </div>
 
-                            {/* Desktop / tablet: table */}
+                            {/* Desktop / tablet: plain table, styled to match */}
                             <div className="hidden overflow-x-auto md:block">
                               <table className="w-full table-fixed text-left text-sm">
                                 <colgroup>
+                                  <col className="w-10" />
                                   <col className="w-40" />
                                   <col />
                                   <col className="w-36" />
@@ -645,9 +814,22 @@ export default function Maintenance() {
                                   <col className="w-28" />
                                   <col className="w-10" />
                                 </colgroup>
-                                <thead className="border-b border-line bg-paper text-[11px] text-muted uppercase">
+                                <thead className="border-b border-line bg-white text-[11px] text-muted uppercase">
                                   <tr>
-                                    <th className="px-4 py-3 font-medium tracking-wide">Location</th>
+                                    <th className="px-4 py-3">
+                                      <RowCheckbox
+                                        checked={allChecked}
+                                        indeterminate={someChecked}
+                                        onChange={() => toggleGroupChecked(rows, !allChecked)}
+                                        label={`Select all ${statusLabel[status].toLowerCase()} rows`}
+                                      />
+                                    </th>
+                                    <th className="px-4 py-3 font-medium tracking-wide">
+                                      <button type="button" onClick={cycleSortMode} className="flex items-center gap-1 hover:text-ink">
+                                        Location
+                                        <CaretUpDown size={12} weight="bold" />
+                                      </button>
+                                    </th>
                                     <th className="px-4 py-3 font-medium tracking-wide">Description</th>
                                     <th className="px-4 py-3 font-medium tracking-wide">Reported by</th>
                                     <th className="px-4 py-3 font-medium tracking-wide">Photos</th>
@@ -662,6 +844,9 @@ export default function Maintenance() {
                                       onClick={() => openRequest(r)}
                                       className="group cursor-pointer transition-colors duration-200 ease-in-out hover:bg-mist"
                                     >
+                                      <td className="px-4 py-4 align-top" onClick={(e) => e.stopPropagation()}>
+                                        <RowCheckbox checked={checkedIds.has(r.id)} onChange={() => toggleChecked(r.id)} label="Select row" />
+                                      </td>
                                       <td className="px-4 py-4 align-top">
                                         <div className="flex items-center gap-1.5">
                                           {r.unread ? (
@@ -693,8 +878,13 @@ export default function Maintenance() {
                                       <td className="px-4 py-4 align-top text-muted">
                                         <span className="whitespace-nowrap">{formatDate(r.submittedAt)}</span>
                                       </td>
-                                      <td className="px-4 py-4 text-right align-top">
-                                        <CaretRight size={16} weight="bold" className="inline text-muted transition-colors group-hover:text-ink" />
+                                      <td className="px-4 py-4 align-top" onClick={(e) => e.stopPropagation()}>
+                                        <RowActionsMenu
+                                          onView={() => openRequest(r)}
+                                          onAdvance={() => setStatus(r.id, nextStatus[r.status])}
+                                          advanceLabel={`Mark as ${statusLabel[nextStatus[r.status]]}`}
+                                          onDelete={() => deleteReport(r.id)}
+                                        />
                                       </td>
                                     </tr>
                                   ))}
@@ -710,7 +900,7 @@ export default function Maintenance() {
               );
             })}
             {filtered.length === 0 && (
-              <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-line bg-paper px-4 py-10 text-center">
+              <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-line bg-white px-4 py-10 text-center">
                 <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
                   <Wrench size={22} weight="duotone" />
                 </span>
@@ -723,6 +913,41 @@ export default function Maintenance() {
           </div>
         )}
       </div>
+
+      <AnimatePresence>
+        {checkedIds.size > 0 && (
+          <motion.div
+            initial={{ y: 40, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 40, opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-white px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] sm:px-8"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs text-muted">
+                {checkedIds.size} of {filtered.length} row(s) selected.
+              </p>
+              <div className="flex items-center gap-2">
+                <Button variant="secondary" onClick={clearChecked} className="px-3 py-1.5 text-xs">
+                  Clear
+                </Button>
+                <Button variant="secondary" onClick={bulkMarkResolved} className="px-3 py-1.5 text-xs">
+                  Mark resolved
+                </Button>
+                <Button variant="dangerSolid" onClick={() => setBulkDeleteConfirm(true)} className="px-3 py-1.5 text-xs">
+                  Delete
+                </Button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {bulkDeleteConfirm && (
+          <ConfirmDeleteModal count={checkedIds.size} onClose={() => setBulkDeleteConfirm(false)} onConfirm={bulkDelete} />
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {selected && (

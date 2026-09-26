@@ -60,7 +60,7 @@ function Greeting({ onAction }: { propertyId: string | null; onAction: (action: 
         <p className="mt-0.5 text-sm text-muted">
           {today} · {time}
         </p>
-       
+
       </div>
 
       {/* Desktop: full quick-action row */}
@@ -457,18 +457,23 @@ export default function Dashboard() {
           <div className="rounded-lg border border-gray-200 bg-paper p-5">
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-sm font-medium text-ink">Rent income vs expenses</p>
+                <p className="text-sm font-medium text-ink">
+                  Rent income vs expenses
+                </p>
+
                 <span className="mt-1.5 flex items-center gap-3 text-[11px] text-muted">
                   <span className="flex items-center gap-1">
                     <span className="h-2 w-2 rounded-full bg-emerald-500" />
                     Income
                   </span>
+
                   <span className="flex items-center gap-1">
                     <span className="h-2 w-2 rounded-full bg-red-700" />
                     Expenses
                   </span>
                 </span>
               </div>
+
               <Select
                 value={collectionRange}
                 onChange={setCollectionRange}
@@ -480,50 +485,127 @@ export default function Dashboard() {
             {!dataReady ? (
               <div className="mt-6 flex h-48 items-end gap-3 border-l border-line pl-3">
                 {Array.from({ length: 6 }).map((_, i) => (
-                  <Skeleton key={i} className="w-full" style={{ height: `${30 + ((i * 17) % 60)}%` }} />
+                  <Skeleton
+                    key={i}
+                    className="w-full"
+                    style={{
+                      height: `${30 + ((i * 17) % 60)}%`,
+                    }}
+                  />
                 ))}
               </div>
             ) : collections.length === 0 ? (
               <div className="mt-6 flex h-48 flex-col items-center justify-center gap-1 text-center">
-                <p className="text-sm font-semibold text-ink">No income yet</p>
-                <p className="text-xs text-muted">Logged payments will show up here month by month.</p>
+                <p className="text-sm font-semibold text-ink">
+                  No income yet
+                </p>
+
+                <p className="text-xs text-muted">
+                  Logged payments will show up here month by month.
+                </p>
               </div>
             ) : (
               <div className="mt-6 h-48">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={collections.slice(-Number(collectionRange))} barGap={4} margin={{ left: 0 }}>
-                    <CartesianGrid vertical={false} stroke="var(--color-line)" />
+                  <BarChart
+                    data={collections.slice(-Number(collectionRange))}
+                    barGap={4}
+                    margin={{
+                      top: 4,
+                      right: 4,
+                      left: 0,
+                      bottom: 4,
+                    }}
+                  >
+                    <CartesianGrid
+                      vertical={false}
+                      horizontal={true}
+                      stroke="var(--color-line)"
+                    />
+
                     <XAxis
                       dataKey="label"
                       tickLine={false}
                       axisLine={false}
-                      tick={{ fill: "var(--color-muted)", fontSize: 11 }}
+                      tick={{
+                        fill: "var(--color-muted)",
+                        fontSize: 11,
+                      }}
                       dy={6}
                     />
+
                     <YAxis
                       tickLine={false}
                       axisLine={false}
-                      tick={{ fill: "var(--color-muted)", fontSize: 11 }}
-                      tickFormatter={(v: number) => `K${v / 1000}k`}
-                      width={48}
+                      domain={[0, "auto"]}
+                      allowDecimals={false}
+                      tickMargin={6}
+                      tick={{
+                        fill: "var(--color-muted)",
+                        fontSize: 11,
+                      }}
+                      tickFormatter={(v: number) => {
+                        if (v === 0) return "K0";
+
+                        const value = v / 1000;
+
+                        return Number.isInteger(value)
+                          ? `K${value}k`
+                          : `K${value.toFixed(1)}k`;
+                      }}
+                      width={52}
                     />
+
                     <Tooltip
-                      cursor={{ fill: "var(--color-mist)" }}
+                      cursor={{
+                        fill: "var(--color-mist)",
+                      }}
                       content={({ active, payload, label }) => {
                         if (!active || !payload?.length) return null;
-                        const income = payload.find((p) => p.dataKey === "amount")?.value as number | undefined;
-                        const expenses = payload.find((p) => p.dataKey === "expenses")?.value as number | undefined;
+
+                        const income = payload.find(
+                          (p) => p.dataKey === "amount"
+                        )?.value as number | undefined;
+
+                        const expenses = payload.find(
+                          (p) => p.dataKey === "expenses"
+                        )?.value as number | undefined;
+
                         return (
                           <div className="rounded-md bg-ink px-2.5 py-1.5 text-center shadow-lg">
-                            <p className="text-[11px] font-semibold text-paper">{label}</p>
-                            <p className="text-[11px] text-paper/90">K{(income ?? 0).toLocaleString()} income</p>
-                            {!!expenses && <p className="text-[11px] text-paper/70">K{expenses.toLocaleString()} expenses</p>}
+                            <p className="text-[11px] font-semibold text-paper">
+                              {label}
+                            </p>
+
+                            <p className="text-[11px] text-paper/90">
+                              K{(income ?? 0).toLocaleString()} income
+                            </p>
+
+                            {!!expenses && (
+                              <p className="text-[11px] text-paper/70">
+                                K{expenses.toLocaleString()} expenses
+                              </p>
+                            )}
                           </div>
                         );
                       }}
                     />
-                    <Bar dataKey="amount" name="Income" fill="var(--color-success)" radius={[4, 4, 0, 0]} maxBarSize={18} />
-                    <Bar dataKey="expenses" name="Expenses" fill="var(--color-danger)" radius={[4, 4, 0, 0]} maxBarSize={18} />
+
+                    <Bar
+                      dataKey="amount"
+                      name="Income"
+                      fill="var(--color-success)"
+                      radius={[4, 4, 0, 0]}
+                      maxBarSize={18}
+                    />
+
+                    <Bar
+                      dataKey="expenses"
+                      name="Expenses"
+                      fill="var(--color-danger)"
+                      radius={[4, 4, 0, 0]}
+                      maxBarSize={18}
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -558,65 +640,65 @@ export default function Dashboard() {
                 <p className="text-xs text-muted">Payments you log will show up here.</p>
               </div>
             ) : (
-            <div className="overflow-x-auto">
-            <table className="mt-4 w-full text-left text-sm">
-              <thead>
-                <tr className="text-xs text-muted">
-                  <th className="pb-2 font-medium">Tenant</th>
-                  <th className="pb-2 font-medium">Status</th>
-                  <th className="pb-2 font-medium">Method</th>
-                  <th className="pb-2 font-medium">Date</th>
-                  <th className="pb-2 text-right font-medium">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {payments.map((p) => {
-                  return (
-                    <tr
-                      key={p.key}
-                      onClick={() => navigate("/rent", { state: { openTenantId: p.tenantId } })}
-                      className="cursor-pointer border-t border-line transition-colors duration-200 ease-in-out hover:bg-mist"
-                    >
-                      <td className="py-2.5">
-                        <div className="flex items-center gap-2.5">
-
-                          <div>
-                            <Link
-                              to={`/tenants/${p.portalToken ?? p.tenantId}`}
-                              onClick={(e) => e.stopPropagation()}
-                              className="font-medium text-ink hover:underline"
-                            >
-                              {p.tenant}
-                            </Link>
-                            <p className="text-[11px] text-muted">{p.room}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-2.5">
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[p.status]}`}>
-                          {p.status}
-                        </span>
-                      </td>
-                      <td className="py-2.5 text-muted">{p.method}</td>
-                      <td className="py-2.5 text-muted">{p.date}</td>
-                      <td
-                        className={`py-2.5 text-right font-medium ${p.isCredit ? "text-brand" : "text-emerald-600"}`}
-                      >
-                        {p.amount}
-                      </td>
+              <div className="overflow-x-auto">
+                <table className="mt-4 w-full text-left text-sm">
+                  <thead>
+                    <tr className="text-xs text-muted">
+                      <th className="pb-2 font-medium">Tenant</th>
+                      <th className="pb-2 font-medium">Status</th>
+                      <th className="pb-2 font-medium">Method</th>
+                      <th className="pb-2 font-medium">Date</th>
+                      <th className="pb-2 text-right font-medium">Amount</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {payments.map((p) => {
+                      return (
+                        <tr
+                          key={p.key}
+                          onClick={() => navigate("/rent", { state: { openTenantId: p.tenantId } })}
+                          className="cursor-pointer border-t border-line transition-colors duration-200 ease-in-out hover:bg-mist"
+                        >
+                          <td className="py-2.5">
+                            <div className="flex items-center gap-2.5">
+
+                              <div>
+                                <Link
+                                  to={`/tenants/${p.portalToken ?? p.tenantId}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="font-medium text-ink hover:underline"
+                                >
+                                  {p.tenant}
+                                </Link>
+                                <p className="text-[11px] text-muted">{p.room}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-2.5">
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[p.status]}`}>
+                              {p.status}
+                            </span>
+                          </td>
+                          <td className="py-2.5 text-muted">{p.method}</td>
+                          <td className="py-2.5 text-muted">{p.date}</td>
+                          <td
+                            className={`py-2.5 text-right font-medium ${p.isCredit ? "text-brand" : "text-emerald-600"}`}
+                          >
+                            {p.amount}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </div>
 
         {/* Right column */}
         <div className="space-y-4">
-          
+
 
           {/* Online payments balance — its own brand-tinted surface (every other card on this page
               is plain bg-paper) so the one number that's actually sitting in a payment gateway,
@@ -654,9 +736,14 @@ export default function Dashboard() {
                 </Button>
               </>
             ) : (
-              <div className="flex flex-col items-center justify-center gap-1 py-8 text-center">
+              <div className="flex flex-col items-center justify-center gap-2 py-4 text-center">
+                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-paper text-brand/50">
+                  <Coins size={22} weight="duotone" />
+                </span>
                 <p className="text-sm font-semibold text-ink">Nothing to transfer yet</p>
-                <p className="text-xs text-ink/70">Rent paid online through your payment link will show up here.</p>
+                <p className="max-w-[220px] text-xs text-ink/70">
+                  Rent collected automatically will show up here.
+                </p>
               </div>
             )}
           </div>

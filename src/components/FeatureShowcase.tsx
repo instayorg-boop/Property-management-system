@@ -1,243 +1,184 @@
-import { motion } from "framer-motion";
-import { Link } from "react-router-dom";
+import React from "react";
+import {
+  ChevronRight,
+  // Removed unused imports for icons that aren't in use now
+} from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
-function CheckIcon() {
-  return (
-    <svg viewBox="0 0 20 20" className="h-4 w-4 shrink-0 fill-none stroke-emerald-600" strokeWidth={2}>
-      <circle cx="10" cy="10" r="8.5" className="stroke-emerald-200" />
-      <path d="M6.5 10.2l2.3 2.3 4.7-4.9" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
+// Types
+interface DashedLineProps {
+  orientation?: "horizontal" | "vertical";
+  className?: string;
 }
 
-function ArrowIcon() {
-  return (
-    <svg viewBox="0 0 16 16" className="h-4 w-4 shrink-0 fill-none stroke-current transition-transform group-hover:translate-x-1" strokeWidth={2}>
-      <path d="M3.5 8h9M8.5 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-type Feature = {
-  tag: string;
+interface FeatureItem {
   title: string;
-  emoji?: string;
-  desc: string;
-  points: string[];
-  linkText: string;
-  linkHref: string;
-  imageSrc: string;
-  imageAlt: string;
-  overlayBadge?: {
-    title: string;
-    subtitle?: string;
-    status?: string;
-    statusColor?: string;
-  };
+  imageUrl: string; // New field for image URL
+  href: string;
+}
+
+// Helper component for dashed border dividers
+const DashedLine: React.FC<DashedLineProps> = ({
+  orientation = "horizontal",
+  className = "",
+}) => {
+  if (orientation === "vertical") {
+    return (
+      <div
+        className={`w-[1px] h-full border-r  border-neutral-300 ${className}`}
+      />
+    );
+  }
+  return (
+    <div
+      className={`w-full h-[1px] border-b border-neutral-300 ${className}`}
+    />
+  );
 };
 
-const topFeatures: Feature[] = [
+/* ==========================================================================
+   SHOWCASE ITEMS (using preview images instead of mockups)
+   ========================================================================== */
+const items: FeatureItem[] = [
   {
-    tag: "Rent & Financials",
-    title: "Collect rent automatically without tracking receipts",
-    emoji: "💳",
-    desc: "Know exactly who has paid across every property and unit. Mobile money payments match directly to tenants, tracking partial payments and carried-over balances effortlessly.",
-    points: [
-      "Automated mobile money & bank reconciliation",
-      "Partial payment tracking & overdue alerts",
-      "Customizable grace periods per property"
-    ],
-    linkText: "See rent collection tools",
-    linkHref: "/features/rent-collection",
-    imageSrc: "https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=1200&q=80",
-    imageAlt: "Financial dashboard on laptop screen",
-    overlayBadge: {
-      title: "Mobile Money Match",
-      subtitle: "K1,200 received from A. Mwansa",
-      status: "Verified",
-      statusColor: "bg-emerald-100 text-emerald-800"
-    }
+    title: " Automated rent collection, reconciled for you",
+    imageUrl: "https://rlmcuhejgfftcdshbrbe.supabase.co/storage/v1/object/public/Company%20assets/Landing%20page%20illustrations/First%20illustration%20image.png", // Example image path
+    href: "/features/rent-collection",
   },
   {
-    tag: "Invoicing & Communication",
-    title: "Automated invoices & WhatsApp reminders",
-    emoji: "📩",
-    desc: "Stop calling tenants every month. System-generated invoices calculate balances automatically and deliver directly to tenants or guardians via WhatsApp.",
-    points: [
-      "Pre-filled invoices with auto-calculated balances",
-      "Scheduled reminders before and after due dates",
-      "Instant PDF receipts sent upon payment"
-    ],
-    linkText: "Explore messaging & invoicing",
-    linkHref: "/features/invoicing",
-    imageSrc: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=1200&q=80",
-    imageAlt: "Property manager using tablet",
-    overlayBadge: {
-      title: "WhatsApp Dispatch",
-      subtitle: "128 Rent Reminders Sent",
-      status: "Delivered",
-      statusColor: "bg-sky-100 text-sky-800"
-    }
+    title: "Automated invoicing & instant tenant reminders",
+    imageUrl: "https://rlmcuhejgfftcdshbrbe.supabase.co/storage/v1/object/public/Company%20assets/Landing%20page%20illustrations/I%20message%20illustration.png",
+    href: "/features/invoicing",
   },
   {
-    tag: "Staff & Operations",
-    title: "Clock-in kiosk & automatic payroll calculation",
-    emoji: "⏱️",
-    desc: "Ditch manual timesheets. On-site staff clock in via tablet, and working hours, overtime, and monthly pay auto-populate directly into payroll.",
-    points: [
-      "Tablet clock-in kiosk with photo verification",
-      "Automatic overtime and penalty calculations",
-      "One-click payroll reporting"
-    ],
-    linkText: "See time & attendance tools",
-    linkHref: "/features/payroll",
-    imageSrc: "https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=1200&q=80",
-    imageAlt: "Team collaboration",
-    overlayBadge: {
-      title: "Attendance Live",
-      subtitle: "J. Tembo (07:58 – 17:02)",
-      status: "Clocked In",
-      statusColor: "bg-amber-100 text-amber-800"
-    }
+    title: "Digital clock-in/out & automatic payroll calculation",
+    imageUrl: "https://rlmcuhejgfftcdshbrbe.supabase.co/storage/v1/object/public/Company%20assets/Landing%20page%20illustrations/Payroll%20Illustration.png",
+    href: "/features/payroll",
   },
-  {
-    tag: "Occupancy & Units",
-    title: "Real-time room availability & lease management",
-    emoji: "🏠",
-    desc: "Always know your occupancy rate without checking spreadsheets. Track upcoming move-ins, vacant units, and lease renewals at a glance.",
-    points: [
-      "Interactive property map & status updates",
-      "Digital tenant onboarding and document storage",
-      "Automated lease renewal alerts"
-    ],
-    linkText: "Explore room & occupancy tools",
-    linkHref: "/features/occupancy",
-    imageSrc: "https://images.unsplash.com/photo-1560518883-ce09059eeffa?auto=format&fit=crop&w=1200&q=80",
-    imageAlt: "Modern apartment building",
-    overlayBadge: {
-      title: "Property Occupancy",
-      subtitle: "92% Occupied (14 Units Open)",
-      status: "Optimal",
-      statusColor: "bg-purple-100 text-purple-800"
-    }
-  }
 ];
 
-export default function DynamicFeatureShowcase() {
+/* ==========================================================================
+   MAIN COMPONENT WITH MINIMAL APPLE-LIKE MOTION
+   ========================================================================== */
+const appleMotionVariants = {
+  hidden: { opacity: 0, y: 24 },
+  visible: { opacity: 1, y: 0 },
+  hover: { scale: 1.018, y: -2, boxShadow: "0 3px 16px 0 rgba(30,41,59,0.06)" },
+};
+
+export const FeatureShowcase: React.FC = () => {
   return (
-    <section className="py-24 overflow-hidden">
-      <div className="mx-auto max-w-6xl px-6">
-        
-        {/* Section Header */}
-        <div className="mx-auto max-w-2xl text-center mb-20">
-          <span className="rounded-full bg-emerald-100/80 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-emerald-800">
-            All-In-One Platform
-          </span>
-          <h2 className="mt-4 font-display text-3xl font-bold tracking-tight text-slate-900 sm:text-5xl">
+    <section
+      id="feature-showcase"
+      className="pt-20 sm:pt-80 mb-12 bg-white text-neutral-900 overflow-hidden"
+    >
+      <div className="container mx-auto px-4 max-w-6xl">
+        {/* Header Section */}
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.78, ease: [0.39, 0.575, 0.565, 1] }}
+          className="mx-auto grid items-start gap-4 md:gap-8 lg:grid-cols-2 mb-12 lg:mb-16"
+        >
+          <h2 className="text-3xl font-extrabold tracking-tight sm:text-4xl font-display lg:text-5xl leading-[1.15]">
             Everything you need to run your properties effortlessly.
           </h2>
-          <p className="mt-4 text-lg text-slate-600">
-            From rent collection to staff attendance—designed to eliminate hours of manual work every week.
+          <p className="text-neutral-500 leading-relaxed text-base md:text-lg pt-1">
+            From automated mobile money rent collection to staff attendance and WhatsApp invoicing designed to eliminate hours of manual work every week.
           </p>
-        </div>
-
-        {/* Feature Blocks */}
-        <div className="space-y-24 lg:space-y-32">
-          {topFeatures.map((feature, index) => {
-            const isEven = index % 2 === 0;
-
-            return (
-              <div 
-                key={feature.title} 
-                className={`grid grid-cols-1 items-center gap-12 lg:grid-cols-12 lg:gap-16 ${
-                  isEven ? "" : "lg:grid-flow-dense"
-                }`}
+        </motion.div>
+        {/* Main Features Card Box */}
+        <motion.div
+          initial={{ opacity: 0, scale: 0.97 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.55, ease: [0.39, 0.575, 0.565, 1] }}
+          className="rounded-3xl border border-neutral-200 bg-white p-2 md:p-4 shadow-xs"
+        >
+          <div className="flex max-md:flex-col">
+            {items.map((item, i) => (
+              <motion.div
+                key={i}
+                variants={appleMotionVariants}
+                initial="hidden"
+                whileInView="visible"
+                whileHover="hover"
+                viewport={{ once: true, amount: 0.4 }}
+                transition={{
+                  y: { type: "spring", stiffness: 56, damping: 26 },
+                  opacity: { duration: 0.5 },
+                  scale: { type: "spring", stiffness: 185, damping: 18 },
+                  boxShadow: { duration: 0.25 },
+                  delay: i * 0.07,
+                }}
+                className="flex flex-1 max-md:flex-col bg-white transition-all"
+                style={{ willChange: "transform, box-shadow" }}
               >
-                {/* Text Content */}
-                <div className={`lg:col-span-6 ${isEven ? "" : "lg:col-start-7"}`}>
-                  <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 shadow-sm">
-                    {feature.tag}
-                  </span>
-
-                  <h3 className="mt-4 font-display text-2xl font-bold text-slate-900 sm:text-4xl leading-tight">
-                    {feature.title} {feature.emoji && <span>{feature.emoji}</span>}
-                  </h3>
-
-                  <p className="mt-4 text-base leading-relaxed text-slate-600 sm:text-lg">
-                    {feature.desc}
-                  </p>
-
-                  <ul className="mt-6 space-y-3">
-                    {feature.points.map((pt) => (
-                      <li key={pt} className="flex items-start gap-3 text-sm font-medium text-slate-700">
-                        <CheckIcon />
-                        <span>{pt}</span>
-                      </li>
-                    ))}
-                  </ul>
-
-                  <div className="mt-8">
-                    <Link
-                      to={feature.linkHref}
-                      className="group inline-flex items-center gap-2 text-sm font-semibold text-emerald-700 hover:text-emerald-900 transition-colors"
-                    >
-                      <span>{feature.linkText}</span>
-                      <ArrowIcon />
-                    </Link>
-                  </div>
-                </div>
-
-                {/* Media Side with Gusto-Style Shape & Floating Card */}
-                <div className={`relative lg:col-span-6 ${isEven ? "" : "lg:col-start-1"}`}>
+                <div className="flex-1 flex flex-col justify-between p-4 md:p-6">
+                  {/* Image Preview Container */}
                   <motion.div
-                    initial={{ opacity: 0, y: 30 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true, margin: "-100px" }}
-                    transition={{ duration: 0.6, ease: "easeOut" }}
-                    className="relative mx-auto max-w-md lg:max-w-none"
+                    layout
+                    className="relative w-full overflow-hidden"
                   >
-                    {/* Background Glow */}
-                    <div className="absolute -inset-4 rounded-3xl bg-gradient-to-r from-emerald-100 to-sky-100 opacity-60 blur-xl -z-10" />
-
-                    {/* Styled Image Container with Soft Polygon Clipping */}
-                    <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white p-3 ">
-                      <div className="relative h-72 sm:h-96 w-full overflow-hidden rounded-2xl">
-                        <img
-                          src={feature.imageSrc}
-                          alt={feature.imageAlt}
-                          className="h-full w-full object-cover object-center transition-transform duration-700 hover:scale-105"
-                        />
-                      </div>
-
-                      {/* Floating UI Badge Card */}
-                      {feature.overlayBadge && (
-                        <div className="absolute top-6 left-6 z-10 max-w-xs rounded-2xl border border-white/80 bg-white/90 p-4 shadow-xl backdrop-blur-md">
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-xs font-bold text-slate-900">
-                              {feature.overlayBadge.title}
-                            </span>
-                            {feature.overlayBadge.status && (
-                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${feature.overlayBadge.statusColor}`}>
-                                {feature.overlayBadge.status}
-                              </span>
-                            )}
-                          </div>
-                          {feature.overlayBadge.subtitle && (
-                            <p className="mt-1 text-xs text-slate-500">
-                              {feature.overlayBadge.subtitle}
-                            </p>
-                          )}
-                        </div>
-                      )}
-                    </div>
+                    <motion.img
+                      src={item.imageUrl}
+                      alt={item.title}
+                      className="object-cover w-full rounded-md h-full"
+                      initial={{ scale: 1.03, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{
+                        type: "spring",
+                        stiffness: 92,
+                        damping: 28,
+                        opacity: { duration: 0.32, delay: 0.06 * i },
+                        delay: 0.09 * i,
+                      }}
+                    />
+                    {/* Bottom gradient overlay */}
+                    <div className="absolute inset-0 z-10 bg-gradient-to-t from-white via-transparent to-transparent pointer-events-none" />
                   </motion.div>
+                  {/* Title & Arrow Link */}
+                  <motion.a
+                    href={item.href}
+                    className="group flex items-center justify-between gap-4 pt-6 text-neutral-900 transition-colors"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{
+                      duration: 0.36,
+                      delay: 0.11 + 0.08 * i,
+                    }}
+                  >
+                    <h3 className="font-bold text-lg  leading-snug tracking-tight ">
+                      {item.title}
+                    </h3>
+                    <motion.span
+                      className="opacity-0 group-hover:opacity-100 transition-opacity"
+                      initial={{ opacity: 0, x: 0 }}
+                      whileHover={{ opacity: 1, x: 4 }}
+                      transition={{ type: "spring", stiffness: 160, damping: 14, duration: 0.18 }}
+                    >
+                      <ChevronRight className="size-4 text-neutral-400" />
+                    </motion.span>
+                  </motion.a>
                 </div>
-
-              </div>
-            );
-          })}
-        </div>
+                {/* Vertical Divider (Desktop) */}
+                {i < items.length - 1 && (
+                  <div className="relative hidden md:block my-4">
+                    <DashedLine orientation="vertical" />
+                  </div>
+                )}
+                {/* Horizontal Divider (Mobile) */}
+                {i < items.length - 1 && (
+                  <div className="relative block md:hidden my-2">
+                    <DashedLine orientation="horizontal" />
+                  </div>
+                )}
+              </motion.div>
+            ))}
+          </div>
+        </motion.div>
       </div>
     </section>
   );
-}
+};
+
+export default FeatureShowcase;
