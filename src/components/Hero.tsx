@@ -2,13 +2,13 @@
 
 import Button from "../landlord/components/Button";
 import { motion } from "framer-motion";
-import Nav from "./Nav";
+
 
 export default function Hero() {
   return (
     // Removed overflow-hidden so the image can extend past the bottom
     <section className="relative bg-slate-900 pt-4 pb-12 sm:pb-16 ">
-      <Nav />
+     
 
       {/* Hero Content */}
       <div className="relative z-10 mx-auto flex max-w-5xl flex-col items-center px-6 pt-10 text-center lg:pt-16">
@@ -42,7 +42,7 @@ export default function Hero() {
         >
           <Button
             variant="primary"
-            className="inline-block bg-[#0056D2] hover:bg-[#0041A3] text-white font-medium text-base px-6 py-2.5 sm:px-8 sm:py-3.5 sm:text-base text-sm shadow-sm hover:shadow transition-all"
+            className="inline-block bg-[#0056D2] hover:bg-[#0041A3] text-white font-medium text-base   shadow-sm hover:shadow transition-all"
           >
             Book Free Demo
           </Button>

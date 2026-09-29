@@ -52,7 +52,7 @@ function Greeting({ onAction }: { propertyId: string | null; onAction: (action: 
   const [sheetOpen, setSheetOpen] = useState(false);
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 bg-mist px-4 pt-5 pb-6 sm:px-8">
+    <div className="flex flex-wrap items-center justify-between gap-4 bg-white  px-4 pt-5 pb-6 sm:px-8">
       <div>
         <h1 className="font-display text-2xl font-semibold tracking-tighter text-ink">
           Good {part} 👋🏼

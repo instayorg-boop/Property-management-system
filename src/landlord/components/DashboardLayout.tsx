@@ -96,7 +96,7 @@ function Shell() {
             (including anything mid-animation, like the Settings tab bar's sliding underline). */}
         <main
           ref={mainRef}
-          className="flex-1 overflow-y-auto bg-mist pb-[calc(3.5rem+env(safe-area-inset-bottom,0px))] lg:pb-0"
+          className="flex-1 overflow-y-auto bg-white pb-[calc(3.5rem+env(safe-area-inset-bottom,0px))] lg:pb-0"
           style={{ scrollbarGutter: "stable" }}
         >
           {/*

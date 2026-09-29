@@ -1,102 +1,751 @@
-import { Link } from "react-router-dom";
-import PageShell from "../components/PageShell";
-import { SUBSCRIPTION_TIERS, ONLINE_FEE_BANDS } from "../lib/pricing";
+"use client";
 
-function CheckIcon() {
-  return (
-    <svg viewBox="0 0 20 20" className="h-4 w-4 shrink-0 fill-none stroke-brand" strokeWidth={2}>
-      <circle cx="10" cy="10" r="8.5" strokeOpacity="0.35" />
-      <path d="M6.5 10.2l2.3 2.3 4.7-4.9" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
+import { useState } from "react";
+import { Check, ChevronDown, ChevronsUpDown, X } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+
+import Button from "../landlord/components/Button";
+import Background from "../components/Background";
+import Nav from "../components/Nav";
+import Footer from "../components/Footer";
+
+const cn = (...classes: (string | boolean | undefined)[]) =>
+  classes.filter(Boolean).join(" ");
+
+interface Plan {
+  name: string;
+  bedRange: string;
+  monthlyPrice: number;
+  setupFee: number;
+  priceIsFrom?: boolean;
+  features: string[];
+  additionalFeatures?: string[];
+  isFeatured?: boolean;
 }
 
-// Bed-count tiers, priced for larger rental/sublet properties (roughly 50-400+ beds) rather than a
-// single-landlord/single-unit market — see the commercial handover doc. Feature list is shared
-// across every tier for now; the doc leaves exact per-tier feature limits to be finalized later.
-const sharedFeatures = [
-  "Tenant & bed/room management",
-  "Rent tracking & digital receipts",
-  "Automated reminders",
-  "Maintenance management",
-  "Reports & dashboard",
-  "Staff/user access",
+type FeatureValue = true | false | null | string;
+
+interface FeatureSection {
+  category: string;
+  features: {
+    name: string;
+    starter: FeatureValue;
+    growth: FeatureValue;
+    enterprise: FeatureValue;
+  }[];
+}
+
+const ANNUAL_MONTHS_CHARGED = 10;
+
+const plans: Plan[] = [
+  {
+    name: "Starter",
+    bedRange: "Up to 80 beds",
+    monthlyPrice: 799,
+    setupFee: 999,
+    features: [
+      "Tenant & room management",
+      "Automatic rent collection",
+      "Rent tracking & digital receipts",
+      "Automated reminders",
+      "Maintenance management",
+      "Reports & dashboard",
+    ],
+    additionalFeatures: [
+      "Up to 200 SMS/month",
+      "Up to 2 staff logins",
+    ],
+  },
+  {
+    name: "Growth",
+    bedRange: "81–299 beds",
+    monthlyPrice: 1499,
+    setupFee: 1999,
+    isFeatured: true,
+    features: [
+      "Everything in Starter",
+      "Unlimited automated reminders",
+      "Advanced reports & analytics",
+      "Staff attendance tracking",
+      "Automatic payroll calculation",
+      "Up to 5 staff logins",
+    ],
+    additionalFeatures: ["Increased document storage"],
+  },
+  {
+    name: "Enterprise",
+    bedRange: "300+ beds",
+    monthlyPrice: 2499,
+    setupFee: 2999,
+    priceIsFrom: true,
+    features: [
+      "Everything in Growth",
+      "Unlimited staff logins",
+      "Custom invoice & receipt branding",
+      "Guided onboarding",
+      "Data migration",
+      "Custom pricing",
+    ],
+    additionalFeatures: [
+      "Dedicated setup support",
+      "Custom requirements",
+    ],
+  },
 ];
 
-export default function Pricing() {
+const comparisonFeatures: FeatureSection[] = [
+  {
+    category: "Property management",
+    features: [
+      {
+        name: "Tenant management",
+        starter: true,
+        growth: true,
+        enterprise: true,
+      },
+      {
+        name: "Room management",
+        starter: true,
+        growth: true,
+        enterprise: true,
+      },
+      {
+        name: "Availability tracking",
+        starter: true,
+        growth: true,
+        enterprise: true,
+      },
+      {
+        name: "Maintenance management",
+        starter: true,
+        growth: true,
+        enterprise: true,
+      },
+      {
+        name: "Tenant records",
+        starter: true,
+        growth: true,
+        enterprise: true,
+      },
+    ],
+  },
+  {
+    category: "Payments & collections",
+    features: [
+      {
+        name: "Online rent collection",
+        starter: true,
+        growth: true,
+        enterprise: true,
+      },
+      {
+        name: "Mobile money payments",
+        starter: true,
+        growth: true,
+        enterprise: true,
+      },
+      {
+        name: "Bank payment destination",
+        starter: true,
+        growth: true,
+        enterprise: true,
+      },
+      {
+        name: "Payment tracking",
+        starter: true,
+        growth: true,
+        enterprise: true,
+      },
+      {
+        name: "Digital receipts",
+        starter: true,
+        growth: true,
+        enterprise: true,
+      },
+      {
+        name: "Automatic late fees",
+        starter: true,
+        growth: true,
+        enterprise: true,
+      },
+      {
+        name: "Automated payment reminders",
+        starter: "Standard",
+        growth: "Unlimited",
+        enterprise: "Unlimited",
+      },
+    ],
+  },
+  {
+    category: "Operations",
+    features: [
+      {
+        name: "Reports & dashboard",
+        starter: true,
+        growth: true,
+        enterprise: true,
+      },
+      {
+        name: "Advanced analytics",
+        starter: false,
+        growth: true,
+        enterprise: true,
+      },
+      {
+        name: "Staff attendance",
+        starter: false,
+        growth: true,
+        enterprise: true,
+      },
+      {
+        name: "Automatic payroll calculation",
+        starter: false,
+        growth: true,
+        enterprise: true,
+      },
+      {
+        name: "Staff logins",
+        starter: "Up to 2",
+        growth: "Up to 5",
+        enterprise: "Unlimited",
+      },
+      {
+        name: "Document storage",
+        starter: "Standard",
+        growth: "Increased",
+        enterprise: "Custom",
+      },
+    ],
+  },
+  {
+    category: "Onboarding & support",
+    features: [
+      {
+        name: "Standard support",
+        starter: true,
+        growth: true,
+        enterprise: true,
+      },
+      {
+        name: "Guided onboarding",
+        starter: false,
+        growth: false,
+        enterprise: true,
+      },
+      {
+        name: "Data migration",
+        starter: false,
+        growth: false,
+        enterprise: true,
+      },
+      {
+        name: "Custom invoice & receipt branding",
+        starter: false,
+        growth: false,
+        enterprise: true,
+      },
+      {
+        name: "Dedicated setup support",
+        starter: false,
+        growth: false,
+        enterprise: true,
+      },
+      {
+        name: "Custom requirements",
+        starter: false,
+        growth: false,
+        enterprise: true,
+      },
+    ],
+  },
+];
+
+const formatKwacha = (amount: number) =>
+  `K${amount.toLocaleString("en-ZM", {
+    maximumFractionDigits: 0,
+  })}`;
+
+const renderFeatureValue = (value: FeatureValue) => {
+  if (value === true) {
+    return (
+      <span className="flex size-5 items-center justify-center rounded-full bg-brand">
+        <Check className="size-3 text-white" />
+      </span>
+    );
+  }
+
+  if (value === false || value === null) {
+    return <X className="size-4 text-red-300" />;
+  }
+
   return (
-    <PageShell
-      eyebrow="Pricing"
-      title="Priced for how large rental properties actually run."
-      subtitle="A monthly subscription by property size, plus a one-time setup fee — online rent collection is optional, and only costs the tenant a small fee at checkout."
-      showCta={false}
-    >
-      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        {SUBSCRIPTION_TIERS.map((tier, i) => (
-          <div
-            key={tier.id}
-            className={`flex flex-col rounded-2xl border p-6 ${
-              i === 2 ? "border-brand bg-brand-soft" : "border-line bg-paper"
-            }`}
-          >
-            {i === 2 && (
-              <span className="mb-3 w-fit rounded-lg bg-brand px-2.5 py-1 text-[10px] font-semibold text-paper">
-                MOST COMMON
-              </span>
-            )}
-            <h3 className="font-display text-lg font-semibold">{tier.label}</h3>
-            <p className="mt-2 flex items-baseline gap-1">
-              <span className="font-display text-3xl font-semibold tracking-tight">K{tier.monthlyPriceK}</span>
-              <span className="text-sm text-muted">/month</span>
-            </p>
-            <p className="mt-1 text-xs text-muted">+ K{tier.setupFeeK} one-time setup</p>
-
-            <ul className="mt-5 flex-1 space-y-2.5">
-              {sharedFeatures.map((f) => (
-                <li key={f} className="flex items-start gap-2 text-sm text-ink/80">
-                  <CheckIcon />
-                  {f}
-                </li>
-              ))}
-            </ul>
-
-            <Link
-              to="/contact"
-              className={`mt-6 rounded-full px-5 py-2.5 text-center text-sm font-medium transition-transform hover:scale-[1.02] ${
-                i === 2 ? "bg-brand text-paper" : "border border-line text-ink"
-              }`}
-            >
-              Talk to us
-            </Link>
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-14 rounded-2xl border border-line bg-paper p-6 sm:p-8">
-        <h3 className="font-display text-lg font-semibold">Online rent payments</h3>
-        <p className="mt-2 max-w-2xl text-sm text-muted">
-          Tenants can pay rent by mobile money right from the portal. It's optional, and the fee is
-          charged to the tenant at checkout, not the landlord — the rate declines as rent rises, so
-          it stays reasonable at higher rent amounts.
-        </p>
-        <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-3 lg:grid-cols-5">
-          {ONLINE_FEE_BANDS.map((band, i) => {
-            const prevUpTo = ONLINE_FEE_BANDS[i - 1]?.upToRent;
-            const label = prevUpTo ? `K${prevUpTo + 1} – K${band.upToRent}` : `Up to K${band.upToRent}`;
-            return (
-              <div key={band.upToRent} className="rounded-lg bg-mist px-3 py-2">
-                <p className="text-xs text-muted">{label}</p>
-                <p className="text-sm font-medium text-ink">{(band.rate * 100).toFixed(2)}%</p>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <p className="mt-10 text-center text-xs text-muted">
-        The one-time setup fee covers account configuration, data migration, and initial training —
-        it's separate from, and in addition to, the monthly subscription.
-      </p>
-    </PageShell>
+    <div className="flex items-center gap-2">
+      <span className="flex size-5 items-center justify-center rounded-full bg-">
+        <Check className="size-3 text-neutral-700" />
+      </span>
+      <span className="text-sm text-neutral-500">{value}</span>
+    </div>
   );
-}
+};
+
+export const Pricing = () => {
+  const [isAnnual, setIsAnnual] = useState(true);
+  const [expandedPlan, setExpandedPlan] = useState<string | null>(null);
+  const [selectedPlan, setSelectedPlan] = useState(1);
+
+  return (
+    <main className="text-neutral-950 bg-white">
+      <Nav
+        transparent={false}
+        textColor="text-slate-900"
+      />
+      {/* Hero + pricing */}
+      <Background variant="top" >
+
+        <section>
+          <div className="mx-auto max-w-6xl px-4 pb-16 pt-12 sm:px-6 lg:pt-16">
+            {/* Compact hero */}
+            <div className="mx-auto max-w-2xl text-center">
+              <p className="mb-3 text-xs uppercase tracking-[0.16em] text-neutral-400">
+                Pricing
+              </p>
+
+              <h1 className="text-3xl font-bold font-display tracking-tight sm:text-4xl lg:text-5xl">
+                Simple pricing for growing properties
+              </h1>
+
+              <p className="mx-auto mt-4 max-w-xl text-sm leading-6 text-neutral-500 sm:text-base">
+                Choose a plan based on the size of your property and manage
+                tenants, payments, maintenance, and operations in one place.
+              </p>
+            </div>
+
+            {/* Billing toggle */}
+            <div className="mt-8 flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => setIsAnnual(false)}
+                className={cn(
+                  "text-sm font-medium transition-colors",
+                  !isAnnual ? "text-neutral-950" : "text-neutral-600"
+                )}
+              >
+                Monthly
+              </button>
+
+              <button
+                type="button"
+                role="switch"
+                aria-checked={isAnnual}
+                onClick={() => setIsAnnual(!isAnnual)}
+                className={cn(
+                  "relative h-6 w-11 rounded-full transition-colors",
+                  isAnnual ? "bg-neutral-950" : "bg-neutral-300"
+                )}
+              >
+                <motion.span
+                  animate={{ x: isAnnual ? 20 : 0 }}
+                  transition={{
+                    type: "spring",
+                    stiffness: 500,
+                    damping: 30,
+                  }}
+                  className="absolute left-0.5 top-0.5 size-5 rounded-full bg-white shadow-sm"
+                />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsAnnual(true)}
+                className={cn(
+                  "text-sm font-medium transition-colors",
+                  isAnnual ? "text-neutral-950" : "text-neutral-400"
+                )}
+              >
+                Annual
+              </button>
+
+              <span className="rounded-full border border-gray-400 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                2 months free
+              </span>
+            </div>
+
+            {/* Pricing cards */}
+            <div className="mt-10 grid items-start gap-5 lg:grid-cols-3 lg:gap-6">
+              {plans.map((plan) => {
+                const displayedMonthly = isAnnual
+                  ? Math.round(
+                    (plan.monthlyPrice * ANNUAL_MONTHS_CHARGED) / 12
+                  )
+                  : plan.monthlyPrice;
+
+                const annualTotal =
+                  plan.monthlyPrice * ANNUAL_MONTHS_CHARGED;
+
+                const isExpanded = expandedPlan === plan.name;
+
+                return (
+                  <motion.div
+                    key={plan.name}
+                    whileHover={{ y: -3 }}
+                    className={cn(
+                      "h-fit rounded-xl border bg-white p-6",
+                      plan.isFeatured
+                        ? "border-brand"
+                        : "border-neutral-200"
+                    )}
+                  >
+                    {/* Header */}
+                    <div>
+                      <div className="flex items-center justify-between gap-3">
+                        <h2 className="text-lg font-bold">
+                          {plan.name}
+                        </h2>
+
+                        {plan.isFeatured && (
+                          <span className="rounded-full bg-brand px-2.5 py-1 text-[10px] font-semibold text-white">
+                            Most popular
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="mt-1 text-sm text-neutral-500">
+                        {plan.bedRange}
+                      </p>
+                    </div>
+
+                    {/* Price */}
+                    <div className="mt-7">
+                      <div className="flex font-display items-baseline gap-1.5">
+                        {plan.priceIsFrom && (
+                          <span className="text-sm text-neutral-500">
+                            From
+                          </span>
+                        )}
+
+                        <AnimatePresence mode="wait">
+                          <motion.span
+                            key={isAnnual ? "annual" : "monthly"}
+                            initial={{ opacity: 0, y: -4 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 4 }}
+                            transition={{ duration: 0.15 }}
+                            className="text-3xl font-bold tracking-tight"
+                          >
+                            {formatKwacha(displayedMonthly)}
+                          </motion.span>
+                        </AnimatePresence>
+
+                        <span className="text-sm text-neutral-500">
+                          /month
+                        </span>
+                      </div>
+
+                      <p className="mt-1 text-xs text-neutral-400">
+                        + {formatKwacha(plan.setupFee)} one-time setup
+                        {isAnnual && (
+                          <>
+                            {" "}
+                            · {formatKwacha(annualTotal)} billed annually
+                          </>
+                        )}
+                      </p>
+                    </div>
+
+                    {/* CTA */}
+                    <Button
+                      variant={plan.isFeatured ? "primary" : "outline"}
+                      className={cn(
+                        "mt-7 w-full rounded-lg px-4 py-2.5 text-sm font-semibold",
+                        plan.isFeatured
+                          ? "bg-neutral-950 text-white hover:bg-neutral-800"
+                          : "border border-neutral-300 bg-white text-neutral-900 hover:bg-neutral-50"
+                      )}
+                    >
+                      Talk to us
+                    </Button>
+
+                    <div className="my-6 h-px bg-neutral-100" />
+
+                    {/* Features */}
+                    <ul className="space-y-3">
+                      {plan.features.map((feature) => (
+                        <li
+                          key={feature}
+                          className="flex items-start gap-2.5 text-sm text-neutral-600"
+                        >
+                          <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full bg-neutral-100">
+                            <Check className="size-2.5 text-neutral-700" />
+                          </span>
+
+                          <span className="leading-5">{feature}</span>
+                        </li>
+                      ))}
+                    </ul>
+
+                    {/* Additional */}
+                    {plan.additionalFeatures &&
+                      plan.additionalFeatures.length > 0 && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedPlan(
+                                isExpanded ? null : plan.name
+                              )
+                            }
+                            className="mt-5 flex items-center gap-1.5 text-xs font-semibold text-neutral-500 hover:text-neutral-900"
+                          >
+                            {isExpanded
+                              ? "Hide additional features"
+                              : "View additional features"}
+
+                            <ChevronDown
+                              className={cn(
+                                "size-3.5 transition-transform",
+                                isExpanded && "rotate-180"
+                              )}
+                            />
+                          </button>
+
+                          <AnimatePresence initial={false}>
+                            {isExpanded && (
+                              <motion.div
+                                initial={{
+                                  height: 0,
+                                  opacity: 0,
+                                }}
+                                animate={{
+                                  height: "auto",
+                                  opacity: 1,
+                                }}
+                                exit={{
+                                  height: 0,
+                                  opacity: 0,
+                                }}
+                                className="overflow-hidden"
+                              >
+                                <ul className="space-y-3 pt-4">
+                                  {plan.additionalFeatures.map(
+                                    (feature) => (
+                                      <li
+                                        key={feature}
+                                        className="flex items-start gap-2.5 text-sm text-neutral-500"
+                                      >
+                                        <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full bg-neutral-100">
+                                          <Check className="size-2.5" />
+                                        </span>
+
+                                        <span className="leading-5">
+                                          {feature}
+                                        </span>
+                                      </li>
+                                    )
+                                  )}
+                                </ul>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </>
+                      )}
+                  </motion.div>
+                );
+              })}
+            </div>
+
+            <p className="mt-7 text-center text-xs text-neutral-400">
+              Online rent collection is optional. Processing fees are
+              charged separately.
+            </p>
+          </div>
+        </section>
+      </Background>
+
+      {/* Comparison */}
+      <section className="border-t border-neutral-100">
+        <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 ">
+          {/* Comparison heading */}
+          <div className="mb-10 max-w-2xl">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-400">
+              Compare plans
+            </p>
+
+            <h2 className="mt-2 text-2xl font-bold font-display tracking-tight sm:text-3xl">
+              Everything you need to run your property
+            </h2>
+
+            <p className="mt-3 text-sm leading-6 text-neutral-500">
+              Compare features across each plan and choose what fits
+              your property.
+            </p>
+          </div>
+
+          {/* Mobile plan selector */}
+          <div className="md:hidden">
+            <MobilePlanSelector
+              selectedPlan={selectedPlan}
+              onPlanChange={setSelectedPlan}
+            />
+          </div>
+
+          {/* Desktop headers */}
+          <div
+            className="hidden border-b border-neutral-200 pb-5 md:grid md:grid-cols-4 md:gap-6 md:sticky md:top-[72px] bg-white z-20"
+            style={{ /* Adjust top offset if Nav height changes */ }}
+          >
+            <div />
+
+            {plans.map((plan) => (
+              <div key={plan.name}>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-semibold">{plan.name}</h3>
+
+                  {plan.isFeatured && (
+                    <span className="rounded-full bg-brand px-2 py-0.5 text-[9px] font-semibold text-white">
+                      Popular
+                    </span>
+                  )}
+                </div>
+
+                <p className="mt-1 text-xs text-neutral-400">
+                  {plan.bedRange}
+                </p>
+              </div>
+            ))}
+          </div>
+     
+
+          {/* Feature sections */}
+          <div>
+            {comparisonFeatures.map((section) => (
+              <div key={section.category}>
+                <div className="border-b border-neutral-200 py-5">
+                  <h3 className="text-sm font-semibold">
+                    {section.category}
+                  </h3>
+                </div>
+
+                {section.features.map((feature) => (
+                  <div
+                    key={feature.name}
+                    className="grid grid-cols-2 border-b border-neutral-100 md:grid-cols-4 md:gap-6"
+                  >
+                    <div className="flex items-center py-4 pr-4">
+                      <span className="text-sm font-medium text-neutral-700">
+                        {feature.name}
+                      </span>
+                    </div>
+
+                    {/* Mobile */}
+                    <div className="flex items-center justify-end py-4 md:hidden">
+                      {renderFeatureValue(
+                        [
+                          feature.starter,
+                          feature.growth,
+                          feature.enterprise,
+                        ][selectedPlan]
+                      )}
+                    </div>
+
+                    {/* Desktop */}
+                    <div className="hidden md:col-span-3 md:grid md:grid-cols-3 md:gap-6">
+                      {[
+                        feature.starter,
+                        feature.growth,
+                        feature.enterprise,
+                      ].map((value, index) => (
+                        <div
+                          key={index}
+                          className="flex items-center py-4"
+                        >
+                          {renderFeatureValue(value)}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+
+          <p className="mt-8 text-xs text-neutral-400">
+            Need something specific for your property? Enterprise plans
+            can be tailored to your requirements.
+          </p>
+        </div>
+      </section>
+      <Footer />
+    </main>
+  );
+};
+
+const MobilePlanSelector = ({
+  selectedPlan,
+  onPlanChange,
+}: {
+  selectedPlan: number;
+  onPlanChange: (index: number) => void;
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div className="mb-6">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex w-full items-center justify-between rounded-lg border border-neutral-200 bg-white px-4 py-3"
+      >
+        <div className="text-left">
+          <p className="text-xs text-neutral-400">Showing</p>
+          <p className="mt-0.5 font-semibold">
+            {plans[selectedPlan].name}
+          </p>
+        </div>
+
+        <ChevronsUpDown
+          className={cn(
+            "size-4 text-neutral-500 transition-transform",
+            isOpen && "rotate-180"
+          )}
+        />
+      </button>
+
+      <AnimatePresence initial={false}>
+        {isOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="mt-2 space-y-1 rounded-lg border border-neutral-200 bg-white p-1">
+              {plans.map((plan, index) => (
+                <button
+                  key={plan.name}
+                  type="button"
+                  onClick={() => {
+                    onPlanChange(index);
+                    setIsOpen(false);
+                  }}
+                  className={cn(
+                    "flex w-full items-center justify-between rounded-md px-3 py-2.5 text-left text-sm transition-colors",
+                    selectedPlan === index
+                      ? "bg-neutral-100 font-semibold text-neutral-950"
+                      : "text-neutral-600 hover:bg-neutral-50"
+                  )}
+                >
+                  <span>{plan.name}</span>
+                  <span className="text-xs text-neutral-400">
+                    {plan.bedRange}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+export default Pricing;

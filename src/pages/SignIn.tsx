@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { signIn } from "../lib/auth";
 import { useAuth } from "../landlord/AuthContext";
+import Button from "../landlord/components/Button";
 
 function GoogleIcon() {
   return (
@@ -60,41 +61,42 @@ export default function SignIn() {
   return (
     <div className="grid min-h-screen bg-white grid-cols-1 lg:grid-cols-2">
       {/* Left: form */}
-      <div className="flex flex-col items-center justify-center px-6 py-8 sm:px-12 lg:px-16 lg:py-10">
-        <div className="mx-auto w-full max-w-[320px]">
+      <div className="flex flex-col items-center justify-center px-6 sm:px-14 lg:px-24 ">
+        <div className="mx-auto w-full max-w-xl ">
 
-        <Link to="/" className="flex items-center gap-2 mb-4">
-          <img src="https://rlmcuhejgfftcdshbrbe.supabase.co/storage/v1/object/public/Company%20assets/Instay_Manage_Logo-removebg-preview.png" alt="Instay Manage" className="h-10 " />
-          <p className="font-sans text-blue-700 text-xl font-bold leading-[1.08] tracking-[-0.09em]  ">Instay Manage</p>
-        </Link>
+          <Link to="/" className="flex items-center gap-3 mb-6">
+            <img src="https://rlmcuhejgfftcdshbrbe.supabase.co/storage/v1/object/public/Company%20assets/Instay_Manage_Logo-removebg-preview.png" alt="Instay Manage" className="h-12 w-12 rounded-md object-contain" />
+            <p className="font-sans text-blue-700 text-2xl font-bold tracking-[-0.07em]">Instay Manage</p>
+          </Link>
 
-          <h1 className="font-sans text-xl font-semibold tracking-tight">Welcome back👋🏼</h1>
-          <p className="mt-1.5 text-[13px] text-muted">To continue, sign in to Instay.</p>
+          <h1 className="font-sans text-2xl font-semibold tracking-tight mb-1">Welcome back 👋🏼</h1>
+          <p className="mb-5 text-[14px] text-muted">To continue, sign in.</p>
 
-          <div className="mt-4 space-y-2">
-            <button
+          <div className="space-y-2 mb-5">
+            <Button
               type="button"
               disabled
               title="Coming soon"
-              className="flex w-full items-center justify-center gap-2 rounded-lg border border-line bg-paper py-2 text-[13px] font-medium text-ink opacity-50 transition-colors"
+              size="md"
+              className="w-full flex items-center justify-center gap-2 rounded-md border border-line bg-paper text-[14px] font-medium text-ink opacity-60 cursor-not-allowed"
             >
               <GoogleIcon />
               Continue with Google
-            </button>
+            </Button>
           </div>
 
-          <div className="my-5 flex items-center gap-3">
+          <div className="my-6 flex items-center gap-4">
             <span className="h-px flex-1 bg-line" />
-            <span className="text-[11px] text-muted">or</span>
+            <span className="text-[12px] text-muted">or</span>
             <span className="h-px flex-1 bg-line" />
           </div>
 
-          <form className="space-y-2.5" onSubmit={handleSubmit}>
+          <form className="space-y-4" onSubmit={handleSubmit}>
             {error && (
-              <p className="rounded-lg bg-red-50 px-3 py-2 text-[12px] font-medium text-red-600">{error}</p>
+              <p className="rounded-md bg-red-50 px-3 py-2 text-[13px] font-medium text-red-600 mb-1">{error}</p>
             )}
             <div>
-              <label htmlFor="email" className="mb-1 block text-[11px] font-medium text-muted">
+              <label htmlFor="email" className="mb-1 block text-[12px] font-medium text-muted">
                 Email address
               </label>
               <input
@@ -104,16 +106,16 @@ export default function SignIn() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@property.co"
-                className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-[13px] outline-none transition-colors placeholder:text-muted/60 focus:border-brand"
+                className="w-full rounded-md border border-line bg-paper px-3 py-2 text-[14px] outline-none transition-colors placeholder:text-muted/60 focus:border-brand"
               />
             </div>
 
             <div>
               <div className="mb-1 flex items-center justify-between">
-                <label htmlFor="password" className="block text-[11px] font-medium text-muted">
+                <label htmlFor="password" className="block text-[12px] font-medium text-muted">
                   Password
                 </label>
-                <Link to="/forgot-password" className="text-[11px] font-medium text-muted transition-colors hover:text-ink">
+                <Link to="/forgot-password" className="text-[12px] font-medium text-muted transition-colors hover:text-ink">
                   Forgot password?
                 </Link>
               </div>
@@ -124,28 +126,25 @@ export default function SignIn() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-[13px] outline-none transition-colors focus:border-brand"
+                className="w-full rounded-md border border-line bg-paper px-3 py-2 text-[14px] outline-none transition-colors focus:border-brand"
               />
             </div>
 
-            <button
+            <Button
               type="submit"
+              variant="primary"
               disabled={loading}
-              className="w-full rounded-lg bg-brand py-2 text-[13px] font-medium text-paper transition-transform hover:scale-[1.01] disabled:opacity-60 disabled:hover:scale-100"
+              size="md"
+              className="w-full rounded-md bg-brand py-2 text-[14px] font-medium text-paper transition-transform hover:scale-[1.01] disabled:opacity-70 disabled:hover:scale-100"
             >
               {loading ? "Signing in…" : "Sign in"}
-            </button>
+            </Button>
           </form>
 
-          <p className="mt-5 text-center text-[13px] text-muted">
-           
-            <Link to="/get-started" className="font-medium text-ink underline-offset-2 hover:underline">
-              Create an account
-            </Link>
-          </p>
+         
 
-          <p className="mt-8 text-center text-[11px] text-muted">
-            © {new Date().getFullYear()} Instay. All rights reserved.
+          <p className="mt-10 text-center text-[12px] text-muted">
+            © {new Date().getFullYear()} Instaymanage. All rights reserved.
           </p>
         </div>
       </div>

@@ -1,9 +1,8 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider } from "./landlord/AuthContext";
 import RequireAuth from "./landlord/components/RequireAuth";
 import Landing from "./pages/Landing";
 import SignIn from "./pages/SignIn";
-import GetStarted from "./pages/GetStarted";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import Pricing from "./pages/Pricing";
@@ -48,71 +47,81 @@ import IncomeExpenses from "./landlord/pages/reports/IncomeExpenses";
 // import PayrollSummary from "./landlord/pages/reports/PayrollSummary";
 import OccupancyRate from "./landlord/pages/reports/OccupancyRate";
 import Settings from "./landlord/pages/Settings";
+import { useEffect } from "react";
+
+// ScrollToTop component for paramore between pages
+function ScrollToTop() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+  return null;
+}
 
 export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-      <Routes>
-        <Route path="/" element={<Landing />} />
-        <Route path="/sign-in" element={<SignIn />} />
-        <Route path="/login" element={<SignIn />} />
-        <Route path="/get-started" element={<GetStarted />} />
-        <Route path="/forgot-password" element={<ForgotPassword />} />
-        <Route path="/reset-password" element={<ResetPassword />} />
-        <Route path="/pricing" element={<Pricing />} />
-        <Route path="/how-it-works" element={<HowItWorks />} />
-        <Route path="/features/:slug" element={<FeatureDetail />} />
-        <Route path="/about" element={<About />} />
-        <Route path="/careers" element={<Careers />} />
-        <Route path="/contact" element={<Contact />} />
-        <Route path="/help" element={<Help />} />
-        <Route path="/docs" element={<Docs />} />
-        <Route path="/status" element={<Status />} />
-        <Route path="/privacy" element={<Privacy />} />
-        <Route path="/terms" element={<Terms />} />
+        <ScrollToTop />
+        <Routes>
+          <Route path="/" element={<Landing />} />
+          <Route path="/sign-in" element={<SignIn />} />
+          <Route path="/login" element={<SignIn />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/pricing" element={<Pricing />} />
+          <Route path="/how-it-works" element={<HowItWorks />} />
+          <Route path="/features/:slug" element={<FeatureDetail />} />
+          <Route path="/about" element={<About />} />
+          <Route path="/careers" element={<Careers />} />
+          <Route path="/contact" element={<Contact />} />
+          <Route path="/help" element={<Help />} />
+          <Route path="/docs" element={<Docs />} />
+          <Route path="/status" element={<Status />} />
+          <Route path="/privacy" element={<Privacy />} />
+          <Route path="/terms" element={<Terms />} />
 
-        <Route element={<PaymentLayout />}>
-          <Route path="/p/:token" element={<TenantBalance />} />
-          <Route path="/p/:token/success" element={<PaymentSuccess />} />
-          <Route path="/p/:token/statements" element={<AllStatements />} />
-          <Route path="/p/:token/documents" element={<PortalDocuments />} />
-        </Route>
-
-        <Route element={<RequireAuth />}>
-          <Route element={<DashboardLayout />}>
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/rent" element={<Rent />} />
-            <Route path="/tenants" element={<Tenants />} />
-            <Route path="/tenants/new" element={<AddTenant />} />
-            <Route path="/tenants/:code/edit" element={<AddTenant />} />
-            <Route path="/tenants/:code" element={<TenantProfile />} />
-            <Route path="/rooms" element={<Rooms />} />
-            <Route path="/maintenance" element={<Maintenance />} />
-            <Route path="/expense-tracker" element={<Accounting />} />
-            <Route path="/online-payments" element={<Payouts />} />
-            {/* Old paths — "Accounting" was renamed to "Expense Tracker" — kept as redirects so any
-                existing bookmarks/links still land somewhere. */}
-            <Route path="/accounting" element={<Navigate to="/expense-tracker" replace />} />
-            <Route path="/accounting/payouts" element={<Navigate to="/online-payments" replace />} />
-            <Route path="/expenses" element={<Navigate to="/expense-tracker" replace />} />
-            {/* MVP: staff/payroll — see the note by the imports above. */}
-            {/* <Route path="/staff" element={<Navigate to="/staff/employees" replace />} /> */}
-            {/* <Route path="/staff/employees" element={<StaffEmployees />} /> */}
-            {/* <Route path="/staff/payroll" element={<StaffPayroll />} /> */}
-            {/* <Route path="/staff/clock" element={<StaffClock />} /> */}
-            <Route path="/reports" element={<Navigate to="/reports/income-expenses" replace />} />
-            {/* <Route path="/reports/bed-rent-roll" element={<BedRentRoll />} /> */}
-            <Route path="/reports/arrears-delinquency" element={<ArrearsDelinquency />} />
-            {/* <Route path="/reports/owner-payout-statement" element={<OwnerPayoutStatement />} /> */}
-            <Route path="/reports/income-expenses" element={<IncomeExpenses />} />
-            {/* <Route path="/reports/payroll-summary" element={<PayrollSummary />} /> */}
-            <Route path="/reports/occupancy-rate" element={<OccupancyRate />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/settings/:section" element={<Settings />} />
+          <Route element={<PaymentLayout />}>
+            <Route path="/p/:token" element={<TenantBalance />} />
+            <Route path="/p/:token/success" element={<PaymentSuccess />} />
+            <Route path="/p/:token/statements" element={<AllStatements />} />
+            <Route path="/p/:token/documents" element={<PortalDocuments />} />
           </Route>
-        </Route>
-      </Routes>
+
+          <Route element={<RequireAuth />}>
+            <Route element={<DashboardLayout />}>
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/rent" element={<Rent />} />
+              <Route path="/tenants" element={<Tenants />} />
+              <Route path="/tenants/new" element={<AddTenant />} />
+              <Route path="/tenants/:code/edit" element={<AddTenant />} />
+              <Route path="/tenants/:code" element={<TenantProfile />} />
+              <Route path="/rooms" element={<Rooms />} />
+              <Route path="/maintenance" element={<Maintenance />} />
+              <Route path="/expense-tracker" element={<Accounting />} />
+              <Route path="/online-payments" element={<Payouts />} />
+              {/* Old paths — "Accounting" was renamed to "Expense Tracker" — kept as redirects so any
+                  existing bookmarks/links still land somewhere. */}
+              <Route path="/accounting" element={<Navigate to="/expense-tracker" replace />} />
+              <Route path="/accounting/payouts" element={<Navigate to="/online-payments" replace />} />
+              <Route path="/expenses" element={<Navigate to="/expense-tracker" replace />} />
+              {/* MVP: staff/payroll — see the note by the imports above. */}
+              {/* <Route path="/staff" element={<Navigate to="/staff/employees" replace />} /> */}
+              {/* <Route path="/staff/employees" element={<StaffEmployees />} /> */}
+              {/* <Route path="/staff/payroll" element={<StaffPayroll />} /> */}
+              {/* <Route path="/staff/clock" element={<StaffClock />} /> */}
+              <Route path="/reports" element={<Navigate to="/reports/income-expenses" replace />} />
+              {/* <Route path="/reports/bed-rent-roll" element={<BedRentRoll />} /> */}
+              <Route path="/reports/arrears-delinquency" element={<ArrearsDelinquency />} />
+              {/* <Route path="/reports/owner-payout-statement" element={<OwnerPayoutStatement />} /> */}
+              <Route path="/reports/income-expenses" element={<IncomeExpenses />} />
+              {/* <Route path="/reports/payroll-summary" element={<PayrollSummary />} /> */}
+              <Route path="/reports/occupancy-rate" element={<OccupancyRate />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/settings/:section" element={<Settings />} />
+            </Route>
+          </Route>
+        </Routes>
       </AuthProvider>
     </BrowserRouter>
   );

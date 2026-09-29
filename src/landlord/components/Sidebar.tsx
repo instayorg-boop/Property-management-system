@@ -1,6 +1,5 @@
 import { forwardRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
-import { motion } from "framer-motion";
 import {
   SquaresFour,
   CurrencyCircleDollar,
@@ -60,7 +59,7 @@ const groups: { label: string; items: NavItem[] }[] = [
       { label: "Maintenance requests", to: "/maintenance", icon: "maintenance" },
       { label: "Expense Tracker", to: "/expense-tracker", icon: "accounting" },
       { label: "Online payments", to: "/online-payments", icon: "onlinePayments" },
-      // Staff/payroll — out of scope for the MVP. Re-enable by uncommenting this nav item plus
+      // Staff/payroll — out of scope for the MVP. Re-enable by uncommenting plus
       // the matching routes in App.tsx (search "MVP: staff/payroll").
       // {
       //   label: "Staff",
@@ -82,13 +81,12 @@ const groups: { label: string; items: NavItem[] }[] = [
         to: "/reports",
         icon: "reports",
         children: [
-          // MVP: keeping only Income vs expenses, Overdue rent, and Occupancy rate — the three
-          // reports that actually matter day to day. The rest are commented out, not deleted.
+          // MVP: keeping only these three, the rest are commented out, not deleted.
           // { label: "Room rent roll", to: "/reports/bed-rent-roll" },
           { label: "Overdue rent", to: "/reports/arrears-delinquency" },
           // { label: "Payout statement", to: "/reports/owner-payout-statement" },
           { label: "Income vs expenses", to: "/reports/income-expenses" },
-          // MVP: staff/payroll — see the note by the Staff nav item above.
+          // MVP: staff/payroll — see the note above.
           // { label: "Payroll summary", to: "/reports/payroll-summary" },
           { label: "Occupancy rate", to: "/reports/occupancy-rate" },
         ],
@@ -101,17 +99,13 @@ const groups: { label: string; items: NavItem[] }[] = [
   },
 ];
 
-/** Message-app-style count badge — shown at the trailing end of the row, not up front by the icon,
- * so it reads like a notification rather than a label. Caps the display at 99+. */
-function AttentionBadge({ count }: { count: number }) {
-  return (
-    <span className="relative flex h-4.5 min-w-4.5 shrink-0 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white">
-      {count > 99 ? "99+" : count}
-    </span>
-  );
+/** Small unread-style indicator dot, pinned to the icon's top-right corner — no count,
+ * just presence, matching how most SaaS sidebars flag unread items. */
+function AttentionDot() {
+  return <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-red-500" />;
 }
 
-function NavRow({ item, onNavigate, attentionCount }: { item: NavItem; onNavigate: () => void; attentionCount: number }) {
+function NavRow({ item, onNavigate, hasAttention }: { item: NavItem; onNavigate: () => void; hasAttention: boolean }) {
   const location = useLocation();
   const isOnPage = location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
   const [open, setOpen] = useState(isOnPage && !!item.children);
@@ -124,25 +118,20 @@ function NavRow({ item, onNavigate, attentionCount }: { item: NavItem; onNavigat
         onClick={onNavigate}
         data-tour={`nav-${item.icon}`}
         className={({ isActive }) =>
-          `relative flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-            isActive ? "font-semibold text-brand" : "text-muted hover:bg-mist hover:text-ink"
+          `flex items-center gap-2.5 rounded-r-lg border-l-2 py-2 pl-2.5 pr-3 text-sm transition-colors ${
+            isActive
+              ? "border-brand font-semibold text-brand"
+              : "border-transparent text-muted hover:bg-mist hover:text-ink"
           }`
         }
       >
         {({ isActive }) => (
           <>
-            {isActive && (
-              <motion.span
-                layoutId="sidebar-active-pill"
-                className="absolute inset-0 rounded-lg bg-brand-soft"
-                transition={{ type: "spring", stiffness: 500, damping: 35 }}
-              />
-            )}
-            <span className="relative flex min-w-0 flex-1 items-center gap-2.5">
-              <ItemIcon size={18} weight="duotone" className="shrink-0" />
-              <span className="truncate">{item.label}</span>
+            <span className="relative shrink-0">
+              <ItemIcon size={18} weight={isActive ? "fill" : "regular"} />
+              {hasAttention && <AttentionDot />}
             </span>
-            {attentionCount > 0 && <AttentionBadge count={attentionCount} />}
+            <span className="min-w-0 flex-1 truncate">{item.label}</span>
           </>
         )}
       </NavLink>
@@ -154,26 +143,32 @@ function NavRow({ item, onNavigate, attentionCount }: { item: NavItem; onNavigat
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors ${
-          isOnPage ? "font-semibold text-brand" : "text-muted hover:bg-mist hover:text-ink"
+        className={`flex w-full items-center gap-2.5 rounded-r-lg border-l-2 py-2 pl-2.5 pr-3 text-left text-sm transition-colors ${
+          isOnPage
+            ? "border-brand font-semibold text-brand"
+            : "border-transparent text-muted hover:bg-mist hover:text-ink"
         }`}
       >
-        <ItemIcon size={18} weight="duotone" />
+        <span className="relative shrink-0">
+          <ItemIcon size={18} weight={isOnPage ? "fill" : "regular"} />
+          {hasAttention && <AttentionDot />}
+        </span>
         <span className="flex-1">{item.label}</span>
-        {attentionCount > 0 && <AttentionBadge count={attentionCount} />}
         <CaretDown size={14} className={`transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
       {open && (
-        <div className="mt-0.5 ml-6.5 space-y-0.5 border-l border-line pl-3.5">
+        <div className="space-y-0.5 pb-1">
           {item.children.map((child) => (
             <NavLink
               key={child.to ?? child.hash}
               to={child.to ?? `${item.to}#${child.hash}`}
               onClick={onNavigate}
               className={({ isActive }) =>
-                `block rounded-md px-2.5 py-1.5 text-[13px] transition-colors ${
-                  isActive ? "font-medium text-brand" : "text-muted hover:text-ink"
+                `block rounded-r-lg border-l-2 py-1.5 pl-11 pr-3 text-[13px] transition-colors ${
+                  isActive
+                    ? "border-brand font-medium text-brand"
+                    : "border-transparent text-muted hover:bg-mist hover:text-ink"
                 }`
               }
             >
@@ -191,11 +186,10 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
   const { reports } = useMaintenance();
   const { tenants } = useTenants();
 
-  // How many things need a look on each nav item — shown as a count badge, not just a dot, so it's
-  // clear at a glance how much is waiting rather than just that something is.
-  const attention: Partial<Record<string, number>> = {
-    "/maintenance": reports.filter((r) => r.unread).length,
-    "/rent": tenants.filter((t) => t.active && (t.status === "overdue" || t.status === "unpaid")).length,
+  // Whether each nav item has something unread/overdue waiting — shown as a plain dot, no count.
+  const attention: Partial<Record<string, boolean>> = {
+    "/maintenance": reports.some((r) => r.unread),
+    "/rent": tenants.some((t) => t.active && (t.status === "overdue" || t.status === "unpaid")),
   };
 
   return (
@@ -208,15 +202,15 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
         open ? "translate-x-0" : "-translate-x-full"
       }`}
     >
-      <nav className="flex-1 space-y-3 overflow-y-auto px-3 pb-4 pt-4">
+      <nav className="flex-1  overflow-y-auto px-3 pb-4 pt-4">
         {groups.map((group) => (
           <div key={group.label}>
-            <p className="px-3 pb-1.5 text-[11px] font-semibold tracking-wide text-muted/70 uppercase">
+            <p className="px-3 pb-1.5 text-[11px] font-semibold tracking-wide text-gray-500 uppercase">
               {group.label}
             </p>
-            <div className="space-y-0.5">
+            <div className="space-y-0.5 mb-1">
               {group.items.map((item) => (
-                <NavRow key={item.to} item={item} onNavigate={() => setOpen(false)} attentionCount={attention[item.to] ?? 0} />
+                <NavRow key={item.to} item={item} onNavigate={() => setOpen(false)} hasAttention={attention[item.to] ?? false} />
               ))}
             </div>
           </div>
