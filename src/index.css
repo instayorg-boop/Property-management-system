@@ -1,65 +1,31 @@
 @import "tailwindcss";
 
-/* Design tokens mirror /design-system/tokens/tokens.json — that file is the source of truth;
-   this block is its Tailwind v4 (CSS-first config) consumption layer. Keep them in sync. */
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Fraunces", Georgia, serif;
 
-  /* Legacy names kept so existing components migrate incrementally without a mass rename —
-     values now point at the Gusto-derived palette (tokens.json color.brand/neutral/background). */
-  --color-ink: #1a1714;
+  --color-ink: #212529;
   --color-paper: #ffffff;
-  --color-mist: #faf8f5;
-  --color-line: #e8e3d8;
-  --color-muted: #847d6e;
-  --color-brand: #2c6e49;
-  --color-brand-soft: #dcedde;
-  --color-success: #2c8a4b;
-  --color-danger: #c23b32;
+  --color-mist: #f8f9fa;
+  --color-line: #dde2ea;
+  --color-muted: #6c757d;
+  --color-brand: #1e3a8a;
+  --color-brand-soft: #e8ecf9;
+  --color-success: #059669;
+  --color-danger: #dc2626;
 
-  --shadow-card: 0 1px 3px rgba(26, 23, 20, 0.06), 0 1px 2px rgba(26, 23, 20, 0.04);
+  --shadow-card: 0 1px 2px rgba(30, 58, 138, 0.06), 0 6px 20px -8px rgba(30, 58, 138, 0.16);
 
   /* Validated categorical chart palette (light) — fixed hue order, never cycled/reassigned per
-     filter. Slot 1/8 (green/red) double as the Accounting page's income/expense identity. */
-  --chart-series-1: #2c6e49;
-  --chart-series-2: #d97a3f;
-  --chart-series-3: #2563a8;
-  --chart-series-4: #b8790a;
-  --chart-series-5: #c2588a;
-  --chart-series-6: #5f594c;
-  --chart-series-7: #7a5fb0;
-  --chart-series-8: #c23b32;
-
-  /* shadcn/ui token surface — consumed by src/components/ui/*. Values mirror the tokens above. */
-  --color-background: #faf8f5;
-  --color-foreground: #1a1714;
-  --color-card: #ffffff;
-  --color-card-foreground: #1a1714;
-  --color-popover: #ffffff;
-  --color-popover-foreground: #1a1714;
-  --color-primary: #2c6e49;
-  --color-primary-foreground: #ffffff;
-  --color-secondary: #f4f1ea;
-  --color-secondary-foreground: #1a1714;
-  /* shadcn's "muted" background surface is named surface-muted (not muted) so it doesn't collide
-     with the app's pre-existing --color-muted, which is a muted TEXT color used via `text-muted`
-     across ~90 files. See tokens.md for the full note. */
-  --color-surface-muted: #f4f1ea;
-  --color-muted-foreground: #5f594c;
-  --color-accent: #dcedde;
-  --color-accent-foreground: #23573b;
-  --color-destructive: #c23b32;
-  --color-destructive-foreground: #ffffff;
-  --color-border: #e8e3d8;
-  --color-input: #e8e3d8;
-  --color-ring: #3d8b5f;
-
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-  --radius: 8px;
+     filter. Slot 1/8 (blue/red) double as the Accounting page's income/expense identity. */
+  --chart-series-1: #2a78d6;
+  --chart-series-2: #eb6834;
+  --chart-series-3: #1baf7a;
+  --chart-series-4: #eda100;
+  --chart-series-5: #e87ba4;
+  --chart-series-6: #008300;
+  --chart-series-7: #4a3aa7;
+  --chart-series-8: #e34948;
 }
 
 html {
@@ -113,41 +79,22 @@ body {
 
 /* Scoped dark theme for the landlord dashboard only — never applied to the public site. */
 .theme-dark {
-  --color-ink: #f4f1ea;
-  --color-paper: #211e18;
-  --color-mist: #16140f;
-  --color-line: #39352c;
-  --color-muted: #9a9384;
-  --color-brand: #5fa370;
-  --color-brand-soft: rgba(95, 163, 112, 0.2);
+  --color-ink: #ececec;
+  --color-paper: #232326;
+  --color-mist: #18181b;
+  --color-line: #3a3a3d;
+  --color-muted: #9a9a9f;
+  --color-brand-soft: rgba(30, 58, 138, 0.22);
 
-  /* Same 8 hues, stepped for the dark surface (#16140f) per the dataviz skill's dark-mode ramps. */
-  --chart-series-1: #5fa370;
-  --chart-series-2: #e2935f;
-  --chart-series-3: #4a8fd1;
-  --chart-series-4: #d99b2e;
-  --chart-series-5: #d97ba8;
-  --chart-series-6: #9a9384;
-  --chart-series-7: #9985d1;
-  --chart-series-8: #d1655c;
-
-  --color-background: #16140f;
-  --color-foreground: #f4f1ea;
-  --color-card: #211e18;
-  --color-card-foreground: #f4f1ea;
-  --color-popover: #292520;
-  --color-popover-foreground: #f4f1ea;
-  --color-primary: #5fa370;
-  --color-primary-foreground: #16140f;
-  --color-secondary: #292520;
-  --color-secondary-foreground: #f4f1ea;
-  --color-surface-muted: #292520;
-  --color-muted-foreground: #c9c2b3;
-  --color-accent: #23573b;
-  --color-accent-foreground: #dcedde;
-  --color-border: #39352c;
-  --color-input: #39352c;
-  --color-ring: #5fa370;
+  /* Same 8 hues, stepped for the dark surface (#18181b) per the dataviz skill's dark-mode ramps. */
+  --chart-series-1: #3987e5;
+  --chart-series-2: #d95926;
+  --chart-series-3: #199e70;
+  --chart-series-4: #c98500;
+  --chart-series-5: #d55181;
+  --chart-series-6: #008300;
+  --chart-series-7: #9085e9;
+  --chart-series-8: #e66767;
 }
 
 /* Flat SaaS button — solid surface (no gradient), no "lip" offset shadow — but keeps a subtle
