@@ -1,19 +1,7 @@
+import { motion } from "framer-motion";
 import type { ReactNode } from "react";
-import { cn } from "cn";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { X as CloseIcon } from "@phosphor-icons/react";
 
-/**
- * Thin wrapper around shadcn's `Dialog` — keeps this app's existing centered-modal call signature
- * (`onClose`/`title`/`description`/`footer`/`maxWidth`) while delegating overlay, focus-trap, close
- * button, and open/close animation to the shared primitive. Always rendered open: callers already
- * mount/unmount this component themselves around their own open state.
- */
 export default function Modal({
   onClose,
   children,
@@ -34,38 +22,47 @@ export default function Modal({
   disableBackdropClose?: boolean;
 }) {
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-    >
-      <DialogContent
-        showCloseButton
-        onPointerDownOutside={(e) => {
-          if (disableBackdropClose) e.preventDefault();
-        }}
-        onEscapeKeyDown={(e) => {
-          if (disableBackdropClose) e.preventDefault();
-        }}
-        className={cn(
-          "flex max-h-[85vh] w-full flex-col overflow-hidden rounded-xl border-border bg-card p-0 shadow-lg",
-          maxWidth
-        )}
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <motion.div
+        initial={{ opacity: 0, backdropFilter: "blur(0px)" }}
+        animate={{ opacity: 1, backdropFilter: "blur(8px)" }}
+        exit={{ opacity: 0, backdropFilter: "blur(0px)" }}
+        transition={{ duration: 0.2 }}
+        className="absolute inset-0 bg-ink/30 backdrop-blur-md"
+        onClick={disableBackdropClose ? undefined : onClose}
+      />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96, y: 8 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: 8 }}
+        transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+        className={`relative flex max-h-[85vh] w-full flex-col overflow-hidden rounded-lg border border-line bg-paper shadow-card ${maxWidth}`}
       >
+        {/* Fixed header */}
         {title && (
-          <DialogHeader className="shrink-0 gap-0.5 border-b border-border px-6 py-4 text-left">
-            <DialogTitle className="text-lg font-semibold tracking-tight text-foreground">{title}</DialogTitle>
-            {description && (
-              <DialogDescription className="text-sm text-muted-foreground">{description}</DialogDescription>
-            )}
-          </DialogHeader>
+          <div className="flex shrink-0 items-start justify-between gap-4 border-b border-line px-6 py-4">
+            <div>
+              <p className="font-display text-lg font-semibold tracking-tight">{title}</p>
+              {description && <p className="mt-0.5 text-sm text-muted">{description}</p>}
+            </div>
+          </div>
         )}
 
-        <div className={cn("flex-1 overflow-y-auto px-6", title ? "py-5" : "pt-6 pb-5")}>{children}</div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="absolute top-4 right-4 flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-mist hover:text-ink"
+        >
+          <CloseIcon size={16} weight="bold" />
+        </button>
 
-        {footer && <div className="shrink-0 border-t border-border px-6 py-4">{footer}</div>}
-      </DialogContent>
-    </Dialog>
+        {/* Scrollable body */}
+        <div className={`flex-1 overflow-y-auto px-6 ${title ? "py-5" : "pt-6 pb-5"}`}>{children}</div>
+
+        {/* Fixed footer */}
+        {footer && <div className="shrink-0 border-t border-line px-6 py-4">{footer}</div>}
+      </motion.div>
+    </div>
   );
 }

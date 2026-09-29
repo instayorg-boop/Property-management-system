@@ -52,9 +52,9 @@ export default function SyncToast() {
           exit={{ opacity: 0, y: 12 }}
           // Sits above SyncStatusBadge's bottom-6 pill (bottom-20, not bottom-4) so the two never
           // overlap when a "just synced" confirmation and the persistent status pill are both up.
-          className="fixed bottom-20 left-1/2 z-[60] flex -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm font-medium text-foreground shadow-md"
+          className="fixed bottom-20 left-1/2 z-[60] flex -translate-x-1/2 items-center gap-2 rounded-full border border-line bg-paper px-4 py-2 text-sm font-medium text-ink shadow-card"
         >
-          <CheckCircle size={16} weight="fill" className="text-primary" />
+          <CheckCircle size={16} weight="fill" className="text-emerald-600" />
           {message}
         </motion.div>
       )}

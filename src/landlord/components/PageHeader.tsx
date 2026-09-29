@@ -1,9 +1,5 @@
 import type { ReactNode } from "react";
-import { cn } from "cn";
 
-/** Page-level title row — title (+ optional description) on the left, an optional actions slot
- * (primary CTA, a pill, etc.) on the right, per the list-table-view archetype's header spec.
- * Token-compliant typography; no shadcn primitive to wrap (this is layout, not a control). */
 export default function PageHeader({
   title,
   description,
@@ -20,11 +16,17 @@ export default function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <div className={cn("px-4 pt-5 pb-6 sm:px-8", align === "center" && "text-center")}>
-      <div className={cn("flex items-start justify-between gap-3", align === "center" && "justify-center")}>
+    <div
+      className={`px-4 pt-5 pb-6 sm:px-8 ${align === "center" ? "text-center" : ""}`}
+    >
+      <div className={`flex items-start justify-between gap-3 ${align === "center" ? "justify-center" : ""}`}>
         <div>
-          <h1 className="font-display text-2xl font-bold tracking-tight text-foreground sm:text-3xl">{title}</h1>
-          {description && <p className="mt-1.5 text-sm text-muted-foreground">{description}</p>}
+          <h1 className="font-display text-2xl font-bold tracking-tight text-brand">
+            {title}
+          </h1>
+          {description && (
+            <p className="mt-1.5 text-sm text-muted">{description}</p>
+          )}
         </div>
         {actions && <div className="shrink-0">{actions}</div>}
       </div>

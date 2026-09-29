@@ -1,6 +1,4 @@
 import { forwardRef, type ButtonHTMLAttributes } from "react";
-import { cn } from "cn";
-import { Button as ShadcnButton } from "@/components/ui/button";
 
 export type ButtonVariant = "primary" | "secondary" | "outline" | "danger" | "dangerSolid" | "warning" | "ghost";
 export type ButtonSize = "sm" | "md";
@@ -10,48 +8,47 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   size?: ButtonSize;
 };
 
-// Maps this app's existing variant/size vocabulary onto shadcn's `buttonVariants`, so every call
-// site keeps working unchanged while the actual rendered markup becomes the shadcn `Button`
-// primitive (Slot-capable, same focus-ring/disabled treatment as every other shadcn control).
-const sizeMap: Record<ButtonSize, "sm" | "default"> = {
-  sm: "sm",
-  md: "default",
+const sizeCls: Record<ButtonSize, string> = {
+  sm: "px-3 py-2 text-xs",
+  md: "px-4 py-2 text-sm",
 };
 
-// Token-compliant className overlays per variant — shadcn's own `default`/`outline`/`ghost`
-// variants already speak bg-primary/border/accent tokens, so most of these just pass through;
-// the ones this app treats as visually distinct (dangerSolid, warning) get a small token-based
-// override rather than a new shadcn variant, since they're app-specific semantics.
-const variantCls: Record<ButtonVariant, { shadcnVariant: "default" | "outline" | "ghost" | "destructive"; className?: string }> = {
-  primary: { shadcnVariant: "default" },
-  secondary: { shadcnVariant: "outline", className: "bg-card" },
-  outline: { shadcnVariant: "outline" },
-  danger: { shadcnVariant: "outline", className: "border-destructive/40 text-destructive hover:bg-destructive/10" },
-  dangerSolid: { shadcnVariant: "destructive" },
-  warning: {
-    shadcnVariant: "default",
-    className: "bg-amber-500 text-white hover:bg-amber-600 focus-visible:ring-amber-500/50",
-  },
-  ghost: { shadcnVariant: "ghost", className: "text-muted-foreground" },
+const variantCls: Record<ButtonVariant, string> = {
+  primary: "raised-btn-brand",
+  secondary: "raised-btn text-ink",
+  // Flat, border-only — for an action that needs to sit next to a primary CTA without competing
+  // with it for weight (e.g. "Payment methods" beside "Transfer funds").
+  outline: "border border-line text-ink transition-colors hover:bg-mist",
+  danger: "border border-line text-red-600 transition-colors hover:bg-red-50",
+  // Solid fill for an actual "confirm delete" CTA — `danger` plus a `bg-red-600 text-paper`
+  // className override used to be how call sites did this, but the two text-color utilities
+  // (danger's text-red-600 vs the override's text-paper) collide unpredictably since Tailwind's
+  // generated CSS order isn't the same as the className string's order, which could render as
+  // illegible red-on-red. This variant is the CSS itself, no override needed.
+  dangerSolid: "bg-red-600 text-paper transition-colors hover:bg-red-700",
+  // For an action tied to a penalty/overdue state (e.g. "Waive penalty") — the same amber used
+  // for penalty/overdue styling elsewhere, so it reads as distinct from a neutral secondary action
+  // rather than looking identical to every other gray button next to it. Same tactile bezel/shadow
+  // treatment as raised-btn/raised-btn-brand (see .raised-btn-warning) so it doesn't look flat
+  // sitting next to them.
+  warning: "raised-btn-warning",
+  ghost: "text-muted transition-colors hover:bg-mist hover:text-ink",
 };
 
 /**
- * Thin wrapper around shadcn's `Button` — keeps this app's existing `variant`/`size` vocabulary at
- * every call site while delegating the actual rendering (focus ring, disabled state, radius) to the
- * shared primitive.
+ * The one raised-button surface for every primary/secondary action in the app — swap `variant`
+ * rather than hand-rolling gradients/shadows again. `danger` and `ghost` stay flat (a raised
+ * lower-priority or destructive action would fight for attention against a raised primary one).
  */
 const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = "secondary", size = "md", className, type = "button", ...props },
+  { variant = "secondary", size = "md", className = "", type = "button", ...props },
   ref
 ) {
-  const { shadcnVariant, className: variantClassName } = variantCls[variant];
   return (
-    <ShadcnButton
+    <button
       ref={ref}
       type={type}
-      variant={shadcnVariant}
-      size={sizeMap[size]}
-      className={cn(variantClassName, className)}
+      className={`inline-flex items-center justify-center gap-1.5 rounded-md font-medium disabled:cursor-not-allowed disabled:opacity-50 ${sizeCls[size]} ${variantCls[variant]} ${className}`}
       {...props}
     />
   );

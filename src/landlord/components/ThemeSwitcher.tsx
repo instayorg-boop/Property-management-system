@@ -11,7 +11,7 @@ export default function ThemeSwitcher() {
   const { theme, setTheme } = useTheme();
 
   return (
-    <div className="flex items-center gap-1 rounded-full border border-border bg-card p-1">
+    <div className="flex items-center gap-1 rounded-full border border-line bg-paper p-1">
       {options.map(({ id, label, Icon }) => (
         <button
           key={id}
@@ -19,7 +19,7 @@ export default function ThemeSwitcher() {
           aria-label={label}
           onClick={() => setTheme(id)}
           className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
-            theme === id ? "bg-surface-muted text-foreground" : "text-muted-foreground hover:text-foreground"
+            theme === id ? "bg-mist text-ink" : "text-muted hover:text-ink"
           }`}
         >
           <Icon size={16} weight="duotone" />

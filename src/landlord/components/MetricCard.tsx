@@ -1,15 +1,13 @@
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { TrendingUp, TrendingDown, ArrowRight } from "lucide-react";
-import { cn } from "cn";
-import { Card } from "@/components/ui/card";
+import { TrendUp, TrendDown, ArrowRight } from "@phosphor-icons/react";
 
 export type MetricTone = "default" | "success" | "danger" | "warning";
 
-// Every card is now a plain bordered bg-card surface, whatever the tone — only the value text
-// (via toneFlatValue below) and this icon chip carry any color, never the card background.
+// Every card is now a plain 1px-bordered bg-paper surface, whatever the tone — only the value
+// text (via toneFlatValue below) and this icon chip carry any color, never the card background.
 const toneStyles: Record<MetricTone, { icon: string }> = {
-  default: { icon: "bg-primary/10 text-primary" },
+  default: { icon: "bg-brand-soft text-brand" },
   success: { icon: "bg-emerald-100 text-emerald-600" },
   danger: { icon: "bg-red-100 text-red-600" },
   warning: { icon: "bg-amber-100 text-amber-600" },
@@ -24,15 +22,12 @@ const trendStyles: Record<"up" | "down", string> = {
  * on the dashboard chart, so a green "collected" figure and a red "balance" figure read the same
  * way everywhere on the page. */
 const toneFlatValue: Record<MetricTone, string> = {
-  default: "text-foreground",
+  default: "text-ink",
   success: "text-emerald-600",
   danger: "text-red-700",
   warning: "text-amber-600",
 };
 
-/** Thin wrapper around shadcn's `Card` — keeps this app's existing metric-tile layouts
- * (`flat`/`compact`/default) and tone vocabulary while the outer surface (border, radius, shadow)
- * comes from the shared `Card` primitive. */
 export default function MetricCard({
   icon,
   label,
@@ -71,84 +66,77 @@ export default function MetricCard({
 
   if (flat) {
     return (
-      <Card
+      <div
         role={to ? "button" : undefined}
         tabIndex={to ? 0 : undefined}
         onClick={to ? () => navigate(to) : undefined}
         onKeyDown={to ? (e) => (e.key === "Enter" || e.key === " ") && navigate(to) : undefined}
-        className={cn(
-          "group gap-0 rounded-lg border-border bg-card p-4 py-0 shadow-xs",
-          to && "cursor-pointer transition-colors hover:border-foreground/20 hover:bg-surface-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-        )}
+        className={`group rounded-lg border border-line bg-paper p-4 ${to ? "cursor-pointer transition-colors hover:border-ink/20 hover:bg-mist/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand" : ""}`}
       >
         <div className="flex items-center justify-between gap-2">
-          <p className="text-sm font-medium text-foreground/70">{label}</p>
+          <p className="text-sm font-medium text-ink/70">{label}</p>
           {trend && (
-            <span className={cn("flex shrink-0 items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-semibold", trendStyles[trend.direction])}>
-              {trend.direction === "up" ? <TrendingUp className="size-2.5" /> : <TrendingDown className="size-2.5" />}
+            <span className={`flex shrink-0 items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${trendStyles[trend.direction]}`}>
+              {trend.direction === "up" ? <TrendUp size={11} weight="bold" /> : <TrendDown size={11} weight="bold" />}
               {trend.value}
             </span>
           )}
         </div>
-        <p className={cn("font-display mt-1.5 text-2xl font-semibold tracking-tight", toneFlatValue[tone])}>{value}</p>
+        <p className={`font-display mt-1.5 text-2xl font-semibold tracking-tight ${toneFlatValue[tone]}`}>{value}</p>
         {caption && (
-          <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+          <p className="mt-1 flex items-center gap-1 text-xs text-muted">
             {caption}
-            {to && <ArrowRight className="size-2.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />}
+            {to && <ArrowRight size={11} weight="bold" className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />}
           </p>
         )}
-      </Card>
+      </div>
     );
   }
 
   if (compact) {
     return (
-      <Card className="gap-0 rounded-lg border-border bg-card p-3.5 py-0 shadow-xs">
+      <div className="rounded-lg border border-line bg-paper p-3.5">
         <div className="flex items-center gap-3">
-          {icon && (
-            <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-full", iconClassName ?? t.icon)}>
-              {icon}
-            </span>
-          )}
+          {icon && <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${iconClassName ?? t.icon}`}>{icon}</span>}
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold text-foreground/70">{label}</p>
-            <p className={cn("font-display text-xl font-bold tracking-tight", toneFlatValue[tone])}>{value}</p>
+            <p className="text-xs font-semibold text-ink/70">{label}</p>
+            <p className={`font-display text-xl font-bold tracking-tight ${toneFlatValue[tone]}`}>{value}</p>
           </div>
           {trend && (
-            <span className={cn("flex shrink-0 items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-semibold", trendStyles[trend.direction])}>
-              {trend.direction === "up" ? <TrendingUp className="size-2.5" /> : <TrendingDown className="size-2.5" />}
+            <span className={`flex shrink-0 items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${trendStyles[trend.direction]}`}>
+              {trend.direction === "up" ? <TrendUp size={11} weight="bold" /> : <TrendDown size={11} weight="bold" />}
               {trend.value}
             </span>
           )}
         </div>
-        {caption && <p className="mt-2 text-xs text-muted-foreground">{caption}</p>}
-      </Card>
+        {caption && <p className="mt-2 text-xs text-muted">{caption}</p>}
+      </div>
     );
   }
 
   return (
-    <Card className="gap-0 rounded-lg border-border bg-card p-4 py-0 shadow-xs">
+    <div className="rounded-lg border border-line bg-paper p-4">
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2">
-          {icon && (
-            <span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-full", iconClassName ?? t.icon)}>
-              {icon}
-            </span>
-          )}
-          <p className="text-[13px] font-semibold text-foreground/70">{label}</p>
+          {icon && <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${iconClassName ?? t.icon}`}>{icon}</span>}
+          <p className="text-[13px] font-semibold text-ink/70">{label}</p>
         </div>
         {trend && (
-          <span className={cn("flex shrink-0 items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-semibold", trendStyles[trend.direction])}>
-            {trend.direction === "up" ? <TrendingUp className="size-2.5" /> : <TrendingDown className="size-2.5" />}
+          <span className={`flex shrink-0 items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${trendStyles[trend.direction]}`}>
+            {trend.direction === "up" ? <TrendUp size={11} weight="bold" /> : <TrendDown size={11} weight="bold" />}
             {trend.value}
           </span>
         )}
       </div>
 
-      <p className={cn("font-display mt-1 text-[26px] font-semibold tracking-tight", toneFlatValue[tone])}>{value}</p>
+      <p className={`font-display mt-1 text-[26px] font-semibold tracking-tight ${toneFlatValue[tone]}`}>{value}</p>
 
-      {insight && <p className="mt-2 flex items-center gap-1 text-xs font-semibold text-foreground">{insight}</p>}
-      {caption && <p className={cn("text-xs text-muted-foreground", insight ? "mt-0.5" : "mt-3")}>{caption}</p>}
-    </Card>
+      {insight && (
+        <p className="mt-2 flex items-center gap-1 text-xs font-semibold text-ink">
+          {insight}
+        </p>
+      )}
+      {caption && <p className={`text-xs text-muted ${insight ? "mt-0.5" : "mt-3"}`}>{caption}</p>}
+    </div>
   );
 }

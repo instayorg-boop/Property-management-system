@@ -19,7 +19,6 @@ import {
 import { useSidebar } from "../SidebarContext";
 import { useMaintenance } from "../MaintenanceContext";
 import { useTenants } from "../TenantsContext";
-import { Separator } from "../../components/ui/separator";
 
 const icons = {
   dashboard: SquaresFour,
@@ -103,7 +102,7 @@ const groups: { label: string; items: NavItem[] }[] = [
 /** Small unread-style indicator dot, pinned to the icon's top-right corner — no count,
  * just presence, matching how most SaaS sidebars flag unread items. */
 function AttentionDot() {
-  return <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-destructive" />;
+  return <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-red-500" />;
 }
 
 function NavRow({ item, onNavigate, hasAttention }: { item: NavItem; onNavigate: () => void; hasAttention: boolean }) {
@@ -121,8 +120,8 @@ function NavRow({ item, onNavigate, hasAttention }: { item: NavItem; onNavigate:
         className={({ isActive }) =>
           `flex items-center gap-2.5 rounded-r-lg border-l-2 py-2 pl-2.5 pr-3 text-sm transition-colors ${
             isActive
-              ? "border-primary font-semibold text-primary"
-              : "border-transparent text-muted-foreground hover:bg-surface-muted hover:text-foreground"
+              ? "border-brand font-semibold text-brand"
+              : "border-transparent text-muted hover:bg-mist hover:text-ink"
           }`
         }
       >
@@ -146,8 +145,8 @@ function NavRow({ item, onNavigate, hasAttention }: { item: NavItem; onNavigate:
         onClick={() => setOpen((o) => !o)}
         className={`flex w-full items-center gap-2.5 rounded-r-lg border-l-2 py-2 pl-2.5 pr-3 text-left text-sm transition-colors ${
           isOnPage
-            ? "border-primary font-semibold text-primary"
-            : "border-transparent text-muted-foreground hover:bg-surface-muted hover:text-foreground"
+            ? "border-brand font-semibold text-brand"
+            : "border-transparent text-muted hover:bg-mist hover:text-ink"
         }`}
       >
         <span className="relative shrink-0">
@@ -168,8 +167,8 @@ function NavRow({ item, onNavigate, hasAttention }: { item: NavItem; onNavigate:
               className={({ isActive }) =>
                 `block rounded-r-lg border-l-2 py-1.5 pl-11 pr-3 text-[13px] transition-colors ${
                   isActive
-                    ? "border-primary font-medium text-primary"
-                    : "border-transparent text-muted-foreground hover:bg-surface-muted hover:text-foreground"
+                    ? "border-brand font-medium text-brand"
+                    : "border-transparent text-muted hover:bg-mist hover:text-ink"
                 }`
               }
             >
@@ -199,18 +198,17 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
       role="dialog"
       aria-modal={open ? true : undefined}
       aria-label="Navigation"
-      className={`fixed top-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px))] left-0 z-50 flex h-auto w-64 max-w-[85vw] shrink-0 flex-col border-r border-border bg-card transition-transform duration-200 lg:static lg:inset-y-0 lg:z-auto lg:h-full lg:w-64 lg:max-w-none lg:translate-x-0 ${
+      className={`fixed top-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px))] left-0 z-50 flex h-auto w-64 max-w-[85vw] shrink-0 flex-col border-r border-line bg-paper transition-transform duration-200 lg:static lg:inset-y-0 lg:z-auto lg:h-full lg:w-64 lg:max-w-none lg:translate-x-0 ${
         open ? "translate-x-0" : "-translate-x-full"
       }`}
     >
-      <nav className="flex-1 overflow-y-auto px-3 pb-4 pt-4">
-        {groups.map((group, i) => (
+      <nav className="flex-1  overflow-y-auto px-3 pb-4 pt-4">
+        {groups.map((group) => (
           <div key={group.label}>
-            {i > 0 && <Separator className="my-3" />}
-            <p className="px-3 pb-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+            <p className="px-3 pb-1.5 text-[11px] font-semibold tracking-wide text-gray-500 uppercase">
               {group.label}
             </p>
-            <div className="mb-1 space-y-0.5">
+            <div className="space-y-0.5 mb-1">
               {group.items.map((item) => (
                 <NavRow key={item.to} item={item} onNavigate={() => setOpen(false)} hasAttention={attention[item.to] ?? false} />
               ))}

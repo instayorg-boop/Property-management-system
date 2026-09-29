@@ -18,7 +18,7 @@ function timeAgo(iso: string | null): string {
 /** "Last synced Xm ago" — sits near a page's data so managers can judge staleness at a glance. */
 export function LastSyncedLabel({ lastSyncedAt }: { lastSyncedAt: string | null }) {
   return (
-    <span className="text-xs text-muted-foreground" title={lastSyncedAt ? new Date(lastSyncedAt).toLocaleString() : undefined}>
+    <span className="text-xs text-muted" title={lastSyncedAt ? new Date(lastSyncedAt).toLocaleString() : undefined}>
       Last synced {timeAgo(lastSyncedAt)}
     </span>
   );
@@ -76,13 +76,13 @@ export function SyncStatusBadge() {
                 <button
                   type="button"
                   onClick={() => setReviewOpen(true)}
-                  className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium shadow-md transition-colors hover:brightness-95 ${bg} ${text}`}
+                  className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium shadow-card transition-colors hover:brightness-95 ${bg} ${text}`}
                 >
                   <Warning size={14} weight="duotone" />
                   {reviewCount} need{reviewCount === 1 ? "s" : ""} review
                 </button>
               ) : (
-                <span className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium shadow-md ${bg} ${text}`}>
+                <span className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium shadow-card ${bg} ${text}`}>
                   {state === "offline" && <CloudSlash size={14} weight="duotone" />}
                   {state === "syncing" && <ArrowsClockwise size={14} weight="duotone" className="animate-spin" />}
                   {state === "synced" && <CloudCheck size={14} weight="duotone" />}

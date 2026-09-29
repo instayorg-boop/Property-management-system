@@ -11,11 +11,11 @@ type FilterTab = "all" | "unread";
 // title to tell a payment apart from a maintenance report. Duotone weight + a soft rounded-square
 // tile (not a plain circle) reads closer to a real icon set than the flat glyphs this replaced.
 const CATEGORY_STYLE: Record<NotificationCategory, { icon: typeof CurrencyCircleDollar; tint: string; label: string }> = {
-  payment: { icon: CurrencyCircleDollar, tint: "bg-accent text-accent-foreground", label: "Payment" },
+  payment: { icon: CurrencyCircleDollar, tint: "bg-emerald-50 text-emerald-600", label: "Payment" },
   maintenance: { icon: Wrench, tint: "bg-amber-50 text-amber-600", label: "Maintenance" },
-  payout: { icon: Coins, tint: "bg-accent text-accent-foreground", label: "Payout" },
-  overdue: { icon: WarningCircle, tint: "bg-destructive/10 text-destructive", label: "Overdue rent" },
-  system: { icon: BellRinging, tint: "bg-surface-muted text-muted-foreground", label: "Update" },
+  payout: { icon: Coins, tint: "bg-brand-soft text-brand", label: "Payout" },
+  overdue: { icon: WarningCircle, tint: "bg-red-50 text-red-600", label: "Overdue rent" },
+  system: { icon: BellRinging, tint: "bg-mist text-muted", label: "Update" },
 };
 
 // Where clicking a notification should take the landlord — each category has one obvious "go look
@@ -123,19 +123,19 @@ function BundleRow({ bundle, onReview, onMarkRead }: { bundle: NotificationBundl
       <div className="flex items-start gap-3">
         <span className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${tint}`}>
           <Icon size={19} weight="duotone" />
-          {isUnread && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-card bg-primary" />}
+          {isUnread && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-paper bg-brand" />}
         </span>
         <div className="min-w-0 flex-1">
-          <p className={`text-sm leading-snug ${isUnread ? "font-semibold text-foreground" : "text-foreground"}`}>{title}</p>
-          <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{body}</p>
-          <p className="mt-1 text-[11px] text-muted-foreground/80">
+          <p className={`text-sm leading-snug ${isUnread ? "font-semibold text-ink" : "text-ink"}`}>{title}</p>
+          <p className="mt-0.5 line-clamp-2 text-xs text-muted">{body}</p>
+          <p className="mt-1 text-[11px] text-muted/80">
             {isBundled ? `Latest ${timeOfDay(latest.created_at)}` : timeOfDay(latest.created_at)}
           </p>
           <div className="mt-2 flex items-center gap-3">
             <button
               type="button"
               onClick={() => onReview(bundle)}
-              className="rounded-full border border-border px-3 py-1 text-xs font-medium text-foreground transition-colors hover:bg-surface-muted"
+              className="rounded-full border border-line px-3 py-1 text-xs font-medium text-ink transition-colors hover:bg-mist"
             >
               Review
             </button>
@@ -143,7 +143,7 @@ function BundleRow({ bundle, onReview, onMarkRead }: { bundle: NotificationBundl
               <button
                 type="button"
                 onClick={() => onMarkRead(bundle)}
-                className="text-xs font-medium text-muted-foreground transition-colors hover:text-primary"
+                className="text-xs font-medium text-muted transition-colors hover:text-brand"
               >
                 Mark As Read
               </button>
@@ -184,7 +184,7 @@ export default function NotificationsPanel({ onClose }: { onClose: () => void })
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.18 }}
-        className="fixed inset-0 z-40 bg-foreground/20"
+        className="fixed inset-0 z-40 bg-ink/20"
         onClick={onClose}
         aria-hidden="true"
       />
@@ -194,16 +194,16 @@ export default function NotificationsPanel({ onClose }: { onClose: () => void })
         animate={{ opacity: 1, x: 0 }}
         exit={{ opacity: 0, x: "100%" }}
         transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-        className="fixed inset-y-0 right-0 z-50 flex w-full max-w-sm flex-col border-l border-border bg-card shadow-lg sm:max-w-md"
+        className="fixed inset-y-0 right-0 z-50 flex w-full max-w-sm flex-col border-l border-line bg-paper shadow-card sm:max-w-md"
       >
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between px-5 pt-4 pb-3">
-          <p className="font-display text-lg font-semibold tracking-tight text-foreground">Notifications</p>
+          <p className="font-display text-lg font-semibold tracking-tight">Notifications</p>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close notifications"
-            className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-muted hover:text-foreground"
+            className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-mist hover:text-ink"
           >
             <X size={16} weight="bold" />
           </button>
@@ -213,14 +213,14 @@ export default function NotificationsPanel({ onClose }: { onClose: () => void })
             grouping same-kind events together, a separate category tab bar would just be a second,
             redundant way to slice the same list. */}
         <div className="shrink-0 px-5 pb-3">
-          <div className="flex rounded-lg bg-surface-muted p-1">
+          <div className="flex rounded-lg bg-mist p-1">
             {(["all", "unread"] as const).map((t) => (
               <button
                 key={t}
                 type="button"
                 onClick={() => setTab(t)}
                 className={`flex-1 rounded-md py-1.5 text-sm font-medium transition-colors ${
-                  tab === t ? "bg-card text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+                  tab === t ? "bg-paper text-ink shadow-sm" : "text-muted hover:text-ink"
                 }`}
               >
                 {t === "all" ? "All" : `Unread${unreadCount > 0 ? ` (${unreadCount})` : ""}`}
@@ -230,26 +230,17 @@ export default function NotificationsPanel({ onClose }: { onClose: () => void })
         </div>
 
         {/* List */}
-        <div className="flex-1 overflow-y-auto border-t border-border">
+        <div className="flex-1 overflow-y-auto border-t border-line">
           {visible.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-1 py-14 text-center">
-              <span className="mb-2 flex h-11 w-11 items-center justify-center rounded-full bg-surface-muted text-muted-foreground">
-                <BellRinging size={20} weight="duotone" />
-              </span>
-              <p className="text-sm font-medium text-foreground">
-                {tab === "unread" ? "You're all caught up" : "No notifications yet"}
-              </p>
-              <p className="max-w-[220px] text-xs text-muted-foreground">
-                {tab === "unread"
-                  ? "Nothing new to review right now."
-                  : "Payments, maintenance updates, and payouts will show up here as they happen."}
-              </p>
+              <p className="text-sm font-medium text-ink">You're all caught up</p>
+              <p className="text-xs text-muted">No notifications here right now.</p>
             </div>
           ) : (
             grouped.map(({ dayKey, dayLabel, bundles }) => (
               <div key={dayKey}>
-                <p className="px-5 pt-3.5 pb-1 text-xs font-medium text-muted-foreground">{dayLabel}</p>
-                <ul className="divide-y divide-border">
+                <p className="px-5 pt-3.5 pb-1 text-xs font-medium text-muted">{dayLabel}</p>
+                <ul className="divide-y divide-line">
                   {bundles.map((b) => (
                     <BundleRow key={b.key} bundle={b} onReview={handleReview} onMarkRead={markBundleRead} />
                   ))}
@@ -260,14 +251,14 @@ export default function NotificationsPanel({ onClose }: { onClose: () => void })
         </div>
 
         {/* Footer */}
-        <div className="flex shrink-0 items-center justify-between border-t border-border px-5 py-3">
+        <div className="flex shrink-0 items-center justify-between border-t border-line px-5 py-3">
           <button
             type="button"
             onClick={() => {
               navigate("/settings/notifications");
               onClose();
             }}
-            className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+            className="text-sm font-medium text-muted transition-colors hover:text-ink"
           >
             Go To Settings
           </button>
@@ -275,7 +266,7 @@ export default function NotificationsPanel({ onClose }: { onClose: () => void })
             type="button"
             onClick={markAllRead}
             disabled={unreadCount === 0}
-            className="rounded-full bg-foreground px-4 py-2 text-sm font-medium text-background transition-opacity disabled:opacity-40"
+            className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-paper transition-opacity disabled:opacity-40"
           >
             Mark All As Read
           </button>

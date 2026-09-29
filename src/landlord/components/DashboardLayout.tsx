@@ -83,7 +83,7 @@ function Shell() {
       <div className="relative flex flex-1 overflow-hidden">
         {open && (
           <div
-            className="fixed inset-0 z-40 bg-foreground/40 lg:hidden"
+            className="fixed inset-0 z-40 bg-ink/40 lg:hidden"
             onClick={() => setOpen(false)}
             aria-hidden="true"
           />
@@ -96,7 +96,7 @@ function Shell() {
             (including anything mid-animation, like the Settings tab bar's sliding underline). */}
         <main
           ref={mainRef}
-          className="flex-1 overflow-y-auto bg-background pb-[calc(3.5rem+env(safe-area-inset-bottom,0px))] lg:pb-0"
+          className="flex-1 overflow-y-auto bg-white pb-[calc(3.5rem+env(safe-area-inset-bottom,0px))] lg:pb-0"
           style={{ scrollbarGutter: "stable" }}
         >
           {/*
