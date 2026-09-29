@@ -1,5 +1,8 @@
 import { useMemo, useRef, useState } from "react";
-import { CaretDown } from "@phosphor-icons/react";
+import { ChevronDown } from "lucide-react";
+import { cn } from "cn";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Input } from "@/components/ui/input";
 
 /** Dial code + a practical (not perfect) digit-count range for the local number, enough to catch
  * "that's obviously not a real phone number" without re-implementing the E.164 spec. Zambia leads
@@ -258,72 +261,73 @@ export default function PhoneNumberInput({
   return (
     <div>
       <div
-        className={`flex items-stretch rounded-lg border ${error ? "border-red-400" : "border-line"} focus-within:border-brand focus-within:ring-1 focus-within:ring-brand`}
+        className={cn(
+          "flex items-stretch rounded-md border bg-card focus-within:border-primary focus-within:ring-1 focus-within:ring-primary",
+          error ? "border-destructive" : "border-border"
+        )}
       >
-        <div className="relative shrink-0 border-r border-line">
-          <button
-            type="button"
-            onClick={() => setOpen((o) => !o)}
-            className="flex h-full items-center gap-1 rounded-l-lg px-2.5 py-2.5 text-sm text-ink hover:bg-mist"
-          >
-            <span>{country.flag}</span>
-            <span className="text-muted">+{country.dial}</span>
-            <CaretDown size={11} weight="bold" className="text-muted" />
-          </button>
-
-          {open && (
-            <div className="absolute z-20 mt-1 w-56 overflow-hidden rounded-lg border border-line bg-paper shadow-card">
-              <div className="border-b border-line p-2">
-                <input
-                  autoFocus
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  onBlur={() => {
-                    blurTimeout.current = window.setTimeout(
-                      () => setOpen(false),
-                      120,
-                    );
-                  }}
-                  onFocus={() => {
-                    if (blurTimeout.current)
-                      window.clearTimeout(blurTimeout.current);
-                  }}
-                  placeholder="Search country or code"
-                  className="w-full rounded-md bg-mist px-2.5 py-1.5 text-sm outline-none"
-                />
-              </div>
-              <div className="max-h-56 overflow-y-auto">
-                {results.map((c) => (
-                  <button
-                    key={c.code}
-                    type="button"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      setCountry(c.code);
-                    }}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-mist"
-                  >
-                    <span>{c.flag}</span>
-                    <span className="flex-1 truncate text-ink">{c.name}</span>
-                    <span className="text-muted">+{c.dial}</span>
-                  </button>
-                ))}
-                {results.length === 0 && (
-                  <p className="px-3 py-3 text-sm text-muted">No match.</p>
-                )}
-              </div>
+        <Popover
+          open={open}
+          onOpenChange={(next) => {
+            setOpen(next);
+            if (!next) setQuery("");
+          }}
+        >
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="flex h-full shrink-0 items-center gap-1 rounded-l-md border-r border-border px-2.5 py-2.5 text-sm text-foreground hover:bg-surface-muted"
+            >
+              <span>{country.flag}</span>
+              <span className="text-muted-foreground">+{country.dial}</span>
+              <ChevronDown className="size-3 text-muted-foreground" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-56 overflow-hidden rounded-md border-border bg-card p-0 shadow-md">
+            <div className="border-b border-border p-2">
+              <Input
+                autoFocus
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onBlur={() => {
+                  blurTimeout.current = window.setTimeout(() => setOpen(false), 120);
+                }}
+                onFocus={() => {
+                  if (blurTimeout.current) window.clearTimeout(blurTimeout.current);
+                }}
+                placeholder="Search country or code"
+                className="h-8 bg-surface-muted"
+              />
             </div>
-          )}
-        </div>
+            <div className="max-h-56 overflow-y-auto p-1">
+              {results.map((c) => (
+                <button
+                  key={c.code}
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setCountry(c.code);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-sm px-2 py-2 text-left text-sm hover:bg-surface-muted"
+                >
+                  <span>{c.flag}</span>
+                  <span className="flex-1 truncate text-foreground">{c.name}</span>
+                  <span className="text-muted-foreground">+{c.dial}</span>
+                </button>
+              ))}
+              {results.length === 0 && (
+                <p className="px-3 py-3 text-sm text-muted-foreground">No match for "{query}".</p>
+              )}
+            </div>
+          </PopoverContent>
+        </Popover>
 
-        <input
+        <Input
           value={parsed.local}
-          onChange={(e) =>
-            onChange(formatPhone(parsed.country, e.target.value))
-          }
+          onChange={(e) => onChange(formatPhone(parsed.country, e.target.value))}
           placeholder={placeholder ?? "977 123 456"}
           inputMode="numeric"
-          className="w-full flex-1 rounded-r-lg px-3 py-2.5 text-sm text-ink outline-none placeholder:text-muted/70"
+          className="w-full flex-1 rounded-l-none border-0 shadow-none focus-visible:ring-0"
         />
       </div>
     </div>

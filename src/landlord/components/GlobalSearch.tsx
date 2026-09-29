@@ -81,7 +81,7 @@ function Highlight({ text, query }: { text: string; query: string }) {
   return (
     <>
       {text.slice(0, idx)}
-      <mark className="rounded-[3px] bg-brand/15 text-ink px-px font-semibold">
+      <mark className="rounded-[3px] bg-primary/15 px-px font-semibold text-foreground">
         {text.slice(idx, idx + q.length)}
       </mark>
       {text.slice(idx + q.length)}
@@ -255,7 +255,7 @@ export default function GlobalSearch({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.15 }}
-      className="fixed inset-0 z-60 flex flex-col bg-paper/95 backdrop-blur-sm"
+      className="fixed inset-0 z-60 flex flex-col bg-background/95 backdrop-blur-sm"
     >
       <motion.div
         initial={{ y: -16, opacity: 0 }}
@@ -266,35 +266,35 @@ export default function GlobalSearch({
       >
         {/* Header bar — search input sits where the sidebar logo/search icon lives, so opening this
             feels like the trigger simply expanded into a full-screen surface. */}
-        <div className="shrink-0 border-b border-line px-4 py-4 sm:px-8">
-          <div className="mx-auto flex max-w-3xl items-center gap-3 rounded-2xl border border-line bg-paper px-4 py-2.5 shadow-sm">
-            <SearchIcon size={20} weight="bold" className="shrink-0 text-muted" />
+        <div className="shrink-0 border-b border-border px-4 py-4 sm:px-8">
+          <div className="mx-auto flex max-w-3xl items-center gap-3 rounded-2xl border border-border bg-card px-4 py-2.5 shadow-xs">
+            <SearchIcon size={20} weight="bold" className="shrink-0 text-muted-foreground" />
             <input
               ref={inputRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Search tenants, rooms, maintenance requests, pages…"
-              className="flex-1 bg-transparent text-lg outline-none placeholder:text-muted"
+              className="flex-1 bg-transparent text-lg text-foreground outline-none placeholder:text-muted-foreground"
             />
             {query && (
               <button
                 type="button"
                 onClick={() => setQuery("")}
                 aria-label="Clear search"
-                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-mist hover:text-ink"
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-muted hover:text-foreground"
               >
                 <CloseIcon size={13} weight="bold" />
               </button>
             )}
-            <span className="hidden shrink-0 items-center gap-1 rounded-md border border-line px-1.5 py-0.5 text-[10px] font-medium text-muted sm:flex">
+            <span className="hidden shrink-0 items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground sm:flex">
               esc
             </span>
             <button
               type="button"
               onClick={onClose}
               aria-label="Close search"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-mist hover:text-ink"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-muted hover:text-foreground"
             >
               <CloseIcon size={16} weight="bold" />
             </button>
@@ -315,12 +315,14 @@ export default function GlobalSearch({
                     type="button"
                     onClick={() => setTab(t.key)}
                     className={`flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
-                      tab === t.key ? "bg-ink text-paper" : "text-muted hover:bg-mist hover:text-ink"
+                      tab === t.key
+                        ? "bg-foreground text-background"
+                        : "text-muted-foreground hover:bg-surface-muted hover:text-foreground"
                     }`}
                   >
                     {t.label}
                     {typeof t.count === "number" && t.count > 0 && (
-                      <span className={`text-xs ${tab === t.key ? "text-paper/70" : "text-muted/70"}`}>{t.count}</span>
+                      <span className={`text-xs ${tab === t.key ? "text-background/70" : "text-muted-foreground/70"}`}>{t.count}</span>
                     )}
                   </button>
                 ))}
@@ -334,19 +336,22 @@ export default function GlobalSearch({
           <div className="mx-auto max-w-3xl">
             {query.trim() === "" && (
               <div className="flex flex-col items-center py-16 text-center">
-                <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-mist text-muted">
+                <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-surface-muted text-muted-foreground">
                   <SearchIcon size={20} weight="bold" />
                 </span>
-                <p className="text-sm text-muted">Start typing to search across the whole property account.</p>
+                <p className="text-sm text-muted-foreground">Start typing to search across the whole property account.</p>
               </div>
             )}
 
             {query.trim() !== "" && visible.length === 0 && (
               <div className="flex flex-col items-center py-16 text-center">
-                <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-mist text-muted">
+                <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-surface-muted text-muted-foreground">
                   <SearchIcon size={20} weight="bold" />
                 </span>
-                <p className="text-sm text-muted">No matches for "{query}".</p>
+                <p className="text-sm font-medium text-foreground">No results for "{query}"</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Try a tenant name, room number, or a page like "Rent" or "Settings".
+                </p>
               </div>
             )}
 
@@ -373,7 +378,7 @@ export default function GlobalSearch({
                         <button
                           type="button"
                           onClick={() => setTab(section.group)}
-                          className="text-xs font-medium text-brand hover:underline"
+                          className="text-xs font-medium text-primary hover:underline"
                         >
                           View all {counts[section.group]}
                         </button>
@@ -384,7 +389,7 @@ export default function GlobalSearch({
                       variants={listVariants}
                       initial="hidden"
                       animate="show"
-                      className="overflow-hidden rounded-xl border border-line bg-paper"
+                      className="overflow-hidden rounded-xl border border-border bg-card"
                     >
                       {section.items.map((item, i) => {
                         const ItemIcon = item.icon;
@@ -396,18 +401,18 @@ export default function GlobalSearch({
                             variants={itemVariants}
                             onMouseEnter={() => setActiveIndex(flatIndex)}
                             className={`group flex items-center gap-3 px-4 py-3 transition-colors ${
-                              i > 0 ? "border-t border-line" : ""
-                            } ${isActive ? "bg-mist" : "hover:bg-mist"}`}
+                              i > 0 ? "border-t border-border" : ""
+                            } ${isActive ? "bg-surface-muted" : "hover:bg-surface-muted"}`}
                           >
                             <button type="button" onClick={() => select(item)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
                               <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ring-4 ${style.bg} ${style.fg} ${style.ring}`}>
                                 <ItemIcon size={16} weight="bold" />
                               </span>
                               <span className="min-w-0 flex-1">
-                                <span className="block truncate text-sm font-medium text-ink">
+                                <span className="block truncate text-sm font-medium text-foreground">
                                   <Highlight text={item.title} query={query} />
                                 </span>
-                                <span className="block truncate text-xs text-muted">{item.subtitle}</span>
+                                <span className="block truncate text-xs text-muted-foreground">{item.subtitle}</span>
                               </span>
                             </button>
 
@@ -415,20 +420,20 @@ export default function GlobalSearch({
                               <button
                                 type="button"
                                 onClick={() => jumpToMaintenance(item.title)}
-                                className="shrink-0 rounded-full bg-mist px-2.5 py-1 text-[11px] font-medium text-muted opacity-0 transition-opacity group-hover:opacity-100"
+                                className="shrink-0 rounded-full bg-surface-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
                               >
                                 {item.relatedMaintenanceCount} maintenance
                               </button>
                             )}
 
                             {item.badge && (
-                              <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${BADGE_STYLE[item.badge] ?? "bg-paper text-muted"}`}>
+                              <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${BADGE_STYLE[item.badge] ?? "bg-card text-muted-foreground"}`}>
                                 {item.badge}
                               </span>
                             )}
 
                             {isActive && (
-                              <ArrowElbowDownLeft size={13} weight="bold" className="hidden shrink-0 text-muted/60 sm:block" />
+                              <ArrowElbowDownLeft size={13} weight="bold" className="hidden shrink-0 text-muted-foreground/60 sm:block" />
                             )}
                           </motion.div>
                         );
@@ -443,7 +448,7 @@ export default function GlobalSearch({
 
         {/* Keyboard hint footer — quiet, only shows once there's something to navigate. */}
         {flatVisible.length > 0 && (
-          <div className="hidden shrink-0 items-center justify-center gap-4 border-t border-line py-2.5 text-xs text-muted sm:flex">
+          <div className="hidden shrink-0 items-center justify-center gap-4 border-t border-border py-2.5 text-xs text-muted-foreground sm:flex">
             <span className="flex items-center gap-1">
               <ArrowUp size={12} weight="bold" />
               <ArrowDown size={12} weight="bold" /> navigate

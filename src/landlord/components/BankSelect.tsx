@@ -1,5 +1,8 @@
 import { useMemo, useRef, useState } from "react";
-import { Bank as BankIcon, CaretDown } from "@phosphor-icons/react";
+import { Landmark, ChevronDown } from "lucide-react";
+import { cn } from "cn";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Input } from "@/components/ui/input";
 import type { Bank } from "../../lib/payoutApi";
 
 function BankLogo({ bank }: { bank: Bank }) {
@@ -7,14 +10,15 @@ function BankLogo({ bank }: { bank: Bank }) {
     return <img src={bank.logo_url} alt="" className="h-5 w-5 shrink-0 rounded-full object-contain" />;
   }
   return (
-    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-mist text-muted">
-      <BankIcon size={12} weight="duotone" />
+    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-surface-muted text-muted-foreground">
+      <Landmark className="size-3" />
     </span>
   );
 }
 
-/** Searchable bank picker, sourced from the local `banks` cache — same pattern as TenantFormDrawer's
- * RoomPicker (button trigger + absolute panel + blur-timeout search input + mousedown-select rows). */
+/** Searchable bank picker, sourced from the local `banks` cache — built on shadcn's `Popover` +
+ * `Input`, same trigger/search/list interaction pattern as before (button trigger + panel + search
+ * input + click-to-select rows), now token-compliant. */
 export default function BankSelect({
   banks,
   selectedCode,
@@ -39,57 +43,63 @@ export default function BankSelect({
   }, [banks, query]);
 
   return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between rounded-lg border border-line px-3 py-2.5 text-left text-sm outline-none focus:border-brand"
-      >
-        <span className={`flex items-center gap-2 ${selected ? "text-ink" : "text-muted"}`}>
-          {selected && <BankLogo bank={selected} />}
-          {selected ? selected.name : placeholder}
-        </span>
-        <CaretDown size={14} weight="bold" className="shrink-0 text-muted" />
-      </button>
-
-      {open && (
-        <div className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-line bg-paper shadow-card">
-          <div className="border-b border-line p-2">
-            <input
-              autoFocus
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onBlur={() => {
-                blurTimeout.current = window.setTimeout(() => setOpen(false), 120);
-              }}
-              onFocus={() => {
-                if (blurTimeout.current) window.clearTimeout(blurTimeout.current);
-              }}
-              placeholder="Search banks"
-              className="w-full rounded-md bg-mist px-2.5 py-1.5 text-sm outline-none"
-            />
-          </div>
-          <div className="max-h-48 overflow-y-auto">
-            {results.map((b) => (
-              <button
-                key={b.code}
-                type="button"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  onSelect(b);
-                  setQuery("");
-                  setOpen(false);
-                }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-ink hover:bg-mist"
-              >
-                <BankLogo bank={b} />
-                {b.name}
-              </button>
-            ))}
-            {results.length === 0 && <p className="px-3 py-3 text-sm text-muted">No banks match.</p>}
-          </div>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setQuery("");
+      }}
+    >
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex w-full items-center justify-between rounded-md border border-border bg-card px-3 py-2.5 text-left text-sm outline-none focus:border-primary"
+        >
+          <span className={cn("flex items-center gap-2", selected ? "text-foreground" : "text-muted-foreground")}>
+            {selected && <BankLogo bank={selected} />}
+            {selected ? selected.name : placeholder}
+          </span>
+          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-[--radix-popover-trigger-width] overflow-hidden rounded-md border-border bg-card p-0 shadow-md">
+        <div className="border-b border-border p-2">
+          <Input
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onBlur={() => {
+              blurTimeout.current = window.setTimeout(() => setOpen(false), 120);
+            }}
+            onFocus={() => {
+              if (blurTimeout.current) window.clearTimeout(blurTimeout.current);
+            }}
+            placeholder="Search banks"
+            className="h-8 bg-surface-muted"
+          />
         </div>
-      )}
-    </div>
+        <div className="max-h-48 overflow-y-auto p-1">
+          {results.map((b) => (
+            <button
+              key={b.code}
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onSelect(b);
+                setQuery("");
+                setOpen(false);
+              }}
+              className="flex w-full items-center gap-2 rounded-sm px-2 py-2 text-left text-sm text-foreground hover:bg-surface-muted"
+            >
+              <BankLogo bank={b} />
+              {b.name}
+            </button>
+          ))}
+          {results.length === 0 && (
+            <p className="px-3 py-3 text-sm text-muted-foreground">No banks match "{query}".</p>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }

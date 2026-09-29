@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import { CalendarBlank, CaretLeft, CaretRight } from "@phosphor-icons/react";
+import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
+import { cn } from "cn";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
 
@@ -21,7 +22,8 @@ function sameDay(a: Date, b: Date) {
 
 /** A drop-in replacement for `<input type="date">` with the same `value`/`onChange(string)`
  * contract (YYYY-MM-DD) — the native picker renders wildly differently per browser/OS and doesn't
- * match the rest of the app's chrome, so every date field uses this instead. */
+ * match the rest of the app's chrome. Built on shadcn's `Popover` (no `calendar` primitive exists
+ * in this repo yet, so the grid itself is hand-built here, token-compliant). */
 export default function DatePicker({
   value,
   onChange,
@@ -37,11 +39,6 @@ export default function DatePicker({
   const [open, setOpen] = useState(false);
   const [viewMonth, setViewMonth] = useState(() => selected ?? new Date());
 
-  const openPicker = () => {
-    setViewMonth(selected ?? new Date());
-    setOpen(true);
-  };
-
   const year = viewMonth.getFullYear();
   const month = viewMonth.getMonth();
   const firstOfMonth = new Date(year, month, 1);
@@ -55,86 +52,83 @@ export default function DatePicker({
   ];
 
   return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={openPicker}
-        className={`flex w-full items-center justify-between gap-2 rounded-lg border border-line bg-paper px-3 py-2.5 text-left text-sm outline-none transition-colors focus:border-brand ${className}`}
-      >
-        <span className={selected ? "text-ink" : "text-muted"}>
-          {selected ? selected.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : placeholder}
-        </span>
-        <CalendarBlank size={15} weight="bold" className="shrink-0 text-muted" />
-      </button>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        if (next) setViewMonth(selected ?? new Date());
+        setOpen(next);
+      }}
+    >
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            "flex w-full items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2.5 text-left text-sm outline-none transition-colors focus:border-primary",
+            className
+          )}
+        >
+          <span className={selected ? "text-foreground" : "text-muted-foreground"}>
+            {selected ? selected.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : placeholder}
+          </span>
+          <CalendarIcon className="size-4 shrink-0 text-muted-foreground" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64 rounded-xl border-border bg-card p-3 shadow-md">
+        <div className="flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => setViewMonth(new Date(year, month - 1, 1))}
+            aria-label="Previous month"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-surface-muted hover:text-foreground"
+          >
+            <ChevronLeftIcon className="size-3.5" />
+          </button>
+          <span className="text-sm font-semibold text-foreground">
+            {viewMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+          </span>
+          <button
+            type="button"
+            onClick={() => setViewMonth(new Date(year, month + 1, 1))}
+            aria-label="Next month"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-surface-muted hover:text-foreground"
+          >
+            <ChevronRightIcon className="size-3.5" />
+          </button>
+        </div>
 
-      <AnimatePresence>
-        {open && (
-          <>
-            <button type="button" aria-hidden tabIndex={-1} className="fixed inset-0 z-10 cursor-default" onClick={() => setOpen(false)} />
-            <motion.div
-              initial={{ opacity: 0, y: -4, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -4, scale: 0.98 }}
-              transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
-              className="absolute top-full left-0 z-20 mt-1.5 w-64 rounded-lg border border-line bg-paper p-3 shadow-card"
-            >
-              <div className="flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={() => setViewMonth(new Date(year, month - 1, 1))}
-                  aria-label="Previous month"
-                  className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-mist hover:text-ink"
-                >
-                  <CaretLeft size={13} weight="bold" />
-                </button>
-                <span className="text-sm font-semibold text-ink">
-                  {viewMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setViewMonth(new Date(year, month + 1, 1))}
-                  aria-label="Next month"
-                  className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-mist hover:text-ink"
-                >
-                  <CaretRight size={13} weight="bold" />
-                </button>
-              </div>
-
-              <div className="mt-2.5 grid grid-cols-7 gap-y-1 text-center text-[11px] font-medium text-muted">
-                {WEEKDAYS.map((w, i) => (
-                  <span key={i}>{w}</span>
-                ))}
-              </div>
-              <div className="grid grid-cols-7 gap-y-1 text-center text-sm">
-                {cells.map((day, i) => {
-                  if (!day) return <span key={i} />;
-                  const isSelected = selected && sameDay(day, selected);
-                  const isToday = sameDay(day, today);
-                  return (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => {
-                        onChange(toIso(day));
-                        setOpen(false);
-                      }}
-                      className={`mx-auto flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
-                        isSelected
-                          ? "bg-brand font-semibold text-paper"
-                          : isToday
-                            ? "font-semibold text-brand hover:bg-mist"
-                            : "text-ink hover:bg-mist"
-                      }`}
-                    >
-                      {day.getDate()}
-                    </button>
-                  );
-                })}
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-    </div>
+        <div className="mt-2.5 grid grid-cols-7 gap-y-1 text-center text-[11px] font-medium text-muted-foreground">
+          {WEEKDAYS.map((w, i) => (
+            <span key={i}>{w}</span>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-y-1 text-center text-sm">
+          {cells.map((day, i) => {
+            if (!day) return <span key={i} />;
+            const isSelected = selected && sameDay(day, selected);
+            const isToday = sameDay(day, today);
+            return (
+              <button
+                key={i}
+                type="button"
+                onClick={() => {
+                  onChange(toIso(day));
+                  setOpen(false);
+                }}
+                className={cn(
+                  "mx-auto flex h-8 w-8 items-center justify-center rounded-full transition-colors",
+                  isSelected
+                    ? "bg-primary font-semibold text-primary-foreground"
+                    : isToday
+                      ? "font-semibold text-primary hover:bg-surface-muted"
+                      : "text-foreground hover:bg-surface-muted"
+                )}
+              >
+                {day.getDate()}
+              </button>
+            );
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }

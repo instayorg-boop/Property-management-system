@@ -13,13 +13,13 @@ import { useTenants } from "../TenantsContext";
 
 const tabClass = ({ active }: { active: boolean }) =>
   `relative flex w-full flex-col items-center justify-center gap-0.5 pt-1 text-[10px] font-medium transition-colors ${
-    active ? "text-brand" : "text-muted"
+    active ? "text-primary" : "text-muted-foreground"
   }`;
 
 function AttentionDot({ count }: { count: number }) {
   if (count <= 0) return null;
   return (
-    <span className="absolute top-1 right-[22%] h-1.5 w-1.5 rounded-full bg-red-500" />
+    <span className="absolute top-1 right-[22%] h-1.5 w-1.5 rounded-full bg-destructive" />
   );
 }
 
@@ -47,7 +47,7 @@ export default function MobileBottomNav() {
 
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-paper/95 backdrop-blur-md lg:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card/95 backdrop-blur-md lg:hidden"
       style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       aria-label="Mobile navigation"
     >

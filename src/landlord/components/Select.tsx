@@ -1,9 +1,18 @@
-import * as RadixSelect from "@radix-ui/react-select";
-import { CaretDown as ChevronDownIcon, Check as CheckIcon } from "@phosphor-icons/react";
+import {
+  Select as ShadcnSelect,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { cn } from "cn";
 
 export type SelectOption = { value: string; label: string };
 
-/** Shared dropdown/select control — same visual language everywhere it's used. */
+/** Shared dropdown/select control — thin wrapper around shadcn's `Select`, same visual language
+ * everywhere it's used. Shows a friendly, specific empty state (never "No data") when `options`
+ * is empty, since a bare dropdown with nothing in it otherwise looks broken rather than "nothing
+ * to pick from yet". */
 export default function Select({
   value,
   onChange,
@@ -18,38 +27,21 @@ export default function Select({
   className?: string;
 }) {
   return (
-    <RadixSelect.Root value={value} onValueChange={onChange}>
-      <RadixSelect.Trigger
-        className={`flex items-center gap-2 rounded-lg border border-line bg-paper px-3.5 py-2 text-sm font-medium text-ink outline-none data-[placeholder]:text-muted ${className}`}
-      >
-        <RadixSelect.Value placeholder={placeholder} />
-        <RadixSelect.Icon className="ml-auto text-muted">
-          <ChevronDownIcon size={14} weight="bold" />
-        </RadixSelect.Icon>
-      </RadixSelect.Trigger>
-
-      <RadixSelect.Portal>
-        <RadixSelect.Content
-          position="popper"
-          sideOffset={6}
-          className="z-50 min-w-[--radix-select-trigger-width] overflow-hidden rounded-lg border border-line bg-paper shadow-card"
-        >
-          <RadixSelect.Viewport className="p-1">
-            {options.map((o) => (
-              <RadixSelect.Item
-                key={o.value}
-                value={o.value}
-                className="relative flex cursor-pointer items-center rounded-md py-2 pr-3 pl-8 text-sm text-ink outline-none select-none data-[highlighted]:bg-mist data-[state=checked]:font-medium data-[state=checked]:text-brand"
-              >
-                <RadixSelect.ItemIndicator className="absolute left-2 flex items-center">
-                  <CheckIcon size={14} weight="bold" />
-                </RadixSelect.ItemIndicator>
-                <RadixSelect.ItemText>{o.label}</RadixSelect.ItemText>
-              </RadixSelect.Item>
-            ))}
-          </RadixSelect.Viewport>
-        </RadixSelect.Content>
-      </RadixSelect.Portal>
-    </RadixSelect.Root>
+    <ShadcnSelect value={value} onValueChange={onChange}>
+      <SelectTrigger className={cn("w-full rounded-md border-border bg-card text-sm font-medium", className)}>
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent>
+        {options.length === 0 ? (
+          <p className="px-3 py-4 text-center text-sm text-muted-foreground">Nothing to choose from yet.</p>
+        ) : (
+          options.map((o) => (
+            <SelectItem key={o.value} value={o.value}>
+              {o.label}
+            </SelectItem>
+          ))
+        )}
+      </SelectContent>
+    </ShadcnSelect>
   );
 }
