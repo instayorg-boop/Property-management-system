@@ -125,6 +125,26 @@ Deno.serve(async (req) => {
     });
   }
 
+  // Dedupe before ever touching Lenco — re-adding the same account (a double-click on "Confirm &
+  // connect", or re-running the add flow after a network hiccup made it look like it hadn't saved)
+  // used to silently create a second payout_recipients row for the identical account/bank, which
+  // then showed up as two indistinguishable entries in every recipient picker. Same account number
+  // + bank for this property already on file -> hand back that existing row instead of inserting.
+  const { data: existingRecipient } = await supabase
+    .from("payout_recipients")
+    .select()
+    .eq("property_id", propertyId)
+    .eq("type", "bank")
+    .eq("account_number", accountNumber)
+    .eq("bank_code", bankCode)
+    .maybeSingle();
+  if (existingRecipient) {
+    return new Response(JSON.stringify({ ok: true, recipient: existingRecipient }), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   let lencoRecipientId: string;
   try {
     const lencoResponse = await fetch("https://api.lenco.co/access/v2/transfer-recipients/bank-account", {

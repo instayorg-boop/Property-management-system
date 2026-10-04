@@ -13,7 +13,6 @@ import { useSidebar } from "../SidebarContext";
 import { useSettings } from "../SettingsContext";
 import { useNotifications } from "../NotificationsContext";
 import { signOut as signOutRequest } from "../../lib/auth";
-import NotificationsPanel from "./NotificationsPanel";
 import GlobalSearch from "./GlobalSearch";
 
 /** Full-width top bar — logo, search and account all live here, spanning the whole viewport width
@@ -26,23 +25,17 @@ export default function Header() {
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchDraft, setSearchDraft] = useState("");
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
-  const notificationsRef = useRef<HTMLDivElement>(null);
   const accountRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!accountOpen && !notificationsOpen) return;
+    if (!accountOpen) return;
     const onClick = (e: MouseEvent) => {
       if (accountRef.current && !accountRef.current.contains(e.target as Node)) setAccountOpen(false);
-      if (notificationsRef.current && !notificationsRef.current.contains(e.target as Node)) setNotificationsOpen(false);
     };
     const onEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setAccountOpen(false);
-        setNotificationsOpen(false);
-      }
+      if (e.key === "Escape") setAccountOpen(false);
     };
     document.addEventListener("mousedown", onClick);
     document.addEventListener("keydown", onEscape);
@@ -50,7 +43,7 @@ export default function Header() {
       document.removeEventListener("mousedown", onClick);
       document.removeEventListener("keydown", onEscape);
     };
-  }, [accountOpen, notificationsOpen]);
+  }, [accountOpen]);
 
   // Cmd/Ctrl+K opens global search from anywhere in the dashboard.
   useEffect(() => {
@@ -127,19 +120,15 @@ export default function Header() {
           <MagnifyingGlass size={18} weight="bold" />
         </button>
 
-        <div ref={notificationsRef} className="relative">
-          <button
-            type="button"
-            onClick={() => setNotificationsOpen((v) => !v)}
-            aria-label="Notifications"
-            aria-expanded={notificationsOpen}
-            className="relative flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-ink"
-          >
-            <BellIcon size={18} weight="bold" />
-            {unreadCount > 0 && <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-red-500" />}
-          </button>
-          {notificationsOpen && <NotificationsPanel onClose={() => setNotificationsOpen(false)} />}
-        </div>
+        <button
+          type="button"
+          onClick={() => navigate("/notifications")}
+          aria-label="Notifications"
+          className="relative flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-ink"
+        >
+          <BellIcon size={18} weight="bold" />
+          {unreadCount > 0 && <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-red-500" />}
+        </button>
 
         <div ref={accountRef} className="relative ml-1">
           <button

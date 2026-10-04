@@ -15,10 +15,13 @@ import {
   Lifebuoy,
   UserCircle,
   SignOut,
+  Plus,
 } from "@phosphor-icons/react";
 import { useSidebar } from "../SidebarContext";
 import { useMaintenance } from "../MaintenanceContext";
 import { useTenants } from "../TenantsContext";
+import CreateLauncherModal from "./CreateLauncherModal";
+import Button from "./Button";
 
 const icons = {
   dashboard: SquaresFour,
@@ -76,21 +79,9 @@ const groups: { label: string; items: NavItem[] }[] = [
   {
     label: "Insights",
     items: [
-      {
-        label: "Reports",
-        to: "/reports",
-        icon: "reports",
-        children: [
-          // MVP: keeping only these three, the rest are commented out, not deleted.
-          // { label: "Room rent roll", to: "/reports/bed-rent-roll" },
-          { label: "Overdue rent", to: "/reports/arrears-delinquency" },
-          // { label: "Payout statement", to: "/reports/owner-payout-statement" },
-          { label: "Income vs expenses", to: "/reports/income-expenses" },
-          // MVP: staff/payroll — see the note above.
-          // { label: "Payroll summary", to: "/reports/payroll-summary" },
-          { label: "Occupancy rate", to: "/reports/occupancy-rate" },
-        ],
-      },
+      // Reports now opens a single hub page (src/landlord/pages/Reports.tsx) with its own
+      // report-type cards, rather than expanding this nav item into a list of links in place.
+      { label: "Reports", to: "/reports", icon: "reports" },
     ],
   },
   {
@@ -185,6 +176,7 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
   const { open, setOpen } = useSidebar();
   const { reports } = useMaintenance();
   const { tenants } = useTenants();
+  const [createOpen, setCreateOpen] = useState(false);
 
   // Whether each nav item has something unread/overdue waiting — shown as a plain dot, no count.
   const attention: Partial<Record<string, boolean>> = {
@@ -202,6 +194,20 @@ const Sidebar = forwardRef<HTMLDivElement>(function Sidebar(_props, ref) {
         open ? "translate-x-0" : "-translate-x-full"
       }`}
     >
+      <div className="px-3 pt-4">
+        <Button
+          variant="primary"
+          type="button"
+          onClick={() => setCreateOpen(true)}
+          className="flex w-full items-center justify-center gap-1.5  bg-brand px-4 py-2 text-sm font-medium text-paper transition-transform hover:scale-[1.02]"
+        >
+          <Plus size={16} weight="bold" />
+          Create new
+        </Button>
+      </div>
+
+      {createOpen && <CreateLauncherModal onClose={() => setCreateOpen(false)} />}
+
       <nav className="flex-1  overflow-y-auto px-3 pb-4 pt-4">
         {groups.map((group) => (
           <div key={group.label}>

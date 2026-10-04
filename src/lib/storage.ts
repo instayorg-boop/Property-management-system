@@ -27,7 +27,7 @@ async function compressImage(file: File): Promise<{ blob: Blob; ext: string }> {
  * `folder` prefixes the object path (`${folder}/${uuid}${ext}`) — property-logos' storage policies check
  * ownership against that first path segment, the same convention tenant-documents uses. */
 export async function uploadPhoto(
-  bucket: "expense-photos" | "maintenance-photos" | "property-logos",
+  bucket: "expense-photos" | "maintenance-photos" | "property-logos" | "tenant-photos",
   file: File,
   folder?: string
 ): Promise<string> {

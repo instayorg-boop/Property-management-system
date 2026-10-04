@@ -20,7 +20,7 @@ import Button from "./Button";
 import {
   slugify,
   calcTenantInvoice,
-  dailyRentRate,
+  lateFeeDisclaimerLabel,
   computeInvoiceDates,
   isDueSoonOrPast,
   sendInvoiceViaWhatsApp,
@@ -141,7 +141,7 @@ export default function GenerateInvoicesOverlay({
     if (row.kind === "individual") {
       return {
         ...shared,
-        dailyPenaltyRate: dailyRentRate(row.calc.tenant),
+        lateFeeRateLabel: lateFeeDisclaimerLabel(row.calc.tenant),
         billToName: row.calc.tenant.name,
         billToSubline: `${row.calc.tenant.room} · ${propertyName}`,
         billToPhone: row.calc.tenant.phones[0] ?? "",
@@ -153,7 +153,7 @@ export default function GenerateInvoicesOverlay({
       ...shared,
       // An institution invoice can bundle tenants across different room types/rents — the first
       // tenant's rate stands in for the disclaimer line since there's no single "correct" one.
-      dailyPenaltyRate: dailyRentRate(row.calcs[0].tenant),
+      lateFeeRateLabel: lateFeeDisclaimerLabel(row.calcs[0].tenant),
       billToName: row.institution,
       billToSubline: `${row.calcs.length} tenant${row.calcs.length === 1 ? "" : "s"} · ${propertyName}`,
       lineItems: row.calcs.map((c) => ({ label: `${c.tenant.room} — ${c.tenant.name}`, amount: c.total })),

@@ -110,7 +110,7 @@ Deno.serve(async (req) => {
     });
   }
 
-  await supabase
+  const { data: updatedRows, error: updateError } = await supabase
     .from("payouts")
     .update({
       status: lencoStatus,
@@ -118,7 +118,20 @@ Deno.serve(async (req) => {
       failure_reason: lencoStatus === "failed" ? reasonForFailure : null,
     })
     .eq("id", payout.id)
-    .in("status", ["pending", "processing"]);
+    .in("status", ["pending", "processing"])
+    .select("id");
+
+  // Mirrors lenco-webhook's own failed-transfer handling: a failed transfer never actually moved
+  // this landlord's money, so the collections claimed for it need to be unlinked and credited back
+  // to property_balances, or the Payouts page's "Available balance" stays wrongly short by however
+  // much this payout had claimed. Only runs once (gated on updateRows actually finding the row
+  // still pending/processing) so a second poll against an already-settled payout doesn't double-release.
+  if (!updateError && lencoStatus === "failed" && updatedRows && updatedRows.length > 0) {
+    const { error: releaseError } = await supabase.rpc("pay_portal_release_payout_collections", { p_payout_id: payout.id });
+    if (releaseError) {
+      console.error("[check-payout-status] failed to release collections for failed payout", payout.id, releaseError.message);
+    }
+  }
 
   return new Response(
     JSON.stringify({ ok: true, status: lencoStatus, failureReason: lencoStatus === "failed" ? reasonForFailure : null }),

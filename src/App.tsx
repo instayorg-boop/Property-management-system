@@ -17,14 +17,20 @@ import Status from "./pages/Status";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 
-import PaymentLayout from "./pages/pay/PaymentLayout";
-import TenantBalance from "./pages/pay/TenantBalance";
-import PaymentSuccess from "./pages/pay/PaymentSuccess";
-import AllStatements from "./pages/pay/AllStatements";
-import PortalDocuments from "./pages/pay/PortalDocuments";
+import PortalLayout from "./pages/portal/PortalLayout";
+import PortalHome from "./pages/portal/PortalHome";
+import PortalCheckout from "./pages/portal/PortalCheckout";
+import PortalSuccess from "./pages/portal/PortalSuccess";
+import PortalFailed from "./pages/portal/PortalFailed";
+import PortalHistory from "./pages/portal/PortalHistory";
+import PortalMaintenance from "./pages/portal/PortalMaintenance";
+import PortalDocuments from "./pages/portal/PortalDocuments";
+import PortalPaymentDetail from "./pages/portal/PortalPaymentDetail";
 
 import DashboardLayout from "./landlord/components/DashboardLayout";
 import Dashboard from "./landlord/pages/Dashboard";
+import Tasks from "./landlord/pages/Tasks";
+import NotificationsPage from "./landlord/pages/Notifications";
 import Rent from "./landlord/pages/Rent";
 import Tenants from "./landlord/pages/Tenants";
 import AddTenant from "./landlord/pages/AddTenant";
@@ -47,6 +53,8 @@ import IncomeExpenses from "./landlord/pages/reports/IncomeExpenses";
 // import PayrollSummary from "./landlord/pages/reports/PayrollSummary";
 import OccupancyRate from "./landlord/pages/reports/OccupancyRate";
 import Settings from "./landlord/pages/Settings";
+import Reports from "./landlord/pages/Reports";
+import ReportGenerate from "./landlord/pages/ReportGenerate";
 import { useEffect } from "react";
 
 // ScrollToTop component for paramore between pages
@@ -81,16 +89,25 @@ export default function App() {
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/terms" element={<Terms />} />
 
-          <Route element={<PaymentLayout />}>
-            <Route path="/p/:token" element={<TenantBalance />} />
-            <Route path="/p/:token/success" element={<PaymentSuccess />} />
-            <Route path="/p/:token/statements" element={<AllStatements />} />
+          <Route element={<PortalLayout />}>
+            <Route path="/p/:token" element={<PortalHome />} />
+            <Route path="/p/:token/pay" element={<PortalCheckout />} />
+            <Route path="/p/:token/success" element={<PortalSuccess />} />
+            <Route path="/p/:token/failed" element={<PortalFailed />} />
+            <Route path="/p/:token/history" element={<PortalHistory />} />
+            <Route path="/p/:token/history/:entryKey" element={<PortalPaymentDetail />} />
+            <Route path="/p/:token/maintenance" element={<PortalMaintenance />} />
             <Route path="/p/:token/documents" element={<PortalDocuments />} />
+            {/* The history page used to live at /statements — tenants bookmark and re-share these
+                links, so the old path redirects rather than 404s. */}
+            <Route path="/p/:token/statements" element={<Navigate to="../history" replace relative="path" />} />
           </Route>
 
           <Route element={<RequireAuth />}>
             <Route element={<DashboardLayout />}>
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/tasks" element={<Tasks />} />
+              <Route path="/notifications" element={<NotificationsPage />} />
               <Route path="/rent" element={<Rent />} />
               <Route path="/tenants" element={<Tenants />} />
               <Route path="/tenants/new" element={<AddTenant />} />
@@ -100,6 +117,7 @@ export default function App() {
               <Route path="/maintenance" element={<Maintenance />} />
               <Route path="/expense-tracker" element={<Accounting />} />
               <Route path="/online-payments" element={<Payouts />} />
+              <Route path="/online-payments/transfer" element={<Payouts />} />
               {/* Old paths — "Accounting" was renamed to "Expense Tracker" — kept as redirects so any
                   existing bookmarks/links still land somewhere. */}
               <Route path="/accounting" element={<Navigate to="/expense-tracker" replace />} />
@@ -110,7 +128,8 @@ export default function App() {
               {/* <Route path="/staff/employees" element={<StaffEmployees />} /> */}
               {/* <Route path="/staff/payroll" element={<StaffPayroll />} /> */}
               {/* <Route path="/staff/clock" element={<StaffClock />} /> */}
-              <Route path="/reports" element={<Navigate to="/reports/income-expenses" replace />} />
+              <Route path="/reports" element={<Reports />} />
+              <Route path="/reports/:slug/generate" element={<ReportGenerate />} />
               {/* <Route path="/reports/bed-rent-roll" element={<BedRentRoll />} /> */}
               <Route path="/reports/arrears-delinquency" element={<ArrearsDelinquency />} />
               {/* <Route path="/reports/owner-payout-statement" element={<OwnerPayoutStatement />} /> */}

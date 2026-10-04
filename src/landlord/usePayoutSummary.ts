@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useSettings } from "./SettingsContext";
 import { formatCurrency } from "./TenantsContext";
+import { supabase } from "../lib/supabaseClient";
 import { getLencoBalance, listPayouts, type PayoutRecord } from "../lib/payoutApi";
 import type { UpcomingPayout } from "./components/PayoutDetailDrawer";
 
@@ -10,6 +11,12 @@ import type { UpcomingPayout } from "./components/PayoutDetailDrawer";
  * keeps its own separate copy for now rather than risk touching it in this pass. */
 export function usePayoutSummary() {
   const { propertyId, lencoConnected, bankName, accountNumber } = useSettings();
+  // Multiple call sites use this hook at once (the Payouts page itself, and the Transfer funds
+  // modal via useWithdrawFlow, both mounted together) — each needs its own Realtime channel name.
+  // Supabase-js keys channels by topic, so two hook instances subscribing under the same
+  // `payout-summary-balance:${propertyId}` name throws "cannot add postgres_changes callbacks ...
+  // after subscribe()" the moment the second one mounts, which crashed the modal outright.
+  const instanceId = useId();
 
   const [lencoAvailable, setLencoAvailable] = useState<number | null>(null);
   useEffect(() => {
@@ -24,6 +31,35 @@ export function usePayoutSummary() {
       cancelled = true;
     };
   }, [propertyId]);
+
+  // Live updates — same debounced postgres_changes refetch Dashboard.tsx uses for its own copy of
+  // this figure, so the Accounting header pill / Settings "Available to withdraw" block don't sit on
+  // a stale balance until the component remounts.
+  useEffect(() => {
+    if (!propertyId) return;
+    let cancelled = false;
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const refetch = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        getLencoBalance(propertyId)
+          .then(({ available }) => {
+            if (!cancelled) setLencoAvailable(available);
+          })
+          .catch((e) => console.error("Failed to refresh Lenco balance after a live update", e));
+      }, 250);
+    };
+    const channel = supabase
+      .channel(`payout-summary-balance:${propertyId}:${instanceId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "collections", filter: `property_id=eq.${propertyId}` }, refetch)
+      .on("postgres_changes", { event: "*", schema: "public", table: "payouts", filter: `property_id=eq.${propertyId}` }, refetch)
+      .subscribe();
+    return () => {
+      cancelled = true;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      void supabase.removeChannel(channel);
+    };
+  }, [propertyId, instanceId]);
 
   // The most recent payout attempt — drives the pill's failed-transfer status dot and the
   // "last payout" date shown in Settings. Not the full history (see listPayouts elsewhere for that).

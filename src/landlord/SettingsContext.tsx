@@ -2,11 +2,11 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { getOrCreatePrimaryProperty, listProperties, createProperty, updateProperty, uploadPropertyLogo as uploadPropertyLogoRequest } from "../lib/properties";
 import { getOrCreateSettings, updateSettings, type SettingsRow } from "../lib/settingsApi";
 import { readSettingsCache, writeSettingsCache } from "../lib/offline/settingsCache";
+import { setLateFeeConfig, type LateFeeMode } from "./invoiceUtils";
 
 export type NotificationPrefs = {
   newPayment: boolean;
   newMaintenanceReport: boolean;
-  upcomingPayout: boolean;
   overdueEscalated: boolean;
 };
 
@@ -14,7 +14,6 @@ export type NotificationPrefs = {
  * `paymentSmsMode` since it needs a digest choice, not just on/off. */
 export type SmsNotificationPrefs = {
   newMaintenanceReport: boolean;
-  upcomingPayout: boolean;
   overdueEscalated: boolean;
 };
 
@@ -84,6 +83,19 @@ type SettingsContextValue = {
   setGracePeriodDays: (v: number) => void;
   dailyPenaltyRate: number;
   setDailyPenaltyRate: (v: number) => void;
+  /** Whether this property charges automatic late fees at all. */
+  lateFeeEnabled: boolean;
+  setLateFeeEnabled: (v: boolean) => void;
+  /** How the automatic late fee accrues once a charge is overdue. */
+  lateFeeMode: LateFeeMode;
+  setLateFeeMode: (v: LateFeeMode) => void;
+  /** % of rent charged per day overdue, only used when lateFeeMode is "percent_of_rent". */
+  lateFeePercent: number;
+  setLateFeePercent: (v: number) => void;
+  lateFeeCapEnabled: boolean;
+  setLateFeeCapEnabled: (v: boolean) => void;
+  lateFeeCapAmount: number | null;
+  setLateFeeCapAmount: (v: number | null) => void;
 
   // Reminders — read by the reminder-automation workflow once built.
   reminderLeadDays: number;
@@ -92,6 +104,18 @@ type SettingsContextValue = {
   setEscalationDays: (v: number) => void;
   contactOrder: "student" | "guardian";
   setContactOrder: (v: "student" | "guardian") => void;
+  preDueRemindersEnabled: boolean;
+  setPreDueRemindersEnabled: (v: boolean) => void;
+  escalationEnabled: boolean;
+  setEscalationEnabled: (v: boolean) => void;
+
+  // Today's Tasks detectors — each can be switched off independently of the others.
+  taskOverdueRentEnabled: boolean;
+  setTaskOverdueRentEnabled: (v: boolean) => void;
+  taskStaleMaintenanceEnabled: boolean;
+  setTaskStaleMaintenanceEnabled: (v: boolean) => void;
+  taskCollectionsTargetEnabled: boolean;
+  setTaskCollectionsTargetEnabled: (v: boolean) => void;
 
   // Notifications
   notificationPrefs: NotificationPrefs;
@@ -155,20 +179,28 @@ function fromRow(row: SettingsRow) {
     dueDay: row.due_day,
     gracePeriodDays: row.grace_period_days,
     dailyPenaltyRate: row.daily_penalty_rate,
+    lateFeeEnabled: row.late_fee_enabled ?? true,
+    lateFeeMode: (row.late_fee_mode as LateFeeMode) ?? "prorated_rent",
+    lateFeePercent: row.late_fee_percent ?? 1,
+    lateFeeCapEnabled: row.late_fee_cap_enabled ?? false,
+    lateFeeCapAmount: row.late_fee_cap_amount ?? null,
     reminderLeadDays: row.reminder_lead_days,
     escalationDays: row.escalation_days,
     contactOrder: row.contact_order as "student" | "guardian",
+    preDueRemindersEnabled: row.pre_due_reminders_enabled ?? true,
+    escalationEnabled: row.escalation_enabled ?? true,
+    taskOverdueRentEnabled: row.task_overdue_rent_enabled ?? true,
+    taskStaleMaintenanceEnabled: row.task_stale_maintenance_enabled ?? true,
+    taskCollectionsTargetEnabled: row.task_collections_target_enabled ?? true,
     notificationPrefs: {
       newPayment: prefs.newPayment ?? true,
       newMaintenanceReport: prefs.newMaintenanceReport ?? true,
-      upcomingPayout: prefs.upcomingPayout ?? true,
       overdueEscalated: prefs.overdueEscalated ?? true,
     },
     notificationPhone: row.notification_phone ?? "",
     paymentSmsMode: (row.payment_sms_mode as PaymentSmsMode) ?? "daily_digest",
     smsNotificationPrefs: {
       newMaintenanceReport: smsPrefs.newMaintenanceReport ?? true,
-      upcomingPayout: smsPrefs.upcomingPayout ?? true,
       overdueEscalated: smsPrefs.overdueEscalated ?? true,
     },
     sendOnboardingSms: row.send_onboarding_sms ?? true,
@@ -215,15 +247,24 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [dueDay, setDueDayState] = useState(30);
   const [gracePeriodDays, setGracePeriodDaysState] = useState(5);
   const [dailyPenaltyRate, setDailyPenaltyRateState] = useState(15);
+  const [lateFeeEnabled, setLateFeeEnabledState] = useState(true);
+  const [lateFeeMode, setLateFeeModeState] = useState<LateFeeMode>("prorated_rent");
+  const [lateFeePercent, setLateFeePercentState] = useState(1);
+  const [lateFeeCapEnabled, setLateFeeCapEnabledState] = useState(false);
+  const [lateFeeCapAmount, setLateFeeCapAmountState] = useState<number | null>(null);
 
   const [reminderLeadDays, setReminderLeadDaysState] = useState(3);
   const [escalationDays, setEscalationDaysState] = useState(7);
   const [contactOrder, setContactOrderState] = useState<"student" | "guardian">("student");
+  const [preDueRemindersEnabled, setPreDueRemindersEnabledState] = useState(true);
+  const [escalationEnabled, setEscalationEnabledState] = useState(true);
+  const [taskOverdueRentEnabled, setTaskOverdueRentEnabledState] = useState(true);
+  const [taskStaleMaintenanceEnabled, setTaskStaleMaintenanceEnabledState] = useState(true);
+  const [taskCollectionsTargetEnabled, setTaskCollectionsTargetEnabledState] = useState(true);
 
   const [notificationPrefs, setNotificationPrefsState] = useState<NotificationPrefs>({
     newPayment: true,
     newMaintenanceReport: true,
-    upcomingPayout: true,
     overdueEscalated: true,
   });
 
@@ -231,7 +272,6 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [paymentSmsMode, setPaymentSmsModeState] = useState<PaymentSmsMode>("daily_digest");
   const [smsNotificationPrefs, setSmsNotificationPrefsState] = useState<SmsNotificationPrefs>({
     newMaintenanceReport: true,
-    upcomingPayout: true,
     overdueEscalated: true,
   });
   const [sendOnboardingSms, setSendOnboardingSmsState] = useState(true);
@@ -264,9 +304,19 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setDueDayState(s.dueDay);
     setGracePeriodDaysState(s.gracePeriodDays);
     setDailyPenaltyRateState(s.dailyPenaltyRate);
+    setLateFeeEnabledState(s.lateFeeEnabled);
+    setLateFeeModeState(s.lateFeeMode);
+    setLateFeePercentState(s.lateFeePercent);
+    setLateFeeCapEnabledState(s.lateFeeCapEnabled);
+    setLateFeeCapAmountState(s.lateFeeCapAmount);
     setReminderLeadDaysState(s.reminderLeadDays);
     setEscalationDaysState(s.escalationDays);
     setContactOrderState(s.contactOrder);
+    setPreDueRemindersEnabledState(s.preDueRemindersEnabled);
+    setEscalationEnabledState(s.escalationEnabled);
+    setTaskOverdueRentEnabledState(s.taskOverdueRentEnabled);
+    setTaskStaleMaintenanceEnabledState(s.taskStaleMaintenanceEnabled);
+    setTaskCollectionsTargetEnabledState(s.taskCollectionsTargetEnabled);
     setNotificationPrefsState(s.notificationPrefs);
     setNotificationPhoneState(s.notificationPhone);
     setPaymentSmsModeState(s.paymentSmsMode);
@@ -284,6 +334,21 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setNapsaInsurableEarningsCeilingState(s.napsaInsurableEarningsCeiling);
     setMinimumWageReferenceState(s.minimumWageReference);
   };
+
+  // Keeps invoiceUtils' module-level late-fee config in sync with whatever this provider's state
+  // currently is — landlord-side callers (calcPenalty et al.) read it without needing settings
+  // threaded into every call site. Covers both the initial load (applySettingsRow) and any later
+  // edit on the Settings page, since it's keyed on the state itself, not on who changed it.
+  useEffect(() => {
+    setLateFeeConfig({
+      enabled: lateFeeEnabled,
+      mode: lateFeeMode,
+      fixedAmountPerDay: dailyPenaltyRate,
+      percentPerDay: lateFeePercent,
+      capEnabled: lateFeeCapEnabled,
+      capAmount: lateFeeCapAmount,
+    });
+  }, [lateFeeEnabled, lateFeeMode, dailyPenaltyRate, lateFeePercent, lateFeeCapEnabled, lateFeeCapAmount]);
 
   useEffect(() => {
     let cancelled = false;
@@ -421,6 +486,26 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setDailyPenaltyRateState(v);
     persist({ daily_penalty_rate: v });
   };
+  const setLateFeeEnabled = (v: boolean) => {
+    setLateFeeEnabledState(v);
+    persist({ late_fee_enabled: v });
+  };
+  const setLateFeeMode = (v: LateFeeMode) => {
+    setLateFeeModeState(v);
+    persist({ late_fee_mode: v });
+  };
+  const setLateFeePercent = (v: number) => {
+    setLateFeePercentState(v);
+    persist({ late_fee_percent: v });
+  };
+  const setLateFeeCapEnabled = (v: boolean) => {
+    setLateFeeCapEnabledState(v);
+    persist({ late_fee_cap_enabled: v });
+  };
+  const setLateFeeCapAmount = (v: number | null) => {
+    setLateFeeCapAmountState(v);
+    persist({ late_fee_cap_amount: v });
+  };
   const setReminderLeadDays = (v: number) => {
     setReminderLeadDaysState(v);
     persist({ reminder_lead_days: v });
@@ -432,6 +517,26 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const setContactOrder = (v: "student" | "guardian") => {
     setContactOrderState(v);
     persist({ contact_order: v });
+  };
+  const setPreDueRemindersEnabled = (v: boolean) => {
+    setPreDueRemindersEnabledState(v);
+    persist({ pre_due_reminders_enabled: v });
+  };
+  const setEscalationEnabled = (v: boolean) => {
+    setEscalationEnabledState(v);
+    persist({ escalation_enabled: v });
+  };
+  const setTaskOverdueRentEnabled = (v: boolean) => {
+    setTaskOverdueRentEnabledState(v);
+    persist({ task_overdue_rent_enabled: v });
+  };
+  const setTaskStaleMaintenanceEnabled = (v: boolean) => {
+    setTaskStaleMaintenanceEnabledState(v);
+    persist({ task_stale_maintenance_enabled: v });
+  };
+  const setTaskCollectionsTargetEnabled = (v: boolean) => {
+    setTaskCollectionsTargetEnabledState(v);
+    persist({ task_collections_target_enabled: v });
   };
   const setLencoConnected = (v: boolean) => {
     setLencoConnectedState(v);
@@ -550,12 +655,32 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         setGracePeriodDays,
         dailyPenaltyRate,
         setDailyPenaltyRate,
+        lateFeeEnabled,
+        setLateFeeEnabled,
+        lateFeeMode,
+        setLateFeeMode,
+        lateFeePercent,
+        setLateFeePercent,
+        lateFeeCapEnabled,
+        setLateFeeCapEnabled,
+        lateFeeCapAmount,
+        setLateFeeCapAmount,
         reminderLeadDays,
         setReminderLeadDays,
         escalationDays,
         setEscalationDays,
         contactOrder,
         setContactOrder,
+        preDueRemindersEnabled,
+        setPreDueRemindersEnabled,
+        escalationEnabled,
+        setEscalationEnabled,
+        taskOverdueRentEnabled,
+        setTaskOverdueRentEnabled,
+        taskStaleMaintenanceEnabled,
+        setTaskStaleMaintenanceEnabled,
+        taskCollectionsTargetEnabled,
+        setTaskCollectionsTargetEnabled,
         notificationPrefs,
         setNotificationPref,
         notificationPhone,

@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   CaretDown,
@@ -872,6 +872,7 @@ const statusFilters: ("all" | RoomStatus)[] = [
 
 export default function Rooms() {
   const navigate = useNavigate();
+  const location = useLocation();
   const {
     markReady,
     markNotReady,
@@ -897,6 +898,17 @@ export default function Rooms() {
   );
   const [payingTenant, setPayingTenant] = useState<Tenant | null>(null);
   const [addingType, setAddingType] = useState(false);
+
+  // Picked up when the global Create launcher (Sidebar.tsx) navigates here with
+  // ?action=add-room-type instead of clicking this page's own "+ Add room type" button — cleared
+  // immediately after so a refresh or back/forward doesn't reopen the drawer.
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get("action") === "add-room-type") {
+      setAddingType(true);
+      navigate(location.pathname, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search]);
   const [editingType, setEditingType] = useState<RoomTypeConfig | null>(null);
   const [deletingType, setDeletingType] = useState<RoomTypeConfig | null>(null);
   const [deletingRoomNumber, setDeletingRoomNumber] = useState<string | null>(

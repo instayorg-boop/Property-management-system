@@ -92,7 +92,7 @@ Deno.serve(async (req) => {
 
   let settingsQuery = supabase
     .from("settings")
-    .select("property_id, due_day, grace_period_days, reminder_lead_days, escalation_days, contact_order, sms_notification_prefs");
+    .select("property_id, due_day, grace_period_days, reminder_lead_days, escalation_days, contact_order, sms_notification_prefs, pre_due_reminders_enabled, escalation_enabled");
   if (body.propertyId) settingsQuery = settingsQuery.eq("property_id", body.propertyId);
   const { data: settingsRows, error: settingsError } = await settingsQuery;
   if (settingsError) {
@@ -119,6 +119,8 @@ Deno.serve(async (req) => {
       if (Number(tenant.owed_amount ?? 0) <= 0) continue; // fully settled — nothing to remind or escalate
 
       // --- Pre-due reminder ---------------------------------------------------------------
+      let plan: ReturnType<typeof planRentCharge> | null = null;
+      if (settings.pre_due_reminders_enabled !== false) {
       const chargeTenant: TenantForCharge = {
         id: tenant.id,
         rent_amount: tenant.rent_amount,
@@ -129,7 +131,7 @@ Deno.serve(async (req) => {
         grace_period_days: tenant.grace_period_days,
       };
       const billingSettings: SettingsForBilling = { due_day: settings.due_day, grace_period_days: settings.grace_period_days };
-      const plan = planRentCharge(chargeTenant, billingSettings, periodDate);
+      plan = planRentCharge(chargeTenant, billingSettings, periodDate);
 
       if (plan) {
         const reminderDate = subtractDaysYMD(plan.dueDate, settings.reminder_lead_days ?? 0);
@@ -157,10 +159,11 @@ Deno.serve(async (req) => {
           }
         }
       }
+      }
 
       // --- Escalation -----------------------------------------------------------------------
       const daysOverdue = tenant.days_overdue ?? 0;
-      if (daysOverdue >= (settings.escalation_days ?? Infinity)) {
+      if (settings.escalation_enabled !== false && daysOverdue >= (settings.escalation_days ?? Infinity)) {
         const billingPeriodId = plan?.billingPeriodId ?? `${periodDate.getFullYear()}-${String(periodDate.getMonth() + 1).padStart(2, "0")}`;
         const claimed = await claimReminder(supabase, tenant.id, billingPeriodId, "escalation");
         if (claimed) {

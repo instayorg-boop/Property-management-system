@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ArrowLeft,
   CaretLeft,
   DownloadSimple,
   Wallet,
@@ -9,11 +9,12 @@ import {
   WarningCircle,
   ArrowsLeftRight,
   PaperPlaneTilt,
+  ShieldCheck,
+  LockSimple,
   Laptop as LaptopIcon,
   Coins as CoinsIcon,
   Trash as TrashIcon,
   Plus as PlusIconBase,
-  CalendarBlank,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 import PageHeader from "../components/PageHeader";
@@ -30,6 +31,8 @@ import { useIsOwner } from "../useIsOwner";
 import { useWithdrawFlow, recipientLabel } from "../useWithdrawFlow";
 import { usePayoutSummary } from "../usePayoutSummary";
 import { MOBILE_MONEY_LOGO } from "../../lib/mobileMoneyProviders";
+import { supabase } from "../../lib/supabaseClient";
+import { edgeFunctionErrorMessage } from "../../lib/functionsError";
 import {
   listPayouts,
   listCollections,
@@ -55,14 +58,28 @@ function PlusIcon() {
   return <PlusIconBase size={14} weight="bold" />;
 }
 
-/** "Main Account" -> "MA", "K1.50" -> "K1" — first letter of up to the first two words, uppercased.
- * Only used for a bank recipient's avatar; mobile money gets the provider's actual logo instead. */
-function initials(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  return words.slice(0, 2).map((w) => w[0]!.toUpperCase()).join("") || "?";
-}
+const TRANSFER_STEPS = ["Review", "Verify", "Done"] as const;
 
-const TRANSFER_STEPS = ["Select method", "Verify", "Done"] as const;
+// Mirrors lenco-payout/index.ts's FEE_TIERS + ON_DEMAND_MARKUP exactly, so the review step can show
+// the real fee the landlord is about to pay instead of a vague "fees may apply" — display only,
+// never trusted for the actual charge, which the edge function still computes and enforces itself.
+const FEE_TIERS: { upTo: number; fee: number }[] = [
+  { upTo: 150, fee: 8.5 },
+  { upTo: 300, fee: 10 },
+  { upTo: 500, fee: 11 },
+  { upTo: 1_000, fee: 12 },
+  { upTo: 3_000, fee: 15 },
+  { upTo: 5_000, fee: 18 },
+  { upTo: 10_000, fee: 20 },
+  { upTo: 50_000, fee: 25 },
+  { upTo: 100_000_000, fee: 35 },
+];
+const ON_DEMAND_MARKUP = 5;
+
+function estimateTransferFee(amount: number): number {
+  const tier = FEE_TIERS.find((t) => amount <= t.upTo) ?? FEE_TIERS[FEE_TIERS.length - 1];
+  return tier.fee + ON_DEMAND_MARKUP;
+}
 
 /** Which of the 3 named steps the current useWithdrawFlow `step` maps to — that hook's states are
  * finer-grained (otp-sending vs otp, sending vs success vs error) than what's worth showing the
@@ -113,16 +130,16 @@ function TransferStepper({ current, onBack }: { current: number; onBack?: () => 
 /** A payout method's avatar — the provider's real logo for mobile money (same brand icons the
  * tenant payment portal shows), initials in a plain circle for bank, matching the "MA / Main /
  * K1.50 / Main" reference card style the landlord pointed to. */
+/** Mobile money gets the provider's real logo (MTN/Airtel/Zamtel). Bank has no equivalent — there's
+ * no local bank-logo set to draw from — so rather than a generic "MC" initials circle implying a
+ * brand mark that doesn't actually mean anything, a bank recipient gets no avatar at all; the name
+ * and masked account number already say everything the circle would have. */
 function MethodAvatar({ recipient }: { recipient: PayoutRecipient }) {
   if (recipient.type === "mobile-money" && recipient.provider) {
     const logo = MOBILE_MONEY_LOGO[recipient.provider as keyof typeof MOBILE_MONEY_LOGO];
     if (logo) return <img src={logo} alt="" className="h-9 w-9 shrink-0 rounded-full object-cover" />;
   }
-  return (
-    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-mist text-sm font-bold text-ink">
-      {initials(recipient.account_name || recipient.provider || "?")}
-    </span>
-  );
+  return null;
 }
 
 function MethodRow({ recipient, selected, onSelect }: { recipient: PayoutRecipient; selected: boolean; onSelect: () => void }) {
@@ -215,31 +232,6 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
-function downloadCsv(filename: string, rows: PayoutRecord[]) {
-  const header = ["Date", "Amount", "Fee", "Net", "Method", "Status", "Failure reason"];
-  const lines = rows.map((r) =>
-    [
-      formatDate(r.createdAt),
-      r.amount,
-      r.feeAmount ?? "",
-      r.netAmount ?? "",
-      r.recipient ? recipientLabel(r.recipient as PayoutRecipient) : "",
-      statusLabel[r.status],
-      r.failureReason ?? "",
-    ]
-      .map((v) => `"${String(v).replace(/"/g, '""')}"`)
-      .join(",")
-  );
-  const csv = [header.join(","), ...lines].join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 // Defaults to "successful" (unlike the transfers table's "all") — most of the time a landlord
 // checking "did rent come in" wants completed payments, not the stray pending/failed attempts
 // mixed in.
@@ -264,31 +256,6 @@ const collectionStatusStyle: Record<CollectionStatus, string> = {
   failed: "bg-red-50 text-red-600",
 };
 
-function downloadCollectionsCsv(filename: string, rows: CollectionRecord[]) {
-  const header = ["Date", "Tenant", "Amount", "Operator", "Phone", "Status", "Failure reason"];
-  const lines = rows.map((r) =>
-    [
-      formatDate(r.createdAt),
-      r.tenantName ?? "",
-      r.amount,
-      r.operator.toUpperCase(),
-      r.phone,
-      collectionStatusLabel[r.status],
-      r.failureReason ?? "",
-    ]
-      .map((v) => `"${String(v).replace(/"/g, '""')}"`)
-      .join(",")
-  );
-  const csv = [header.join(","), ...lines].join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 /** Same visual language as TenantProfile's stat row — icon + small-caps label, a big value
  * underneath, an optional caption line. Kept local rather than shared since neither page exports
  * its copy. */
@@ -311,7 +278,7 @@ function StatCard({
         {icon}
         {label}
       </p>
-      <p className={`font-display mt-2 text-2xl font-bold tracking-tight sm:text-[28px] ${valueClassName || "text-ink"}`}>{value}</p>
+      <div className={`font-display mt-2 text-2xl font-bold tracking-tight sm:text-[28px] ${valueClassName || "text-ink"}`}>{value}</div>
       {caption && <p className="mt-0.5 text-xs text-muted">{caption}</p>}
     </div>
   );
@@ -319,18 +286,27 @@ function StatCard({
 
 /** The "Transfer funds" flow — select which payout method to use, an email-OTP confirmation, then
  * the result (success or failure, with a reason) shown right here since a transfer resolves near-
- * instantly. Deliberately can't be dismissed by clicking outside or Escape (Modal's
- * disableBackdropClose) — only the X button closes it, so a landlord mid-transfer can't lose their
- * place to an accidental click. Shares its state machine with Settings' inline "Available to
- * withdraw" block via useWithdrawFlow; this component only owns this modal's own layout. */
-function TransferFundsModal({
+ * instantly. Rendered inline in place of the balance/history view (same pattern BankConnectWizard
+ * uses below) rather than a modal — a transfer moving real money reads as more deliberate as its
+ * own full page than as a dismissable overlay sitting on top of everything else, and it keeps the
+ * whole context (balance, recent transfers) one scroll away instead of hidden behind it. The "Back"
+ * control is hidden during "sending" for the same reason the old modal disabled backdrop-close
+ * then — a landlord mid-transfer shouldn't be able to navigate away and lose track of it. Shares
+ * its state machine with Settings' inline "Available to withdraw" block via useWithdrawFlow; this
+ * component only owns this panel's own layout. */
+function TransferFundsPanel({
+  propertyId,
   recipients,
   onClose,
-  onAddMethod,
+  onRecipientAdded,
 }: {
+  propertyId: string;
   recipients: PayoutRecipient[];
   onClose: () => void;
-  onAddMethod: () => void;
+  /** Adding a mobile money number happens right here (AddMobileMoneyRecipient is self-contained —
+   * its own form/OTP/saving states), so this is only ever called to refresh the recipients list
+   * afterward, never to navigate anywhere. */
+  onRecipientAdded: () => void;
 }) {
   const {
     payout,
@@ -347,6 +323,11 @@ function TransferFundsModal({
     submit,
     result,
   } = useWithdrawFlow(recipients);
+  // usePayoutSummary's own `payout` is null both while the balance is still loading AND once it's
+  // confirmed there's nothing to withdraw — those need different UI (a loading state vs. an actual
+  // empty state), so this reads lencoAvailable separately to tell the two apart.
+  const { lencoAvailable } = usePayoutSummary();
+  const balanceLoading = lencoAvailable === null;
 
   // The modal always opens straight into method-selection — "idle" is only meaningful for the
   // inline Settings block, which has its own separate "Withdraw" button to get there.
@@ -355,16 +336,16 @@ function TransferFundsModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Buttons live in the Modal's fixed footer, not inline in each step's content, so they don't
-  // shift position as the step above them changes height. Each one is named for what happens
-  // next, not a generic "Start"/"Continue" — "Continue to verification" tells you a code is
-  // coming, not just that *something* is about to happen.
+  // Buttons live in a fixed block below the content, not inline in each step's content, so they
+  // don't shift position as the step above them changes height. Each one is named for what happens
+  // next, not a generic "Start"/"Continue" — "Confirm and send code" tells you a code is coming,
+  // not just that *something* is about to happen.
   const footer = !payout
     ? undefined
     : step === "confirm"
       ? (
           <Button variant="primary" className="w-full py-2.5" disabled={!selectedRecipient} onClick={startConfirmation}>
-            Continue to verification
+            Confirm and send code
           </Button>
         )
       : step === "otp" || step === "otp-sending"
@@ -397,23 +378,64 @@ function TransferFundsModal({
               )
             : undefined; // "sending" — nothing to do but wait
 
-  return (
-    <Modal onClose={onClose} title="Transfer funds" disableBackdropClose maxWidth="max-w-md" footer={footer}>
-      {payout && <TransferStepper current={stepperIndex(step)} onBack={step === "otp" ? () => setStep("confirm") : undefined} />}
+  // Hidden once a transfer is actually in flight (same reasoning the old modal's disableBackdropClose
+  // covered) — everywhere else, leaving mid-flow is safe (nothing's been sent yet, or it's already
+  // resolved), so there's no reason to trap the landlord here.
+  const canLeave = step !== "sending";
 
-      {/* Fixed height across every step, not just whatever that step's content happens to need —
-          so the modal doesn't visibly grow/shrink as you move between "pick a method" and "enter a
-          code". Steps with less content (sending/success/error) center within it instead of
-          sitting flush at the top. */}
-      <div className="flex min-h-90 flex-col">
+  return (
+    <>
+      <PageHeader
+        title="Transfer funds"
+        description={
+          payout
+            ? `Send ${payout.amount} to one of your saved payout methods.`
+            : balanceLoading
+              ? "Checking your available balance…"
+              : "Nothing available to transfer yet."
+        }
+        actions={
+          canLeave ? (
+            <Button variant="outline" className="gap-1.5" onClick={onClose}>
+              <CaretLeft size={14} weight="bold" />
+              Back to Online payments
+            </Button>
+          ) : undefined
+        }
+      />
+
+      {/* Side by side on a wide page — the flow on the left, a persistent amount/fee/destination
+          summary on the right (sticky, so it's still visible while scrolling the method list or
+          typing a code) — rather than stacking everything into one narrow centered column, which
+          left most of a full page's width empty on anything wider than a phone. */}
+      <div className="grid grid-cols-1 gap-6 px-4 pb-10 sm:px-8 lg:grid-cols-[1fr_320px]">
+        <div className="min-w-0  bg-paper ">
+          {payout && <TransferStepper current={stepperIndex(step)} onBack={step === "otp" ? () => setStep("confirm") : undefined} />}
+
+          {/* No fixed min-height here on purpose — the card should size to whatever the current step
+              actually needs (a short method list vs. a loading/empty state) rather than always
+              reserving the same tall block and leaving empty space underneath. */}
+          <div className="mt-5 flex flex-col">
         <AnimatePresence mode="wait">
-          {!payout ? (
+          {balanceLoading ? (
+            <motion.div
+              key="loading"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex flex-col items-center gap-3 py-10 text-center"
+            >
+              <Skeleton className="h-12 w-12 rounded-full" />
+              <Skeleton className="h-3 w-40" />
+              <Skeleton className="h-3 w-56" />
+            </motion.div>
+          ) : !payout ? (
             <motion.div
               key="empty"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="flex flex-1 flex-col items-center justify-center gap-3 text-center"
+              className="flex flex-col items-center gap-3 py-10 text-center"
             >
               <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
                 <Wallet size={22} weight="duotone" />
@@ -484,13 +506,18 @@ function TransferFundsModal({
             </motion.div>
           ) : step === "otp" || step === "otp-sending" ? (
             <motion.div key="otp" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex-1">
-              <p className="font-display text-lg font-semibold text-ink">Enter confirmation code</p>
-              <p className="mt-1 text-sm text-muted">
+              <div className="flex justify-center">
+                <span className="flex h-11 w-11 items-center justify-center rounded-full bg-brand-soft text-brand">
+                  <LockSimple size={18} weight="bold" />
+                </span>
+              </div>
+              <p className="font-display mt-3 text-center text-lg font-semibold text-ink">Enter confirmation code</p>
+              <p className="mt-1 text-center text-sm text-muted">
                 {step === "otp-sending" ? "Sending a code…" : `We emailed a 6-digit code to ${maskedEmail}. It expires in 5 minutes.`}
               </p>
               {devCode && (
-                <p className="mt-1 text-xs text-amber-600">
-                  Dev mode — email isn't connected yet, your code is <span className="font-mono font-semibold">{devCode}</span>.
+                <p className="mt-1 text-center text-xs text-amber-600">
+                  Dev mode - email isn't connected yet, your code is <span className="font-mono font-semibold">{devCode}</span>.
                 </p>
               )}
               <OtpBoxes
@@ -502,6 +529,9 @@ function TransferFundsModal({
                 disabled={step === "otp-sending"}
               />
               {error && <p className="mt-2 text-center text-xs text-red-600">{error}</p>}
+              <p className="mt-4 text-center text-[11px] text-muted">
+                Didn't request this? Close this window — nothing is sent until the code above is confirmed.
+              </p>
             </motion.div>
           ) : step === "error" ? (
             <motion.div
@@ -522,20 +552,15 @@ function TransferFundsModal({
                   and the balance looks off. */}
             </motion.div>
           ) : (
-            // step "confirm" — select a method, then start.
+            // step "confirm" — review the amount, pick a destination, see the real fee, then start.
             <motion.div key="confirm" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex-1">
-              <p className="text-sm text-muted">{payout.amount} ready to transfer. Choose where it goes, then continue.</p>
-              <label className="mt-4 mb-1.5 block text-xs font-medium text-muted">Select a method</label>
+              <label className="mb-1.5 block text-xs font-medium text-muted">Select a method</label>
               {recipients.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-line px-4 py-4 text-center">
                   <p className="text-xs text-muted">No payout methods saved yet.</p>
-                  <button
-                    type="button"
-                    onClick={onAddMethod}
-                    className="mt-1.5 inline-block text-xs font-medium text-brand hover:underline"
-                  >
-                    Add a payout method →
-                  </button>
+                  <div className="mt-1.5 flex justify-center">
+                    <AddMobileMoneyRecipient propertyId={propertyId} onAdded={onRecipientAdded} />
+                  </div>
                 </div>
               ) : (
                 <>
@@ -549,20 +574,71 @@ function TransferFundsModal({
                       />
                     ))}
                   </div>
-                  <button
-                    type="button"
-                    onClick={onAddMethod}
-                    className="mt-2.5 inline-block text-xs font-medium text-brand hover:underline"
-                  >
-                    Don't see it? Add a payout method →
-                  </button>
+                  {/* Adding a bank account isn't offered here — there's only ever one, edited (not
+                      added to) from Settings > Bank & payouts — so this only covers mobile money,
+                      the one payout method type a landlord can actually have several of. Same
+                      component Payout methods' modal uses, so it matches that flow exactly rather
+                      than reimplementing a second version of it here. */}
+                  <div className="mt-2.5">
+                    <AddMobileMoneyRecipient propertyId={propertyId} onAdded={onRecipientAdded} />
+                  </div>
                 </>
               )}
             </motion.div>
           )}
         </AnimatePresence>
+          </div>
+
+          {footer && <div className="mt-5 border-t border-line pt-4">{footer}</div>}
+        </div>
+
+        {/* Summary sidebar — sticky so the amount/fee/destination stay visible while scrolling a
+            long method list or filling in the code, instead of scrolling out of view with the rest
+            of the "confirm" step the way it did when this lived inline in a single narrow column. */}
+        {payout && (
+          <div className="lg:sticky lg:top-5 lg:self-start">
+            <div className="rounded-lg border border-line bg-paper px-5 py-5">
+              <p className="text-xs font-medium text-muted">Transferring</p>
+              <p className="font-display mt-1 text-[28px] leading-none font-bold tracking-tight text-ink">{payout.amount}</p>
+
+              {/* The actual breakdown shown up front, before any irreversible step — the research
+                  pattern this follows (review screens that surface fee + resulting balance before
+                  submission, not just after) is what separates "trustworthy" transfer flows from
+                  ones that spring the real numbers on you at the very end. */}
+              {selectedRecipient &&
+                (() => {
+                  const fee = estimateTransferFee(payout.rawAmount);
+                  const net = Math.max(payout.rawAmount - fee, 0);
+                  return (
+                    <div className="mt-4 space-y-1.5 rounded-lg border border-line bg-mist/40 px-3 py-2.5 text-xs">
+                      <div className="flex items-center justify-between text-muted">
+                        <span>To</span>
+                        <span className="font-medium text-ink">{recipientLabel(selectedRecipient)}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-muted">
+                        <span>Fee</span>
+                        <span className="font-medium text-ink">{formatCurrency(fee)}</span>
+                      </div>
+                      <div className="flex items-center justify-between border-t border-line pt-1.5 font-semibold text-ink">
+                        <span>They'll receive</span>
+                        <span>{formatCurrency(net)}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+              <div className="mt-4 flex items-start gap-1.5 text-[11px] text-muted">
+                <ShieldCheck size={14} weight="fill" className="mt-0.5 shrink-0 text-brand" />
+                <span>
+                  Every transfer needs a one-time code sent to your registered email before it can go
+                  out - even from a device you've used before.
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
-    </Modal>
+    </>
   );
 }
 
@@ -577,8 +653,26 @@ const MOBILE_PROVIDERS = [
  * account holder's name (resolve-mobile-money) so the landlord confirms "is this you?" before it's
  * saved, the same two-step shape the bank flow below already uses (BankSelect + resolveBankAccount
  * -> createPayoutRecipient). */
-function AddMobileMoneyRecipient({ propertyId, onAdded }: { propertyId: string; onAdded: () => void }) {
+function AddMobileMoneyRecipient({
+  propertyId,
+  onAdded,
+  autoOpen,
+  onAutoOpenHandled,
+}: {
+  propertyId: string;
+  onAdded: () => void;
+  autoOpen?: boolean;
+  onAutoOpenHandled?: () => void;
+}) {
   const [step, setStep] = useState<AddMobileMoneyStep>("closed");
+
+  useEffect(() => {
+    if (autoOpen && step === "closed") {
+      setStep("form");
+      onAutoOpenHandled?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpen]);
   const [phone, setPhone] = useState("");
   const [provider, setProvider] = useState<(typeof MOBILE_PROVIDERS)[number]["value"]>("mtn");
   const [resolvedName, setResolvedName] = useState<string | null>(null);
@@ -757,12 +851,18 @@ function PayoutMethodsModal({
   onChanged,
   onClose,
   onEditBank,
+  autoOpenAdd,
+  onAutoOpenAddHandled,
 }: {
   propertyId: string;
   recipients: PayoutRecipient[];
   onChanged: () => void;
   onClose: () => void;
   onEditBank: () => void;
+  /** Skip straight to the "add mobile money number" form instead of its closed/collapsed state —
+   * set when the global Create launcher (Header.tsx) sent the user here via ?action=add-recipient. */
+  autoOpenAdd?: boolean;
+  onAutoOpenAddHandled?: () => void;
 }) {
   const bankRecipients = recipients.filter((r) => r.type === "bank");
   const mobileMoneyRecipients = recipients.filter((r) => r.type === "mobile-money");
@@ -846,7 +946,12 @@ function PayoutMethodsModal({
       )}
 
       <div className="mt-3">
-        <AddMobileMoneyRecipient propertyId={propertyId} onAdded={onChanged} />
+        <AddMobileMoneyRecipient
+          propertyId={propertyId}
+          onAdded={onChanged}
+          autoOpen={autoOpenAdd}
+          onAutoOpenHandled={onAutoOpenAddHandled}
+        />
       </div>
 
       {removing && (
@@ -1216,6 +1321,111 @@ function BankConnectWizard({
  * (bank + mobile money) so they can be managed without leaving this page. Reachable via the
  * Sidebar's "Online payments" item, the Accounting balance pill, and PayoutDetailDrawer's "View
  * all" link. */
+
+/** Date range + status + format, same shape ReportGenerate.tsx uses for the Reports hub, scoped to
+ * whichever history tab was open when "Export" was clicked. The actual file is always built
+ * server-side by generate-report from a fresh database read — never from the rows already sitting
+ * in this page's state — so an export can't be made to say something different from what the
+ * landlord's own account actually shows, no matter what the front end here has been changed to
+ * display. */
+function ExportHistoryModal({ kind, propertyId, onClose }: { kind: "sent" | "received"; propertyId: string; onClose: () => void }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState(today);
+  const [status, setStatus] = useState<string>(kind === "sent" ? "all" : "successful");
+  const [format, setFormat] = useState<"pdf" | "csv">("pdf");
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const title = kind === "sent" ? "Export transfers sent" : "Export payments received";
+  const statusOptions = kind === "sent" ? statusFilters : collectionStatusFilters;
+
+  const handleExport = async () => {
+    if (!propertyId || !startDate) {
+      setError("Pick a start date.");
+      return;
+    }
+    setError(null);
+    setGenerating(true);
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke("generate-report", {
+        body: {
+          report_type: kind === "sent" ? "payouts_sent" : "payments_received",
+          format,
+          property_id: propertyId,
+          date_from: startDate,
+          date_to: endDate,
+          status: status === "all" ? undefined : status,
+        },
+      });
+      if (invokeError) throw invokeError;
+      if (!data?.url) throw new Error("The export didn't come back as expected.");
+      const link = document.createElement("a");
+      link.href = data.url;
+      link.download = data.fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      onClose();
+    } catch (e) {
+      setError(await edgeFunctionErrorMessage(e, "Couldn't generate that export. Try again."));
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  return (
+    <Modal onClose={onClose} title={title} description="Picks exactly what's included, then builds the file on our servers.">
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-muted">From</p>
+            <DatePicker value={startDate} onChange={setStartDate} className="w-full" placeholder="Start date" />
+          </div>
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-muted">To</p>
+            <DatePicker value={endDate} onChange={setEndDate} className="w-full" placeholder="End date" />
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-muted">Status</p>
+          <Select value={status} onChange={setStatus} options={statusOptions} className="w-full" />
+        </div>
+
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-muted">Format</p>
+          <div className="flex gap-2">
+            {(["pdf", "csv"] as const).map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setFormat(f)}
+                className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                  format === f ? "border-brand bg-brand-soft text-brand" : "border-line text-muted hover:bg-mist"
+                }`}
+              >
+                {f.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {error && (
+          <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+            <WarningCircle size={16} weight="bold" className="mt-0.5 shrink-0" />
+            {error}
+          </div>
+        )}
+
+        <Button className="w-full" onClick={() => void handleExport()} disabled={generating}>
+          {generating ? "Generating…" : `Download ${format.toUpperCase()}`}
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
 export default function Payouts() {
   const {
     propertyId,
@@ -1224,28 +1434,45 @@ export default function Payouts() {
     setBankName,
     setAccountNumber,
     setAccountHolderName,
-    payoutDay,
   } = useSettings();
   const isOwner = useIsOwner();
   const { payout, lencoAvailable } = usePayoutSummary();
 
   const [recipients, setRecipients] = useState<PayoutRecipient[]>([]);
-  const [historyTab, setHistoryTab] = useState<"sent" | "received">("sent");
+  const [historyTab, setHistoryTab] = useState<"sent" | "received">("received");
   const [rows, setRows] = useState<PayoutRecord[] | null>(null);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<"all" | PayoutStatus>("all");
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [collectionRows, setCollectionRows] = useState<CollectionRecord[] | null>(null);
+  const [lifetimeCollected, setLifetimeCollected] = useState<number | null>(null);
+  const [lifetimePaidOut, setLifetimePaidOut] = useState<number | null>(null);
   const [collectionsLoading, setCollectionsLoading] = useState(true);
-  const [collectionStatusFilter, setCollectionStatusFilter] = useState<"all" | CollectionStatus>("successful");
   const [collectionPage, setCollectionPage] = useState(1);
-  const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [methodsModalOpen, setMethodsModalOpen] = useState(false);
   const [editingBank, setEditingBank] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [autoOpenAddRecipient, setAutoOpenAddRecipient] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+
+  const location = useLocation();
+  const navigate = useNavigate();
+  // A real route rather than local state — /online-payments/transfer is its own URL, so refreshing
+  // mid-transfer or sharing/bookmarking the link lands back on the transfer flow instead of the
+  // plain balance view.
+  const transferActive = location.pathname === "/online-payments/transfer";
+
+  // Picked up when the global Create launcher (Header.tsx) navigates here with
+  // ?action=add-recipient instead of clicking this page's own "Add a payout method" button —
+  // cleared immediately after so a refresh or back/forward doesn't reopen the modal.
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get("action") === "add-recipient") {
+      setMethodsModalOpen(true);
+      setAutoOpenAddRecipient(true);
+      navigate(location.pathname, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search]);
 
   const flash = (msg: string) => {
     setToast(msg);
@@ -1269,11 +1496,7 @@ export default function Payouts() {
     if (!propertyId || !isOwner) return;
     let cancelled = false;
     setLoading(true);
-    listPayouts(propertyId, {
-      status: statusFilter === "all" ? undefined : [statusFilter],
-      from: fromDate ? new Date(fromDate).toISOString() : undefined,
-      to: toDate ? new Date(`${toDate}T23:59:59`).toISOString() : undefined,
-    })
+    listPayouts(propertyId, {})
       .then((data) => {
         if (!cancelled) setRows(data);
       })
@@ -1284,21 +1507,33 @@ export default function Payouts() {
     return () => {
       cancelled = true;
     };
-  }, [propertyId, isOwner, statusFilter, fromDate, toDate]);
+  }, [propertyId, isOwner]);
 
+  // Lifetime total money received — independent of the history table's own date/status filters,
+  // so the stat card keeps showing the all-time figure no matter what the landlord filters below.
   useEffect(() => {
-    setPage(1);
-  }, [statusFilter, fromDate, toDate]);
+    if (!propertyId || !isOwner) return;
+    let cancelled = false;
+    listCollections(propertyId, { status: ["successful"] })
+      .then((data) => {
+        if (!cancelled) setLifetimeCollected(data.reduce((sum, r) => sum + r.amount, 0));
+      })
+      .catch((e) => console.error("Failed to load lifetime collections total", e));
+    listPayouts(propertyId, { status: ["successful"] })
+      .then((data) => {
+        if (!cancelled) setLifetimePaidOut(data.reduce((sum, r) => sum + r.amount, 0));
+      })
+      .catch((e) => console.error("Failed to load lifetime payouts total", e));
+    return () => {
+      cancelled = true;
+    };
+  }, [propertyId, isOwner]);
 
   useEffect(() => {
     if (!propertyId || !isOwner) return;
     let cancelled = false;
     setCollectionsLoading(true);
-    listCollections(propertyId, {
-      status: collectionStatusFilter === "all" ? undefined : [collectionStatusFilter],
-      from: fromDate ? new Date(fromDate).toISOString() : undefined,
-      to: toDate ? new Date(`${toDate}T23:59:59`).toISOString() : undefined,
-    })
+    listCollections(propertyId, { status: ["successful"] })
       .then((data) => {
         if (!cancelled) setCollectionRows(data);
       })
@@ -1309,11 +1544,7 @@ export default function Payouts() {
     return () => {
       cancelled = true;
     };
-  }, [propertyId, isOwner, collectionStatusFilter, fromDate, toDate]);
-
-  useEffect(() => {
-    setCollectionPage(1);
-  }, [collectionStatusFilter, fromDate, toDate]);
+  }, [propertyId, isOwner]);
 
   const pageCount = Math.max(1, Math.ceil((rows?.length ?? 0) / pageSize));
   const pageRows = useMemo(() => (rows ?? []).slice((page - 1) * pageSize, page * pageSize), [rows, page, pageSize]);
@@ -1322,8 +1553,6 @@ export default function Payouts() {
     () => (collectionRows ?? []).slice((collectionPage - 1) * pageSize, collectionPage * pageSize),
     [collectionRows, collectionPage, pageSize]
   );
-  const lastPayout = rows?.find((r) => r.status === "successful");
-
   if (!isOwner) {
     return (
       <div className="px-4 py-10 text-center sm:px-8">
@@ -1333,6 +1562,17 @@ export default function Payouts() {
   }
 
   const wizardActive = propertyId && (!lencoConnected || editingBank);
+
+  if (transferActive && propertyId) {
+    return (
+      <TransferFundsPanel
+        propertyId={propertyId}
+        recipients={recipients}
+        onClose={() => navigate("/online-payments")}
+        onRecipientAdded={refreshRecipients}
+      />
+    );
+  }
 
   return (
     <>
@@ -1345,7 +1585,7 @@ export default function Payouts() {
               <Button variant="outline" onClick={() => setMethodsModalOpen(true)}>
                 Manage
               </Button>
-              <Button variant="primary" className="gap-1.5" onClick={() => setTransferModalOpen(true)}>
+              <Button variant="primary" className="gap-1.5" onClick={() => navigate("/online-payments/transfer")}>
                 <ArrowsLeftRight size={14} weight="bold" />
                 Transfer funds
               </Button>
@@ -1379,25 +1619,25 @@ export default function Payouts() {
                 icon={<Wallet size={13} weight="bold" />}
                 label="Available balance"
                 value={payout ? payout.amount : lencoAvailable === null ? <Skeleton className="h-8 w-24" /> : formatCurrency(0)}
+                valueClassName="text-emerald-600"
+              />
+              <StatCard
+                icon={<CoinsIcon size={13} weight="bold" />}
+                label="Total collected"
+                value={lifetimeCollected === null ? <Skeleton className="h-8 w-24" /> : formatCurrency(lifetimeCollected)}
+              />
+              <StatCard
+                icon={<PaperPlaneTilt size={13} weight="bold" />}
+                label="Total paid out"
+                value={lifetimePaidOut === null ? <Skeleton className="h-8 w-24" /> : formatCurrency(lifetimePaidOut)}
+                valueClassName="text-red-600"
               />
               <StatCard
                 icon={<CheckCircle size={13} weight="bold" />}
                 label="Online payments"
                 value={lencoConnected ? "Connected" : "Not connected"}
-                valueClassName={lencoConnected ? "text-emerald-600" : "text-amber-600"}
+                valueClassName={lencoConnected ? "text-brand" : "text-amber-600"}
               />
-              <StatCard
-                icon={<ArrowLeft size={13} weight="bold" className="rotate-180" />}
-                label="Last payout"
-                value={lastPayout ? formatDate(lastPayout.createdAt) : "—"}
-              />
-              {lencoConnected && (
-                <StatCard
-                  icon={<CalendarBlank size={13} weight="bold" />}
-                  label="Next scheduled payout"
-                  value={`Every ${payoutDay}`}
-                />
-              )}
             </div>
           </>
         )}
@@ -1432,47 +1672,10 @@ export default function Payouts() {
               </button>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {historyTab === "sent" ? (
-                <Select
-                  value={statusFilter}
-                  onChange={(v) => setStatusFilter(v as "all" | PayoutStatus)}
-                  options={statusFilters}
-                  className="w-36"
-                />
-              ) : (
-                <Select
-                  value={collectionStatusFilter}
-                  onChange={(v) => setCollectionStatusFilter(v as "all" | CollectionStatus)}
-                  options={collectionStatusFilters}
-                  className="w-36"
-                />
-              )}
-              <DatePicker value={fromDate} onChange={setFromDate} className="w-36 py-1.5! text-xs!" placeholder="From" />
-              <span className="text-xs text-muted">to</span>
-              <DatePicker value={toDate} onChange={setToDate} className="w-36 py-1.5! text-xs!" placeholder="To" />
-              {historyTab === "sent" ? (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="gap-1.5"
-                  disabled={!rows || rows.length === 0}
-                  onClick={() => rows && downloadCsv("payout-history.csv", rows)}
-                >
-                  <DownloadSimple size={14} weight="bold" />
-                  Export
-                </Button>
-              ) : (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="gap-1.5"
-                  disabled={!collectionRows || collectionRows.length === 0}
-                  onClick={() => collectionRows && downloadCollectionsCsv("payments-received.csv", collectionRows)}
-                >
-                  <DownloadSimple size={14} weight="bold" />
-                  Export
-                </Button>
-              )}
+              <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => setExportModalOpen(true)}>
+                <DownloadSimple size={14} weight="bold" />
+                Export
+              </Button>
             </div>
           </div>
 
@@ -1628,16 +1831,6 @@ export default function Payouts() {
         )}
       </div>
 
-      {transferModalOpen && (
-        <TransferFundsModal
-          recipients={recipients}
-          onClose={() => setTransferModalOpen(false)}
-          onAddMethod={() => {
-            setTransferModalOpen(false);
-            setMethodsModalOpen(true);
-          }}
-        />
-      )}
       {methodsModalOpen && propertyId && (
         <PayoutMethodsModal
           propertyId={propertyId}
@@ -1648,7 +1841,12 @@ export default function Payouts() {
             setMethodsModalOpen(false);
             setEditingBank(true);
           }}
+          autoOpenAdd={autoOpenAddRecipient}
+          onAutoOpenAddHandled={() => setAutoOpenAddRecipient(false)}
         />
+      )}
+      {exportModalOpen && propertyId && (
+        <ExportHistoryModal kind={historyTab} propertyId={propertyId} onClose={() => setExportModalOpen(false)} />
       )}
 
       <AnimatePresence>

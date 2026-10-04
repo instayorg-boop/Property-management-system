@@ -159,6 +159,17 @@ export default function Rent() {
   const moreMenuRef = useRef<HTMLDivElement>(null);
 
   const [paymentStep, setPaymentStep] = useState<PaymentStep | null>(null);
+
+  // Picked up when the global Create launcher (Header.tsx) navigates here with ?action=log-payment
+  // instead of opening this page's own "Log payment" button — cleared immediately after so a
+  // refresh or back/forward doesn't reopen the flow.
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get("action") === "log-payment") {
+      setPaymentStep("search");
+      navigate(location.pathname, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search]);
   const [payingTenant, setPayingTenant] = useState<Tenant | null>(null);
   const [movingOutTenant, setMovingOutTenant] = useState<Tenant | null>(null);
 
@@ -439,7 +450,7 @@ export default function Rent() {
           </div>
 
           {/* Tenant table */}
-          <div className="rounded-xl border border-line bg-paper">
+          <div className="rounded-lg border border-line bg-paper">
             {/* Toolbar */}
             <div className="flex flex-col gap-3 border-b border-line p-6 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2.5 rounded-md bg-mist px-3.5 py-2.5 transition-colors focus-within:bg-paper focus-within:ring-2 focus-within:ring-brand/25 sm:w-64">

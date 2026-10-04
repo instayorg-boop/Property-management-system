@@ -70,6 +70,9 @@ export function relationLabel(contact: EmergencyContact): string {
 export type Tenant = {
   id: string;
   name: string;
+  /** Uploaded by the landlord (see AddTenant.tsx) — public bucket, plain URL, same convention as a
+   * property's own logo. Undefined/null means no photo yet; the UI falls back to an initials avatar. */
+  photoUrl?: string;
   /** A tenant can be reachable on more than one number — the first is treated as primary (call/text). */
   phones: string[];
   /** Any number of emergency contacts, each with any number of their own phone numbers. Stored as
@@ -177,7 +180,7 @@ async function resolveInstitutionId(propertyId: string, name: string | undefined
 }
 
 const TENANT_COLUMNS =
-  "id, name, phones, emergency_contacts, move_in_date, move_out_date, rent_amount, status, " +
+  "id, name, photo_url, phones, emergency_contacts, move_in_date, move_out_date, rent_amount, status, " +
   "days_overdue, owed_amount, deposit_amount, deposit_date, deposit_method, deposit_status, " +
   "deposit_resolution_note, notes, on_time_count, total_months_count, active, due_day, grace_period_days, " +
   "reservation_fee_amount, reservation_fee_date, reservation_fee_method, reservation_fee_collected, " +
@@ -189,7 +192,7 @@ const TENANT_COLUMNS =
 
 type TenantRow = Pick<
   Tables<"tenants">,
-  | "id" | "name" | "phones" | "emergency_contacts" | "move_in_date" | "move_out_date"
+  | "id" | "name" | "photo_url" | "phones" | "emergency_contacts" | "move_in_date" | "move_out_date"
   | "rent_amount" | "status" | "days_overdue" | "owed_amount" | "deposit_amount" | "deposit_date"
   | "deposit_method" | "deposit_status" | "deposit_resolution_note" | "notes" | "on_time_count"
   | "total_months_count" | "active" | "due_day" | "grace_period_days" | "portal_token"
@@ -226,6 +229,7 @@ function toTenant(row: TenantRow, propertyName: string, ledger: LedgerRow[]): Te
   return {
     id: row.id,
     name: row.name,
+    photoUrl: row.photo_url ?? undefined,
     phones: row.phones ?? [],
     emergencyContacts: toEmergencyContacts(row.emergency_contacts),
     property: propertyName,
@@ -466,6 +470,7 @@ export async function listTenants(propertyId: string, propertyName: string): Pro
 export async function tenantPatchToRow(propertyId: string, patch: Partial<Omit<Tenant, "id" | "ledger">>): Promise<TablesUpdate<"tenants">> {
   const row: TablesUpdate<"tenants"> = {};
   if (patch.name !== undefined) row.name = patch.name;
+  if (patch.photoUrl !== undefined) row.photo_url = patch.photoUrl ?? null;
   if (patch.phones !== undefined) row.phones = patch.phones;
   if (patch.emergencyContacts !== undefined) row.emergency_contacts = patch.emergencyContacts as unknown as Json;
   if (patch.moveInDate !== undefined) row.move_in_date = patch.moveInDate;
@@ -509,6 +514,7 @@ export async function insertTenant(propertyId: string, id: string, t: Omit<Tenan
     room_type_id: roomTypeId,
     institution_id: institutionId,
     name: t.name,
+    photo_url: t.photoUrl ?? null,
     phones: t.phones,
     emergency_contacts: t.emergencyContacts as unknown as Json,
     move_in_date: t.moveInDate,

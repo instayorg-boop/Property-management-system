@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { X, CurrencyCircleDollar, Wrench, Coins, WarningCircle, BellRinging } from "@phosphor-icons/react";
 import { useNotifications, type NotificationCategory, type NotificationRow } from "../NotificationsContext";
+import { useTenants } from "../TenantsContext";
+import { resolveNotificationLink, CATEGORY_LINK } from "../linkResolver";
 
 type FilterTab = "all" | "unread";
 
@@ -10,7 +12,11 @@ type FilterTab = "all" | "unread";
 // rows is exactly what makes a notification feed hard to scan) instead of needing to read every
 // title to tell a payment apart from a maintenance report. Duotone weight + a soft rounded-square
 // tile (not a plain circle) reads closer to a real icon set than the flat glyphs this replaced.
-const CATEGORY_STYLE: Record<NotificationCategory, { icon: typeof CurrencyCircleDollar; tint: string; label: string }> = {
+//
+// Exported for the same reason CATEGORY_LINK (linkResolver.ts) is: the dashboard's "Recent
+// activity" preview is a mirror of this feed, and a second copy of the mapping there would drift
+// the moment a category is added or retinted.
+export const CATEGORY_STYLE: Record<NotificationCategory, { icon: typeof CurrencyCircleDollar; tint: string; label: string }> = {
   payment: { icon: CurrencyCircleDollar, tint: "bg-emerald-50 text-emerald-600", label: "Payment" },
   maintenance: { icon: Wrench, tint: "bg-amber-50 text-amber-600", label: "Maintenance" },
   payout: { icon: Coins, tint: "bg-brand-soft text-brand", label: "Payout" },
@@ -18,17 +24,10 @@ const CATEGORY_STYLE: Record<NotificationCategory, { icon: typeof CurrencyCircle
   system: { icon: BellRinging, tint: "bg-mist text-muted", label: "Update" },
 };
 
-// Where clicking a notification should take the landlord — each category has one obvious "go look
-// at this" destination.
-const CATEGORY_LINK: Record<NotificationCategory, string> = {
-  payment: "/rent",
-  maintenance: "/maintenance",
-  payout: "/accounting",
-  overdue: "/rent",
-  system: "/dashboard",
-};
-
-function categoryOf(n: NotificationRow): NotificationCategory {
+/** Falls back to "system" for a category string this build doesn't know about — a plain
+ * `?? "system"` wouldn't, since an unrecognised category is a non-null string and would index
+ * CATEGORY_STYLE to undefined. Exported alongside the two maps for the dashboard preview. */
+export function categoryOf(n: NotificationRow): NotificationCategory {
   return (n.category as NotificationCategory) in CATEGORY_STYLE ? (n.category as NotificationCategory) : "system";
 }
 
@@ -48,7 +47,7 @@ function ordinal(day: number): string {
 
 /** "Today" / "Yesterday" / "15th Apr, 2024" — same day-bucketing a real inbox uses, so a long
  * history reads as a handful of labeled sections instead of one undifferentiated scroll. */
-function dayKeyAndLabel(iso: string): { key: string; label: string } {
+export function dayKeyAndLabel(iso: string): { key: string; label: string } {
   const d = new Date(iso);
   const startOf = (dt: Date) => new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()).getTime();
   const dayStart = startOf(d);
@@ -66,9 +65,9 @@ function dayKeyAndLabel(iso: string): { key: string; label: string } {
  * payments landing back to back) doesn't bury everything else under a wall of near-identical rows.
  * Bundling groups by (day, category) rather than requiring adjacency, since notifications interleave
  * — two payments an hour apart with a maintenance report in between should still bundle together. */
-type NotificationBundle = { key: string; category: NotificationCategory; items: NotificationRow[] };
+export type NotificationBundle = { key: string; category: NotificationCategory; items: NotificationRow[] };
 
-function bundleByDay(notifications: NotificationRow[]): { dayKey: string; dayLabel: string; bundles: NotificationBundle[] }[] {
+export function bundleByDay(notifications: NotificationRow[]): { dayKey: string; dayLabel: string; bundles: NotificationBundle[] }[] {
   const dayOrder: string[] = [];
   const dayLabels = new Map<string, string>();
   const byDay = new Map<string, NotificationRow[]>();
@@ -103,7 +102,7 @@ function bundleByDay(notifications: NotificationRow[]): { dayKey: string; dayLab
   });
 }
 
-function BundleRow({ bundle, onReview, onMarkRead }: { bundle: NotificationBundle; onReview: (b: NotificationBundle) => void; onMarkRead: (b: NotificationBundle) => void }) {
+export function BundleRow({ bundle, onReview, onMarkRead }: { bundle: NotificationBundle; onReview: (b: NotificationBundle) => void; onMarkRead: (b: NotificationBundle) => void }) {
   const { icon: Icon, tint, label: categoryLabel } = CATEGORY_STYLE[bundle.category];
   const latest = bundle.items[0];
   const unreadCount = bundle.items.filter((n) => !n.read_at).length;
@@ -157,6 +156,7 @@ function BundleRow({ bundle, onReview, onMarkRead }: { bundle: NotificationBundl
 
 export default function NotificationsPanel({ onClose }: { onClose: () => void }) {
   const { notifications, unreadCount, markRead, markAllRead } = useNotifications();
+  const { tenants } = useTenants();
   const [tab, setTab] = useState<FilterTab>("all");
   const navigate = useNavigate();
 
@@ -169,7 +169,9 @@ export default function NotificationsPanel({ onClose }: { onClose: () => void })
 
   const handleReview = (b: NotificationBundle) => {
     markBundleRead(b);
-    navigate(CATEGORY_LINK[b.category]);
+    // A bundled entry ("3 payment updates") has no single record to deep-link to — the latest item
+    // is the closest approximation. A single-item bundle resolves to its exact record.
+    navigate(resolveNotificationLink(b.items[0], tenants));
     onClose();
   };
 

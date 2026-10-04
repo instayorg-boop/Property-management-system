@@ -23,9 +23,10 @@ type MaintenanceContextValue = {
   isReady: boolean;
   setStatus: (id: string, status: MaintenanceStatus) => void;
   markRead: (id: string) => void;
-  addReport: (report: Omit<MaintenanceReport, "id" | "unread" | "resolvedAt">) => void;
-  /** Edits the location/description/photos of an existing report — not its status/read state. */
-  updateReport: (id: string, patch: Partial<Pick<MaintenanceReport, "location" | "description" | "photoUrls">>) => void;
+  /** No priority field here — see the comment on addReport's implementation for why. */
+  addReport: (report: Omit<MaintenanceReport, "id" | "unread" | "resolvedAt" | "priority">) => void;
+  /** Edits the location/description/photos/priority of an existing report — not its status/read state. */
+  updateReport: (id: string, patch: Partial<Pick<MaintenanceReport, "location" | "description" | "photoUrls" | "priority">>) => void;
   deleteReport: (id: string) => void;
 };
 
@@ -119,13 +120,18 @@ export function MaintenanceProvider({ children }: { children: ReactNode }) {
     void updateReportRow(id, { unread: false }).catch((e) => console.error("Failed to mark report read", e));
   };
 
-  const addReport = (report: Omit<MaintenanceReport, "id" | "unread" | "resolvedAt">) => {
-    const created: MaintenanceReport = { ...report, id: crypto.randomUUID(), unread: false };
+  // Priority is never picked by whoever files the report (landlord or tenant) — it starts at
+  // "medium" and a DB trigger (see 20261009030000_maintenance_ai_priority.sql) immediately kicks
+  // off AI classification against the location/description, patching the row (and this list, via
+  // the live-update subscription above) once it resolves. The landlord can still override it by
+  // hand afterward from the request drawer.
+  const addReport = (report: Omit<MaintenanceReport, "id" | "unread" | "resolvedAt" | "priority">) => {
+    const created: MaintenanceReport = { ...report, id: crypto.randomUUID(), unread: false, priority: "medium" };
     setReports((prev) => [created, ...prev]);
-    if (propertyId) void insertReport(propertyId, created.id, report).catch((e) => console.error("Failed to save report", e));
+    if (propertyId) void insertReport(propertyId, created.id, created).catch((e) => console.error("Failed to save report", e));
   };
 
-  const updateReport = (id: string, patch: Partial<Pick<MaintenanceReport, "location" | "description" | "photoUrls">>) => {
+  const updateReport = (id: string, patch: Partial<Pick<MaintenanceReport, "location" | "description" | "photoUrls" | "priority">>) => {
     setReports((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
     void updateReportRow(id, patch).catch((e) => console.error("Failed to update report", e));
   };

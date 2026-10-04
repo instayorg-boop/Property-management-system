@@ -1,7 +1,6 @@
-/** Same brand icons the tenant payment portal uses (src/pages/pay/TenantBalance.tsx's
- * PROVIDER_ICON) — kept as a shared constant so both places draw from one source instead of two
- * copies of the same CDN URLs drifting apart. Keyed lowercase to match payout_recipients.provider,
- * unlike the portal's own uppercase "MTN"/"Airtel"/"Zamtel" keys. */
+/** The mobile-money brand marks, in one place — used by the landlord's payout settings and by the
+ * tenant portal's checkout (src/pages/portal/PortalCheckout.tsx), so the two can't drift into two
+ * copies of the same CDN URLs. Keyed lowercase to match payout_recipients.provider. */
 export const MOBILE_MONEY_LOGO: Record<"mtn" | "airtel" | "zamtel", string> = {
   mtn: "https://cdn.brandfetch.io/idtdXB-ogi/w/400/h/400/theme/dark/icon.jpeg?c=1dxbfHSJFAPEGdCLU4o5B",
   airtel: "https://cdn.brandfetch.io/idvMDbAci6/w/400/h/400/theme/dark/icon.jpeg?c=1dxbfHSJFAPEGdCLU4o5B",

@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { X as CloseIcon } from "@phosphor-icons/react";
 
 export default function Modal({
@@ -21,7 +22,10 @@ export default function Modal({
    * only the X button closes it then. Off by default so every other Modal caller is unaffected. */
   disableBackdropClose?: boolean;
 }) {
-  return (
+  // Portaled to document.body: a `fixed` element is otherwise clipped/repositioned by any ancestor
+  // that sets a CSS transform (e.g. Sidebar.tsx's translate-x-0/-translate-x-full open/close
+  // animation), since a transformed ancestor becomes the containing block for its fixed descendants.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <motion.div
         initial={{ opacity: 0, backdropFilter: "blur(0px)" }}
@@ -63,6 +67,7 @@ export default function Modal({
         {/* Fixed footer */}
         {footer && <div className="shrink-0 border-t border-line px-6 py-4">{footer}</div>}
       </motion.div>
-    </div>
+    </div>,
+    document.body
   );
 }

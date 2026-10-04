@@ -7,6 +7,7 @@ import SectionLabel from "../components/SectionLabel";
 import ThemeSwitcher from "../components/ThemeSwitcher";
 import Button from "../components/Button";
 import { useSettings, type SmsNotificationPrefs, type PaymentSmsMode } from "../SettingsContext";
+import type { LateFeeMode } from "../invoiceUtils";
 import { SUBSCRIPTION_TIERS } from "../../lib/pricing";
 import PhoneNumberInput from "../components/PhoneNumberInput";
 
@@ -133,7 +134,6 @@ function groupFor(t: Tab) {
 // for payments (that's exactly the "blasting" this was built to avoid); off/hourly/daily only.
 const smsNotificationRows: { key: keyof SmsNotificationPrefs; label: string; desc: string }[] = [
   { key: "newMaintenanceReport", label: "New maintenance report", desc: "Sent right away - these are rare enough not to need digesting." },
-  { key: "upcomingPayout", label: "Upcoming payout", desc: "A single text the day before your scheduled payout." },
   { key: "overdueEscalated", label: "Overdue tenant escalated to guardian", desc: "Sent once per billing period when a tenant crosses the escalation threshold." },
 ];
 
@@ -161,9 +161,20 @@ export default function Settings() {
     billingPeriod,
     dueDay, setDueDay,
     gracePeriodDays, setGracePeriodDays,
+    dailyPenaltyRate, setDailyPenaltyRate,
+    lateFeeEnabled, setLateFeeEnabled,
+    lateFeeMode, setLateFeeMode,
+    lateFeePercent, setLateFeePercent,
+    lateFeeCapEnabled, setLateFeeCapEnabled,
+    lateFeeCapAmount, setLateFeeCapAmount,
     reminderLeadDays, setReminderLeadDays,
     escalationDays, setEscalationDays,
     contactOrder, setContactOrder,
+    preDueRemindersEnabled, setPreDueRemindersEnabled,
+    escalationEnabled, setEscalationEnabled,
+    taskOverdueRentEnabled, setTaskOverdueRentEnabled,
+    taskStaleMaintenanceEnabled, setTaskStaleMaintenanceEnabled,
+    taskCollectionsTargetEnabled, setTaskCollectionsTargetEnabled,
     notificationPhone, setNotificationPhone,
     paymentSmsMode, setPaymentSmsMode,
     smsNotificationPrefs, setSmsNotificationPref,
@@ -342,15 +353,82 @@ export default function Settings() {
                 </Row> */}
               </SettingsPanel>
               <div className="pt-5 pb-2">
+                <SectionLabel>Late fees</SectionLabel>
+              </div>
+              <SettingsPanel>
+                <Row label="Charge late fees" desc="Automatically add a fee once a tenant's rent goes overdue. Off if this property doesn't do late fees.">
+                  <Toggle checked={lateFeeEnabled} onChange={(v) => { setLateFeeEnabled(v); flash(); }} />
+                </Row>
+                {lateFeeEnabled && (
+                  <>
+                    <Row label="Calculation" desc="How the late fee accrues once a charge is overdue, applied automatically each day.">
+                      <div className="flex flex-wrap justify-end gap-2">
+                        {(
+                          [
+                            { v: "prorated_rent", label: "Rent ÷ days/month" },
+                            { v: "fixed", label: "Fixed per day" },
+                            { v: "percent_of_rent", label: "% of rent per day" },
+                          ] as const
+                        ).map((o) => (
+                          <button
+                            key={o.v}
+                            type="button"
+                            onClick={() => { setLateFeeMode(o.v as LateFeeMode); flash(); }}
+                            className={`rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
+                              lateFeeMode === o.v ? "border-brand bg-brand-soft text-brand" : "border-line text-muted hover:bg-mist"
+                            }`}
+                          >
+                            {o.label}
+                          </button>
+                        ))}
+                      </div>
+                    </Row>
+                    {lateFeeMode === "fixed" && (
+                      <Row label="Amount per day" desc="Flat charge added for every day a tenant stays overdue.">
+                        <NumberStepper value={dailyPenaltyRate} onChange={(v) => { setDailyPenaltyRate(v); flash(); }} min={0} />
+                      </Row>
+                    )}
+                    {lateFeeMode === "percent_of_rent" && (
+                      <Row label="Percent per day" desc="Share of the tenant's monthly rent added for every day overdue.">
+                        <NumberStepper value={lateFeePercent} onChange={(v) => { setLateFeePercent(v); flash(); }} min={0} max={100} />
+                      </Row>
+                    )}
+                    {lateFeeMode === "prorated_rent" && (
+                      <Row label="Daily rate" desc="Automatically derived from each tenant's own rent — no separate rate to set.">
+                        <p className="text-sm font-medium text-muted">Rent ÷ days in month</p>
+                      </Row>
+                    )}
+                    <Row label="Cap total fee" desc="Stop the late fee from growing once it reaches a maximum.">
+                      <Toggle checked={lateFeeCapEnabled} onChange={(v) => { setLateFeeCapEnabled(v); flash(); }} />
+                    </Row>
+                    {lateFeeCapEnabled && (
+                      <Row label="Maximum fee" desc="The late fee never exceeds this amount, no matter how overdue a tenant is.">
+                        <NumberStepper value={lateFeeCapAmount ?? 0} onChange={(v) => { setLateFeeCapAmount(v); flash(); }} min={0} />
+                      </Row>
+                    )}
+                  </>
+                )}
+              </SettingsPanel>
+              <div className="pt-5 pb-2">
                 <SectionLabel>Reminders</SectionLabel>
               </div>
               <SettingsPanel>
-                <Row label="Days before rent is due" desc="How many days ahead of the due date the first reminder is sent.">
-                  <NumberStepper value={reminderLeadDays} onChange={(v) => { setReminderLeadDays(v); flash(); }} min={0} />
+                <Row label="Send pre-due reminders" desc="Turn this on to automatically remind tenants by text a few days before rent is due.">
+                  <Toggle checked={preDueRemindersEnabled} onChange={(v) => { setPreDueRemindersEnabled(v); flash(); }} />
                 </Row>
-                <Row label="Days overdue before guardian is contacted" desc="The parent/guardian is contacted automatically after rent is this many days late.">
-                  <NumberStepper value={escalationDays} onChange={(v) => { setEscalationDays(v); flash(); }} min={0} />
+                {preDueRemindersEnabled && (
+                  <Row label="Days before rent is due" desc="How many days before the due date that first reminder goes out.">
+                    <NumberStepper value={reminderLeadDays} onChange={(v) => { setReminderLeadDays(v); flash(); }} min={0} />
+                  </Row>
+                )}
+                <Row label="Escalate to guardian" desc="Turn this on to automatically text the tenant's guardian once rent is significantly overdue.">
+                  <Toggle checked={escalationEnabled} onChange={(v) => { setEscalationEnabled(v); flash(); }} />
                 </Row>
+                {escalationEnabled && (
+                  <Row label="Days overdue before contacting guardian" desc="How many days late rent has to be before the guardian is contacted.">
+                    <NumberStepper value={escalationDays} onChange={(v) => { setEscalationDays(v); flash(); }} min={0} />
+                  </Row>
+                )}
                 <Row label="Contact order" desc="Who gets reminded first when rent is due.">
                   <div className="flex gap-2">
                     {(["student", "guardian"] as const).map((o) => (
@@ -369,6 +447,21 @@ export default function Settings() {
                 </Row>
               </SettingsPanel>
               <p className="pt-3 text-xs text-muted">Reminders and guardian escalation are each sent at most once per billing period.</p>
+
+              <div className="pt-6 pb-2">
+                <SectionLabel>Today's Tasks</SectionLabel>
+              </div>
+              <SettingsPanel>
+                <Row label="Overdue rent tasks" desc="Turn this on to automatically add a task whenever a tenant falls overdue on rent.">
+                  <Toggle checked={taskOverdueRentEnabled} onChange={(v) => { setTaskOverdueRentEnabled(v); flash(); }} />
+                </Row>
+                <Row label="Stale maintenance tasks" desc="Turn this on to automatically add a task when a maintenance report has been sitting unresolved too long.">
+                  <Toggle checked={taskStaleMaintenanceEnabled} onChange={(v) => { setTaskStaleMaintenanceEnabled(v); flash(); }} />
+                </Row>
+                <Row label="Collections below target tasks" desc="Turn this on to automatically add a task when this month's collections fall short of your target.">
+                  <Toggle checked={taskCollectionsTargetEnabled} onChange={(v) => { setTaskCollectionsTargetEnabled(v); flash(); }} />
+                </Row>
+              </SettingsPanel>
             </>
           )}
 
@@ -429,7 +522,7 @@ export default function Settings() {
                     onChange={(v) => { setNotificationPhone(v); flash(); }}
                   />
                 </Row>
-                <Row label="Payment summaries" desc="Sends an SMS only when there's new payment activity - payments are grouped into a summary, never sent one by one.">
+                <Row label="Payment summaries" desc="Get an SMS summary of new payments instead of one text per payment.">
                   <div className="flex gap-2">
                     {paymentSmsModes.map((m) => (
                       <button
@@ -462,10 +555,10 @@ export default function Settings() {
                 <SectionLabel>Tenant messages</SectionLabel>
               </div>
               <SettingsPanel>
-                <Row label="Welcome SMS for new tenants" desc="Sends the tenant a welcome message with their portal link when they're added.">
+                <Row label="Welcome SMS for new tenants" desc="Turn this on to automatically text a new tenant their portal link as soon as they're added.">
                   <Toggle checked={sendOnboardingSms} onChange={(v) => { setSendOnboardingSms(v); flash(); }} />
                 </Row>
-                <Row label="Payment receipt SMS" desc="Sends the tenant a receipt with their new outstanding balance after any payment - online or logged manually.">
+                <Row label="Payment receipt SMS" desc="Turn this on to automatically text a tenant a receipt after every payment, online or logged manually.">
                   <Toggle checked={sendPaymentReceiptSms} onChange={(v) => { setSendPaymentReceiptSms(v); flash(); }} />
                 </Row>
               </SettingsPanel>

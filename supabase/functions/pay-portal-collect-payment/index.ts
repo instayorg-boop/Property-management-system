@@ -143,13 +143,20 @@ Deno.serve(async (req) => {
     });
   }
 
-  const { data: tenant } = await supabase
-    .from("tenants")
-    .select("id, owed_amount, rent_amount, days_overdue, status")
-    .eq("id", tenantId)
-    .eq("property_id", property.id)
-    .eq("active", true)
-    .maybeSingle();
+  const [{ data: tenant }, { data: settings }] = await Promise.all([
+    supabase
+      .from("tenants")
+      .select("id, owed_amount, rent_amount, days_overdue, status")
+      .eq("id", tenantId)
+      .eq("property_id", property.id)
+      .eq("active", true)
+      .maybeSingle(),
+    supabase
+      .from("settings")
+      .select("late_fee_enabled, late_fee_mode, daily_penalty_rate, late_fee_percent, late_fee_cap_enabled, late_fee_cap_amount")
+      .eq("property_id", property.id)
+      .maybeSingle(),
+  ]);
 
   if (!tenant) {
     return new Response(JSON.stringify({ error: "We couldn't find that account." }), {
@@ -158,14 +165,30 @@ Deno.serve(async (req) => {
     });
   }
 
-  // Same late-penalty formula as invoiceUtils.ts's calcLatePenalty and payPortal.ts's mirror of it
-  // — days overdue x daily rate for this tenant's rent — kept in sync by hand across the three
+  // Same late-fee formula as invoiceUtils.ts's calcLatePenalty and payPortal.ts's mirror of it —
+  // days overdue x the landlord's configured daily rate — kept in sync by hand across the three
   // spots since this edge function can't import frontend code. Without folding it in here, a
-  // tenant with an accrued penalty could pay off owed_amount in full via mobile money and still
-  // never actually cover the penalty (server clamps the charge to owedBefore, so it must include it).
+  // tenant with an accrued late fee could pay off owed_amount in full via mobile money and still
+  // never actually cover the fee (server clamps the charge to owedBefore, so it must include it).
   const daysOverdue: number = tenant.days_overdue ?? 0;
   const daysInThisMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
-  const penaltyAmount = tenant.status === "paid" || daysOverdue <= 0 ? 0 : Math.round(daysOverdue * (tenant.rent_amount / daysInThisMonth));
+  const lateFeeMode = settings?.late_fee_mode ?? "prorated_rent";
+  const lateFeeEnabled = settings?.late_fee_enabled ?? true;
+  let rawPenalty: number;
+  if (!lateFeeEnabled || tenant.status === "paid" || daysOverdue <= 0) {
+    rawPenalty = 0;
+  } else if (lateFeeMode === "fixed") {
+    rawPenalty = daysOverdue * (settings?.daily_penalty_rate ?? 0);
+  } else if (lateFeeMode === "percent_of_rent") {
+    rawPenalty = daysOverdue * (tenant.rent_amount * ((settings?.late_fee_percent ?? 1) / 100));
+  } else {
+    rawPenalty = daysOverdue * (tenant.rent_amount / daysInThisMonth);
+  }
+  rawPenalty = Math.max(0, Math.round(rawPenalty));
+  const penaltyAmount =
+    settings?.late_fee_cap_enabled && settings.late_fee_cap_amount != null
+      ? Math.min(rawPenalty, settings.late_fee_cap_amount)
+      : rawPenalty;
   const owedBefore: number = tenant.status === "paid" ? 0 : (tenant.owed_amount || tenant.rent_amount || 0) + penaltyAmount;
   if (!owedBefore || owedBefore <= 0) {
     return new Response(JSON.stringify({ error: "There's nothing due to pay right now." }), {

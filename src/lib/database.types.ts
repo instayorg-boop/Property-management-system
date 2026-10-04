@@ -201,6 +201,11 @@ export type Database = {
           id: string
           lenco_collection_id: string | null
           operator: string
+          // payout_id/line_items/owed_before hand-added, same reason as the Functions block above —
+          // confirmed live via introspection (pay_portal_claim_payout_collections sets payout_id).
+          payout_id: string | null
+          line_items: Json | null
+          owed_before: number | null
           phone: string
           property_id: string
           rent_portion: number | null
@@ -216,6 +221,9 @@ export type Database = {
           id?: string
           lenco_collection_id?: string | null
           operator: string
+          payout_id?: string | null
+          line_items?: Json | null
+          owed_before?: number | null
           phone: string
           property_id: string
           rent_portion?: number | null
@@ -231,6 +239,9 @@ export type Database = {
           id?: string
           lenco_collection_id?: string | null
           operator?: string
+          payout_id?: string | null
+          line_items?: Json | null
+          owed_before?: number | null
           phone?: string
           property_id?: string
           rent_portion?: number | null
@@ -251,6 +262,13 @@ export type Database = {
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collections_payout_id_fkey"
+            columns: ["payout_id"]
+            isOneToOne: false
+            referencedRelation: "payouts"
             referencedColumns: ["id"]
           },
         ]
@@ -695,6 +713,7 @@ export type Database = {
           location: string
           photo_url: string | null
           photo_urls: string[]
+          priority: string
           property_id: string
           resolved_at: string | null
           status: string
@@ -710,6 +729,7 @@ export type Database = {
           location: string
           photo_url?: string | null
           photo_urls?: string[]
+          priority?: string
           property_id: string
           resolved_at?: string | null
           status?: string
@@ -725,6 +745,7 @@ export type Database = {
           location?: string
           photo_url?: string | null
           photo_urls?: string[]
+          priority?: string
           property_id?: string
           resolved_at?: string | null
           status?: string
@@ -755,6 +776,8 @@ export type Database = {
           body: string
           category: string
           created_at: string
+          entity_id: string | null
+          entity_type: string | null
           id: string
           metadata: Json
           property_id: string
@@ -766,6 +789,8 @@ export type Database = {
           body: string
           category: string
           created_at?: string
+          entity_id?: string | null
+          entity_type?: string | null
           id?: string
           metadata?: Json
           property_id: string
@@ -777,6 +802,8 @@ export type Database = {
           body?: string
           category?: string
           created_at?: string
+          entity_id?: string | null
+          entity_type?: string | null
           id?: string
           metadata?: Json
           property_id?: string
@@ -1244,11 +1271,17 @@ export type Database = {
           daily_penalty_rate: number
           due_day: number
           escalation_days: number
+          escalation_enabled: boolean
           grace_period_days: number
           id: string
           invoices_on: boolean
           landlord_name: string | null
           landlord_phone: string | null
+          late_fee_cap_amount: number | null
+          late_fee_cap_enabled: boolean
+          late_fee_enabled: boolean
+          late_fee_mode: string
+          late_fee_percent: number
           lenco_connected: boolean
           management_fee_rate: number
           minimum_wage_reference: number
@@ -1259,6 +1292,7 @@ export type Database = {
           payment_methods: Json
           payment_sms_mode: string
           payout_day: string | null
+          pre_due_reminders_enabled: boolean
           property_id: string
           reminder_lead_days: number
           send_onboarding_sms: boolean
@@ -1266,6 +1300,9 @@ export type Database = {
           sms_notification_prefs: Json
           subscription_plan: string | null
           subscription_renews_at: string | null
+          task_collections_target_enabled: boolean
+          task_overdue_rent_enabled: boolean
+          task_stale_maintenance_enabled: boolean
           updated_at: string
         }
         Insert: {
@@ -1280,11 +1317,17 @@ export type Database = {
           daily_penalty_rate?: number
           due_day?: number
           escalation_days?: number
+          escalation_enabled?: boolean
           grace_period_days?: number
           id?: string
           invoices_on?: boolean
           landlord_name?: string | null
           landlord_phone?: string | null
+          late_fee_cap_amount?: number | null
+          late_fee_cap_enabled?: boolean
+          late_fee_enabled?: boolean
+          late_fee_mode?: string
+          late_fee_percent?: number
           lenco_connected?: boolean
           management_fee_rate?: number
           minimum_wage_reference?: number
@@ -1295,6 +1338,7 @@ export type Database = {
           payment_methods?: Json
           payment_sms_mode?: string
           payout_day?: string | null
+          pre_due_reminders_enabled?: boolean
           property_id: string
           reminder_lead_days?: number
           send_onboarding_sms?: boolean
@@ -1302,6 +1346,9 @@ export type Database = {
           sms_notification_prefs?: Json
           subscription_plan?: string | null
           subscription_renews_at?: string | null
+          task_collections_target_enabled?: boolean
+          task_overdue_rent_enabled?: boolean
+          task_stale_maintenance_enabled?: boolean
           updated_at?: string
         }
         Update: {
@@ -1316,11 +1363,17 @@ export type Database = {
           daily_penalty_rate?: number
           due_day?: number
           escalation_days?: number
+          escalation_enabled?: boolean
           grace_period_days?: number
           id?: string
           invoices_on?: boolean
           landlord_name?: string | null
           landlord_phone?: string | null
+          late_fee_cap_amount?: number | null
+          late_fee_cap_enabled?: boolean
+          late_fee_enabled?: boolean
+          late_fee_mode?: string
+          late_fee_percent?: number
           lenco_connected?: boolean
           management_fee_rate?: number
           minimum_wage_reference?: number
@@ -1331,6 +1384,7 @@ export type Database = {
           payment_methods?: Json
           payment_sms_mode?: string
           payout_day?: string | null
+          pre_due_reminders_enabled?: boolean
           property_id?: string
           reminder_lead_days?: number
           send_onboarding_sms?: boolean
@@ -1338,6 +1392,9 @@ export type Database = {
           sms_notification_prefs?: Json
           subscription_plan?: string | null
           subscription_renews_at?: string | null
+          task_collections_target_enabled?: boolean
+          task_overdue_rent_enabled?: boolean
+          task_stale_maintenance_enabled?: boolean
           updated_at?: string
         }
         Relationships: [
@@ -1424,6 +1481,7 @@ export type Database = {
           owed_amount: number
           phone: string | null
           phones: string[]
+          photo_url: string | null
           portal_token: string
           property_id: string
           rent_amount: number
@@ -1461,6 +1519,7 @@ export type Database = {
           owed_amount?: number
           phone?: string | null
           phones?: string[]
+          photo_url?: string | null
           portal_token?: string
           property_id: string
           rent_amount?: number
@@ -1498,6 +1557,7 @@ export type Database = {
           owed_amount?: number
           phone?: string | null
           phones?: string[]
+          photo_url?: string | null
           portal_token?: string
           property_id?: string
           rent_amount?: number
@@ -1541,11 +1601,145 @@ export type Database = {
           },
         ]
       }
+      // Today's Tasks (see supabase/migrations/2026100300*_todays_tasks_*.sql and
+      // 20261005000000_manual_tasks.sql). Hand-added for the same reason the RPCs below are.
+      tasks: {
+        Row: {
+          action_target_id: string | null
+          action_type: string | null
+          ai_title: string | null
+          created_at: string
+          facts: Json
+          facts_hash: string
+          fallback_title: string
+          id: string
+          key: string
+          priority: string
+          property_id: string
+          resolved_at: string | null
+          score: number
+          snoozed_until: string | null
+          source: string
+          status: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          action_target_id?: string | null
+          action_type?: string | null
+          ai_title?: string | null
+          created_at?: string
+          facts?: Json
+          facts_hash: string
+          fallback_title: string
+          id?: string
+          key: string
+          priority: string
+          property_id: string
+          resolved_at?: string | null
+          score: number
+          snoozed_until?: string | null
+          source?: string
+          status?: string
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          action_target_id?: string | null
+          action_type?: string | null
+          ai_title?: string | null
+          created_at?: string
+          facts?: Json
+          facts_hash?: string
+          fallback_title?: string
+          id?: string
+          key?: string
+          priority?: string
+          property_id?: string
+          resolved_at?: string | null
+          score?: number
+          snoozed_until?: string | null
+          source?: string
+          status?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      // Backs the /reports "generate a document" flow (20261006000000_report_generation.sql).
+      report_history: {
+        Row: {
+          created_at: string
+          date_from: string
+          date_to: string
+          file_name: string
+          file_path: string
+          format: string
+          id: string
+          property_id: string
+          report_type: string
+        }
+        Insert: {
+          created_at?: string
+          date_from: string
+          date_to: string
+          file_name: string
+          file_path: string
+          format: string
+          id?: string
+          property_id: string
+          report_type: string
+        }
+        Update: {
+          created_at?: string
+          date_from?: string
+          date_to?: string
+          file_name?: string
+          file_path?: string
+          format?: string
+          id?: string
+          property_id?: string
+          report_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "report_history_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      // Today's Tasks (see supabase/migrations/2026100300*_todays_tasks_*.sql). Hand-added rather
+      // than regenerated: a full `supabase gen types` run rewrites this whole file on one line and
+      // drags in unrelated drift. The three below are the only task functions a client may call —
+      // every detect_* and sync_tasks has EXECUTE revoked from `authenticated` on purpose.
+      get_today_tasks: {
+        Args: { p_property_id: string }
+        Returns: Json
+      }
+      get_all_open_tasks: {
+        Args: { p_property_id: string }
+        Returns: Json
+      }
+      set_task_status: {
+        Args: { p_task_id: string; p_status: string; p_snooze_days?: number }
+        Returns: Json
+      }
       assistant_get_overdue_tenants: {
         Args: { p_property_id: string }
         Returns: {
@@ -1646,8 +1840,14 @@ export type Database = {
       pay_portal_get_property: {
         Args: { p_property_slug: string }
         Returns: {
+          daily_penalty_rate: number | null
           due_day: number
           id: string
+          late_fee_cap_amount: number | null
+          late_fee_cap_enabled: boolean
+          late_fee_enabled: boolean
+          late_fee_mode: string
+          late_fee_percent: number
           logo_url: string | null
           name: string
         }[]

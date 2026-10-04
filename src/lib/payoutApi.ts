@@ -156,21 +156,32 @@ export async function createPayoutRecipient(params: {
   return data.recipient;
 }
 
-/** What's actually available to withdraw via Lenco — real money that flowed through Lenco
- * (successful mobile-money collections), minus what's already been paid out or is mid-transfer.
- * Deliberately NOT the same figure as the Owner Payout Statement's accounting view: no management
- * fee, no expenses subtracted, and manually-logged/cash payments never count here at all — that
- * money never touched Lenco, so there's nothing sitting there to withdraw for it. */
+/** What's actually available to withdraw via Lenco — the same set of collections
+ * pay_portal_claim_payout_collections would claim for a real payout: successful, not yet linked to a
+ * payout (payout_id is null), net of Lenco's own collection fee. `collected`/`paidOut` stay as the
+ * all-time totals (still useful context, e.g. for a "lifetime collected" stat), but `available` is
+ * deliberately NOT `collected - paidOut` — a property can have older payouts that predate the
+ * payout_id linkage (or were claimed against collections that have since been reconciled elsewhere),
+ * which made that subtraction go negative and floor at a wrong 0. */
 export async function getLencoBalance(propertyId: string): Promise<{ collected: number; paidOut: number; available: number }> {
-  const [{ data: collectedRows, error: collectedError }, { data: paidRows, error: paidError }] = await Promise.all([
-    supabase.from("collections").select("amount").eq("property_id", propertyId).eq("status", "successful"),
-    supabase.from("payouts").select("amount").eq("property_id", propertyId).in("status", ["successful", "processing"]),
-  ]);
+  const [{ data: collectedRows, error: collectedError }, { data: paidRows, error: paidError }, { data: unclaimedRows, error: unclaimedError }] =
+    await Promise.all([
+      supabase.from("collections").select("amount").eq("property_id", propertyId).eq("status", "successful"),
+      supabase.from("payouts").select("amount").eq("property_id", propertyId).in("status", ["successful", "processing"]),
+      supabase
+        .from("collections")
+        .select("amount, fee_amount")
+        .eq("property_id", propertyId)
+        .eq("status", "successful")
+        .is("payout_id", null),
+    ]);
   if (collectedError) throw collectedError;
   if (paidError) throw paidError;
+  if (unclaimedError) throw unclaimedError;
   const collected = (collectedRows ?? []).reduce((sum, r) => sum + r.amount, 0);
   const paidOut = (paidRows ?? []).reduce((sum, r) => sum + r.amount, 0);
-  return { collected, paidOut, available: collected - paidOut };
+  const available = (unclaimedRows ?? []).reduce((sum, r) => sum + (r.amount - (r.fee_amount ?? 0)), 0);
+  return { collected, paidOut, available };
 }
 
 /** Sends a real transfer to one of the property's registered payout recipients (the default one if

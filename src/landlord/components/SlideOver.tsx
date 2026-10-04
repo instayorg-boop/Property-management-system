@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { X as CloseIcon } from "@phosphor-icons/react";
 
 export default function SlideOver({
@@ -20,7 +21,10 @@ export default function SlideOver({
   /** Tailwind max-width class — widen for drawers with denser or multi-column content. */
   maxWidth?: string;
 }) {
-  return (
+  // Portaled to document.body: a `fixed` element is otherwise clipped/repositioned by any ancestor
+  // that sets a CSS transform (e.g. Sidebar.tsx's translate-x-0/-translate-x-full open/close
+  // animation), since a transformed ancestor becomes the containing block for its fixed descendants.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex justify-end">
       <motion.div
         initial={{ opacity: 0 }}
@@ -60,6 +64,7 @@ export default function SlideOver({
 
         {footer && <div className="shrink-0 border-t border-line px-6 py-4">{footer}</div>}
       </motion.div>
-    </div>
+    </div>,
+    document.body
   );
 }

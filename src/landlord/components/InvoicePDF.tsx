@@ -29,7 +29,7 @@ export type InvoiceDocData = {
   lineItems: InvoiceLineItem[];
   total: number;
   paymentLink: string;
-  dailyPenaltyRate: number;
+  lateFeeRateLabel: string;
   paymentMethods: InvoicePaymentMethod[];
 };
 
@@ -249,7 +249,8 @@ function InvoicePage({ data }: { data: InvoiceDocData }) {
 
       <View style={styles.footer} fixed>
         <Text style={styles.footerText}>
-          Due {data.dueDateLabel} · K{data.dailyPenaltyRate.toFixed(2)}/day penalty after the grace period
+          Due {data.dueDateLabel}
+          {data.lateFeeRateLabel ? ` · ${data.lateFeeRateLabel} penalty after the grace period` : ""}
         </Text>
         <Text style={styles.footerText}>Powered by Instay PM</Text>
       </View>

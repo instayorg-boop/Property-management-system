@@ -1,7 +1,7 @@
 import { supabase } from "./supabaseClient";
 import { edgeFunctionErrorMessage } from "./functionsError";
 import { RELATION_OPTIONS, type EmergencyContact, type RelationType } from "./tenants";
-import { calcLatePenalty } from "../landlord/invoiceUtils";
+import { calcLatePenalty, DEFAULT_LATE_FEE_CONFIG, type LateFeeConfig, type LateFeeMode } from "../landlord/invoiceUtils";
 
 // --- Portal session storage -------------------------------------------------------------------
 // localStorage, not sessionStorage: the "session" is really just the tenant's own permanent
@@ -252,6 +252,27 @@ function toEmergencyContacts(json: unknown): EmergencyContact[] {
   });
 }
 
+/** Builds a LateFeeConfig from the raw pay_portal_get_property row — shared by getPortalProperty
+ * and getPortalTenant (the latter fetches the same RPC itself, see its own comment) so both read
+ * the landlord's configured mode instead of silently assuming prorated-rent. */
+function lateFeeConfigFromPropertyRow(row: {
+  late_fee_enabled?: boolean | null;
+  late_fee_mode?: string | null;
+  daily_penalty_rate?: number | null;
+  late_fee_percent?: number | null;
+  late_fee_cap_enabled?: boolean | null;
+  late_fee_cap_amount?: number | null;
+}): LateFeeConfig {
+  return {
+    enabled: row.late_fee_enabled ?? DEFAULT_LATE_FEE_CONFIG.enabled,
+    mode: (row.late_fee_mode as LateFeeMode) ?? DEFAULT_LATE_FEE_CONFIG.mode,
+    fixedAmountPerDay: row.daily_penalty_rate ?? DEFAULT_LATE_FEE_CONFIG.fixedAmountPerDay,
+    percentPerDay: row.late_fee_percent ?? DEFAULT_LATE_FEE_CONFIG.percentPerDay,
+    capEnabled: row.late_fee_cap_enabled ?? DEFAULT_LATE_FEE_CONFIG.capEnabled,
+    capAmount: row.late_fee_cap_amount ?? DEFAULT_LATE_FEE_CONFIG.capAmount,
+  };
+}
+
 export async function getPortalProperty(
   propertySlug: string
 ): Promise<{ id: string; name: string; dueDay: number | null; logoUrl: string | null } | null> {
@@ -293,16 +314,23 @@ export async function resolvePortalToken(
  * fails fast with a clearer message before making the round trip. */
 export async function getPortalTenant(propertySlug: string, tenantId: string): Promise<PortalTenant | null> {
   const sessionToken = requireSessionToken(tenantId);
-  const { data, error } = await supabase.rpc("pay_portal_get_tenant_v2", {
-    p_property_slug: propertySlug,
-    p_tenant_id: tenantId,
-    p_session_token: sessionToken,
-  });
-  if (error) throw error;
-  const row = data?.[0];
+  // Fetched alongside the tenant row (not passed in by the caller) so this stays correct even
+  // though getPortalProperty/getPortalTenant are called in parallel elsewhere (portalData.ts) —
+  // the landlord's late-fee config has to be in hand before the penalty below can be computed.
+  const [tenantResult, propertyResult] = await Promise.all([
+    supabase.rpc("pay_portal_get_tenant_v2", {
+      p_property_slug: propertySlug,
+      p_tenant_id: tenantId,
+      p_session_token: sessionToken,
+    }),
+    supabase.rpc("pay_portal_get_property", { p_property_slug: propertySlug }),
+  ]);
+  if (tenantResult.error) throw tenantResult.error;
+  const row = tenantResult.data?.[0];
   if (!row) return null;
+  const lateFeeConfig = propertyResult.data?.[0] ? lateFeeConfigFromPropertyRow(propertyResult.data[0]) : DEFAULT_LATE_FEE_CONFIG;
   const isPaidUp = row.status === "paid";
-  const penaltyAmount = isPaidUp ? 0 : calcLatePenalty(row.rent_amount, row.days_overdue ?? undefined);
+  const penaltyAmount = isPaidUp ? 0 : calcLatePenalty(row.rent_amount, row.days_overdue ?? undefined, lateFeeConfig);
   return {
     id: row.id,
     name: row.name,

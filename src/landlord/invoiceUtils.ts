@@ -44,16 +44,94 @@ export function dailyRentRate(tenant: Tenant, now: Date = new Date()): number {
   return tenant.rentAmount / daysInMonth(now.getFullYear(), now.getMonth());
 }
 
-/** Late penalty accrued so far — days overdue × the daily rate for that rent amount (rent /
- * days-in-month). The one canonical formula so invoicing, the landlord's Rent list, and the
- * tenant payment portal (see payPortal.ts's calcPortalPenalty, which mirrors this for the
+export type LateFeeMode = "fixed" | "percent_of_rent" | "prorated_rent";
+
+export type LateFeeConfig = {
+  /** Whether this property charges automatic late fees at all — off means calcLatePenalty always
+   * returns 0, regardless of mode (a property that simply doesn't do late fees). */
+  enabled: boolean;
+  mode: LateFeeMode;
+  /** K/day, used when mode = "fixed" (Settings' `dailyPenaltyRate`). */
+  fixedAmountPerDay: number;
+  /** % of rent/day, used when mode = "percent_of_rent". */
+  percentPerDay: number;
+  capEnabled: boolean;
+  /** Max total accrued fee, enforced when capEnabled. */
+  capAmount: number | null;
+};
+
+/** The original, and still the default, behavior: rent / days-in-month per day overdue. Used
+ * whenever no landlord-configured mode is available yet (e.g. before settings have loaded). */
+export const DEFAULT_LATE_FEE_CONFIG: LateFeeConfig = {
+  enabled: true,
+  mode: "prorated_rent",
+  fixedAmountPerDay: 0,
+  percentPerDay: 1,
+  capEnabled: false,
+  capAmount: null,
+};
+
+// Landlord-app call sites (Dashboard, Rent, Rooms, TenantProfile, reports, drawers, ...) all derive
+// the penalty from just a tenant object, with no settings in hand at the call site — rather than
+// threading the landlord's chosen late-fee config through every one of them, SettingsContext pushes
+// it in here once (see its lateFeeConfig effect) and every landlord-side caller reads the latest
+// value automatically. The tenant portal (payPortal.ts) isn't mounted under SettingsProvider, so it
+// always passes its own config explicitly instead of relying on this.
+let activeLateFeeConfig: LateFeeConfig = DEFAULT_LATE_FEE_CONFIG;
+
+export function setLateFeeConfig(config: LateFeeConfig): void {
+  activeLateFeeConfig = config;
+}
+
+/** Late fee accrued so far under the given (or currently active) config — days overdue × the
+ * configured daily rate, capped if a cap is set. The one canonical formula so invoicing, the
+ * landlord's Rent list, and the tenant payment portal (see payPortal.ts, which mirrors this for the
  * differently-shaped PortalTenant/DB row) all agree on what's owed right now. */
-export function calcLatePenalty(rentAmount: number, daysOverdue: number | undefined, now: Date = new Date()): number {
-  return daysOverdue && daysOverdue > 0 ? Math.round(daysOverdue * (rentAmount / daysInMonth(now.getFullYear(), now.getMonth()))) : 0;
+export function calcLatePenalty(
+  rentAmount: number,
+  daysOverdue: number | undefined,
+  config: LateFeeConfig = activeLateFeeConfig,
+  now: Date = new Date()
+): number {
+  if (!config.enabled || !daysOverdue || daysOverdue <= 0) return 0;
+
+  let raw: number;
+  switch (config.mode) {
+    case "fixed":
+      raw = daysOverdue * config.fixedAmountPerDay;
+      break;
+    case "percent_of_rent":
+      raw = daysOverdue * (rentAmount * (config.percentPerDay / 100));
+      break;
+    case "prorated_rent":
+    default:
+      raw = daysOverdue * (rentAmount / daysInMonth(now.getFullYear(), now.getMonth()));
+      break;
+  }
+
+  raw = Math.max(0, Math.round(raw));
+  if (config.capEnabled && config.capAmount != null) raw = Math.min(raw, config.capAmount);
+  return raw;
 }
 
 export function calcPenalty(tenant: Tenant): number {
   return calcLatePenalty(tenant.rentAmount, tenant.daysOverdue);
+}
+
+/** Human-readable late-fee rate for the invoice footer disclaimer — format depends on the
+ * configured mode (a flat/prorated rate reads as "K.../day", a percentage doesn't have a fixed
+ * K amount since it scales with rent). Mirrors whatever mode is currently active. */
+export function lateFeeDisclaimerLabel(tenant: Tenant, config: LateFeeConfig = activeLateFeeConfig, now: Date = new Date()): string {
+  if (!config.enabled) return "";
+  switch (config.mode) {
+    case "fixed":
+      return `K${config.fixedAmountPerDay.toFixed(2)}/day`;
+    case "percent_of_rent":
+      return `${config.percentPerDay}% of rent/day`;
+    case "prorated_rent":
+    default:
+      return `K${dailyRentRate(tenant, now).toFixed(2)}/day`;
+  }
 }
 
 /** A tenant's true total outstanding balance right now: carried-over arrears (`owedAmount` already

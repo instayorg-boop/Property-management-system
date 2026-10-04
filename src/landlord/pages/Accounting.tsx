@@ -14,9 +14,6 @@ import {
   type Category,
 } from "../ExpensesContext";
 
-import { useTenants, formatCurrency } from "../TenantsContext";
-import { calcTotalOwed } from "../invoiceUtils";
-
 import {
   Paperclip,
   MagnifyingGlass,
@@ -32,15 +29,26 @@ import {
   Sparkle,
   Check,
   X as XIcon,
-  CaretUpDown,
   Funnel,
+  TrendUp,
+  TrendDown,
 } from "@phosphor-icons/react";
 
 import { Skeleton, SkeletonRow } from "../components/Skeleton";
-import MetricCard from "../components/MetricCard";
 import Button from "../components/Button";
 import MonthSwitcher from "../components/MonthSwitcher";
 import { useToast } from "../ToastContext";
+
+import { Progress } from "@/components/ui/progress";
+import {
+  TableCard,
+  TableCardHeader,
+  DataTable,
+  DataTableHead,
+  DataTableBody,
+  Th,
+  Td,
+} from "../components/DataTable";
 
 import Expensephoto from "../../assets/Expenses Empty State Ui.png";
 
@@ -96,15 +104,6 @@ function categoryColorIndex(
   return index >= 0
     ? index % CATEGORY_BADGE_COLORS.length
     : 0;
-}
-
-function categoryBadgeStyle(
-  categories: Category[],
-  categoryId: string
-): string {
-  return CATEGORY_BADGE_COLORS[
-    categoryColorIndex(categories, categoryId)
-  ];
 }
 
 function categoryDotStyle(
@@ -1031,8 +1030,6 @@ export default function Accounting() {
     deleteExpense,
   } = useExpenses();
 
-  const { tenants } = useTenants();
-
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -1055,8 +1052,11 @@ export default function Accounting() {
   const [query, setQuery] =
     useState("");
 
-  const [categoryFilter, setCategoryFilter] =
-    useState<string>("all");
+  // Deep-linked here from elsewhere (the dashboard's expense-breakdown donut links a category
+  // straight into its filtered list) — same idea as expensePrefill below, read once on mount.
+  const [categoryFilter, setCategoryFilter] = useState<string>(
+    () => (location.state as { categoryFilter?: string } | null)?.categoryFilter ?? "all"
+  );
 
   const [page, setPage] =
     useState(1);
@@ -1066,6 +1066,19 @@ export default function Accounting() {
 
   const [showForm, setShowForm] =
     useState(false);
+
+  // Picked up when the global Create launcher (Header.tsx) navigates here with ?action=add-expense
+  // instead of clicking this page's own "+ Add expense" button — cleared immediately after so a
+  // refresh or back/forward doesn't reopen the form.
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get("action") === "add-expense") {
+      setEditing(null);
+      setPrefill(undefined);
+      setShowForm(true);
+      navigate(location.pathname, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search]);
 
   const [editing, setEditing] =
     useState<Expense | null>(null);
@@ -1098,6 +1111,7 @@ export default function Accounting() {
   useEffect(() => {
     const state = location.state as {
       expensePrefill?: typeof prefill;
+      categoryFilter?: string;
     } | null;
 
     if (state?.expensePrefill) {
@@ -1106,7 +1120,12 @@ export default function Accounting() {
         state.expensePrefill
       );
       setShowForm(true);
+    }
 
+    // Either kind of incoming state is one-shot — already applied (categoryFilter read straight
+    // into useState's initializer above, expensePrefill just above) — so it's cleared the same way
+    // either way, or a back-navigation / refresh would silently re-apply it.
+    if (state?.expensePrefill || state?.categoryFilter) {
       navigate(location.pathname, {
         replace: true,
         state: null,
@@ -1226,60 +1245,26 @@ export default function Accounting() {
     monthExpenses,
   ]);
 
-  const rentCollected = useMemo(() => {
-    if (monthOffset !== 0) {
-      return null;
-    }
+  const prevMonthLabel = useMemo(() => {
+    const d = new Date(monthDate);
+    d.setMonth(d.getMonth() - 1);
+    return monthLabel(d);
+  }, [monthDate]);
 
-    return tenants
-      .filter((t) => t.active)
-      .reduce((sum, t) => {
-        if (t.status === "paid") {
-          return (
-            sum + t.rentAmount
-          );
-        }
+  const prevMonthTotal = useMemo(
+    () =>
+      expenses
+        .filter((e) => isInMonth(e.date, prevMonthLabel))
+        .reduce((sum, e) => sum + e.amount, 0),
+    [expenses, prevMonthLabel]
+  );
 
-        if (
-          t.status === "partial"
-        ) {
-          return (
-            sum +
-            (t.ledger[0]
-              ?.paidAmount ?? 0)
-          );
-        }
-
-        return sum;
-      }, 0);
-  }, [
-    tenants,
-    monthOffset,
-  ]);
-
-  const pending = useMemo(() => {
-    const behind = tenants.filter(
-      (t) =>
-        t.active &&
-        (t.status === "overdue" ||
-          t.status === "unpaid" ||
-          t.status === "partial")
-    );
-
-    return {
-      total: behind.reduce(
-        (sum, t) =>
-          sum + calcTotalOwed(t),
-        0
-      ),
-      count: behind.length,
-    };
-  }, [tenants]);
-
-  const netProfit =
-    rentCollected === null
-      ? null
-      : rentCollected - total;
+  // null when there's nothing to compare against yet (no spend last month) — a 0% or
+  // fabricated-looking delta would be misleading, so the UI just omits the trend chip then.
+  const trendPct =
+    prevMonthTotal > 0
+      ? ((total - prevMonthTotal) / prevMonthTotal) * 100
+      : null;
 
   /* ---------------------------------------------------------------------- */
   /* Page                                                                    */
@@ -1288,8 +1273,8 @@ export default function Accounting() {
   return (
     <>
       <PageHeader
-        title="Expense Tracker"
-        description="Track expenses, income and your property's cash flow."
+        title="Expenses"
+        description="See where your property's money is going, by category."
       />
 
       <div className="space-y-5 px-4 pb-10 sm:px-8">
@@ -1383,210 +1368,183 @@ export default function Accounting() {
         hasExpenses ? (
           <>
             {/* ------------------------------------------------------------ */}
-            {/* Metrics                                                       */}
+            {/* Overview: total spent + category breakdown                    */}
             {/* ------------------------------------------------------------ */}
 
             <div
               key={`stats-${month}`}
-              className="pay-step grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
+              className="pay-step grid grid-cols-1 gap-4 lg:grid-cols-5"
             >
               {!isReady ? (
-                Array.from({
-                  length: 4,
-                }).map((_, i) => (
-                  <div
-                    key={i}
-                    className="rounded-lg border border-line bg-paper p-3.5"
-                  >
-                    <Skeleton className="h-3 w-20" />
-                    <Skeleton className="mt-2 h-6 w-24" />
+                <>
+                  <div className="space-y-3 rounded-lg border border-line bg-paper p-4 lg:col-span-2">
+                    <Skeleton className="h-3 w-24" />
+                    <Skeleton className="h-8 w-32" />
+                    <Skeleton className="h-3 w-40" />
                   </div>
-                ))
+
+                  <div className="space-y-3 rounded-lg border border-line bg-paper p-4 lg:col-span-3">
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <Skeleton key={i} className="h-8 w-full" />
+                    ))}
+                  </div>
+                </>
               ) : (
                 <>
-                  <MetricCard
-                    label="Total income"
-                    value={
-                      <AnimatedValue
-                        value={
-                          rentCollected ===
-                          null
-                            ? "—"
-                            : formatCurrency(
-                                rentCollected
-                              )
-                        }
-                      />
-                    }
-                    caption={
-                      monthOffset === 0
-                        ? "Collected so far this month"
-                        : "Only tracked for the current month"
-                    }
-                  />
+                  {/* Total spent this month, with a trend vs the prior month */}
+                  <div className="rounded-lg border border-line bg-paper p-4 lg:col-span-2">
+                    <p className="text-sm font-medium text-muted">
+                      Total spent
+                    </p>
 
-                  <MetricCard
-                    label="Total expenses"
-                    value={
-                      <AnimatedValue
-                        value={formatK(
-                          total
-                        )}
-                      />
-                    }
-                    caption={`${monthExpenses.length} expense${
-                      monthExpenses.length ===
-                      1
-                        ? ""
-                        : "s"
-                    } in ${month}`}
-                  />
+                    <p className="mt-1.5 font-display text-3xl font-semibold tracking-tight text-ink">
+                      <AnimatedValue value={formatK(total)} />
+                    </p>
 
-                  <MetricCard
-                    label="Net profit"
-                    value={
-                      <AnimatedValue
-                        value={
-                          netProfit ===
-                          null
-                            ? "—"
-                            : formatCurrency(
-                                netProfit
-                              )
-                        }
-                      />
-                    }
-                    tone={
-                      netProfit === null
-                        ? "default"
-                        : netProfit >= 0
-                        ? "success"
-                        : "danger"
-                    }
-                    caption="Income minus expenses"
-                  />
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      {trendPct !== null && (
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
+                            trendPct > 0
+                              ? "bg-red-50 text-red-600"
+                              : trendPct < 0
+                              ? "bg-emerald-50 text-emerald-600"
+                              : "bg-mist text-muted"
+                          }`}
+                        >
+                          {trendPct > 0 ? (
+                            <TrendUp size={12} weight="bold" />
+                          ) : trendPct < 0 ? (
+                            <TrendDown size={12} weight="bold" />
+                          ) : null}
+                          {trendPct === 0
+                            ? "No change"
+                            : `${Math.abs(trendPct).toFixed(0)}% vs last month`}
+                        </span>
+                      )}
 
-                  <MetricCard
-                    label="Pending payments"
-                    value={
-                      <AnimatedValue
-                        value={formatCurrency(
-                          pending.total
-                        )}
-                      />
-                    }
-                    tone={
-                      pending.count > 0
-                        ? "warning"
-                        : "default"
-                    }
-                    caption={
-                      pending.count > 0
-                        ? `${pending.count} tenant${
-                            pending.count ===
-                            1
-                              ? ""
-                              : "s"
-                          } behind`
-                        : "Nothing outstanding"
-                    }
-                  />
+                      <span className="text-xs text-muted">
+                        {monthExpenses.length} expense
+                        {monthExpenses.length === 1 ? "" : "s"} in {month}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Where the money went this month, by category */}
+                  <div className="rounded-lg border border-line bg-paper p-4 lg:col-span-3">
+                    <p className="text-sm font-medium text-muted">
+                      By category
+                    </p>
+
+                    <div className="mt-3 space-y-3">
+                      {byCategory.filter((c) => c.total > 0).length === 0 ? (
+                        <p className="py-2 text-sm text-muted">
+                          No expenses logged in {month} yet.
+                        </p>
+                      ) : (
+                        byCategory
+                          .filter((c) => c.total > 0)
+                          .slice(0, 5)
+                          .map(({ category, total: catTotal }) => (
+                            <div key={category.id} className="space-y-1.5">
+                              <div className="flex items-center justify-between gap-3 text-sm">
+                                <span className="flex min-w-0 items-center gap-2 font-medium text-ink">
+                                  <span
+                                    className={`h-2 w-2 shrink-0 rounded-full ${categoryDotStyle(
+                                      categories,
+                                      category.id
+                                    )}`}
+                                  />
+                                  <span className="truncate">
+                                    {category.name}
+                                  </span>
+                                </span>
+
+                                <span className="shrink-0 font-display text-ink">
+                                  {formatK(catTotal)}
+                                </span>
+                              </div>
+
+                              <Progress
+                                value={
+                                  total > 0 ? (catTotal / total) * 100 : 0
+                                }
+                                className="h-1.5"
+                              />
+                            </div>
+                          ))
+                      )}
+                    </div>
+                  </div>
                 </>
               )}
             </div>
 
             {/* ------------------------------------------------------------ */}
-            {/* Expenses library                                              */}
+            {/* Transactions                                                  */}
             {/* ------------------------------------------------------------ */}
 
-            <div
+            <TableCard
               key={`table-${month}`}
-              className="pay-step mt-10"
+              className="pay-step"
             >
-              {/* Search + filter */}
-              <div className="mb-12 flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-                <div className="relative w-full max-w-[450px]">
-                  <div className="flex h-[38px] items-center rounded-lg border border-[#968f8b] bg-white px-2 transition-colors focus-within:border-[#5d5754]">
-                    <SearchIcon />
+              <TableCardHeader>
+                <p className="text-sm font-semibold text-ink">
+                  Transactions
+                </p>
 
-                    <input
-                      value={query}
-                      onChange={(e) => {
-                        setQuery(e.target.value);
-                        setPage(1);
-                      }}
-                      placeholder="Find an expense"
-                      className="ml-2 w-full bg-transparent text-[16px] font-normal tracking-[-0.01em] text-[#514c49] outline-none placeholder:text-[#716b68]"
-                    />
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="relative w-full sm:w-[280px]">
+                    <div className="flex h-9 items-center rounded-md border border-line bg-paper px-2.5 transition-colors focus-within:border-brand">
+                      <SearchIcon />
+
+                      <input
+                        value={query}
+                        onChange={(e) => {
+                          setQuery(e.target.value);
+                          setPage(1);
+                        }}
+                        placeholder="Find an expense"
+                        className="ml-2 w-full bg-transparent text-sm text-ink outline-none placeholder:text-muted"
+                      />
+                    </div>
                   </div>
-                </div>
-          
 
-                <CategoryFilterMenu
-                  categories={
-                    categories
-                  }
-                  byCategory={
-                    byCategory
-                  }
-                  total={total}
-                  categoryFilter={
-                    categoryFilter
-                  }
-                  onSelect={(id) => {
-                    setCategoryFilter(
-                      id
-                    );
-                    setPage(1);
-                  }}
-                />
-              </div>
+                  <CategoryFilterMenu
+                    categories={
+                      categories
+                    }
+                    byCategory={
+                      byCategory
+                    }
+                    total={total}
+                    categoryFilter={
+                      categoryFilter
+                    }
+                    onSelect={(id) => {
+                      setCategoryFilter(
+                        id
+                      );
+                      setPage(1);
+                    }}
+                  />
+                </div>
+              </TableCardHeader>
 
               {/* ---------------------------------------------------------- */}
               {/* Desktop expense table                                      */}
               {/* ---------------------------------------------------------- */}
 
               <div className="hidden md:block">
-                <table className="w-full border-collapse text-left">
-                  <thead>
-                    <tr className="border-y border-[#968f8b] bg-[#faf8f7]">
-                      <th className="px-3 py-[10px] text-[16px] font-semibold tracking-[-0.02em] text-[#6f6966]">
-                        <span className="inline-flex items-center gap-1.5">
-                          Expense
-                          <CaretUpDown
-                            size={15}
-                            weight="bold"
-                            className="text-[#aaa4a1]"
-                          />
-                        </span>
-                      </th>
-                      <th className="px-3 py-[10px] text-[16px] font-semibold tracking-[-0.02em] text-[#6f6966]">
-                        <span className="inline-flex items-center gap-1.5">
-                          Category
-                          <CaretUpDown
-                            size={15}
-                            weight="bold"
-                            className="text-[#aaa4a1]"
-                          />
-                        </span>
-                      </th>
-                      <th className="px-3 py-[10px] text-[16px] font-semibold tracking-[-0.02em] text-[#6f6966]">
-                        <span className="inline-flex items-center gap-1.5">
-                          Date
-                          <CaretUpDown
-                            size={15}
-                            weight="bold"
-                            className="text-[#aaa4a1]"
-                          />
-                        </span>
-                      </th>
-                      <th className="px-3 py-[10px] text-right text-[16px] font-semibold tracking-[-0.02em] text-[#6f6966]">
-                        Amount
-                      </th>
-                      <th className="w-[80px] px-2 py-[10px]" />
-                    </tr>
-                  </thead>
-                  <tbody>
+                <DataTable>
+                  <DataTableHead>
+                    <Th>Expense</Th>
+                    <Th>Category</Th>
+                    <Th>Date</Th>
+                    <Th align="right">Amount</Th>
+                    <Th className="w-20" />
+                  </DataTableHead>
+                  <DataTableBody>
                     {!isReady &&
                       Array.from({ length: 5 }).map((_, i) => (
                         <SkeletonRow key={i} cols={5} />
@@ -1600,10 +1558,10 @@ export default function Accounting() {
                             setEditing(e);
                             setShowForm(true);
                           }}
-                          className="group cursor-pointer border-b border-[#968f8b] transition-colors hover:bg-[#faf8f7]"
+                          className="group cursor-pointer"
                         >
                           {/* Expense */}
-                          <td className="px-3 py-[10px] align-middle">
+                          <Td>
                             <div className="max-w-[350px]">
                               <button
                                 type="button"
@@ -1612,12 +1570,12 @@ export default function Accounting() {
                                   setEditing(e);
                                   setShowForm(true);
                                 }}
-                                className="text-left text-[16px] font-semibold leading-[1.3] tracking-[-0.01em] text-[#005d68] underline decoration-[1px] underline-offset-[2px] transition-colors hover:text-[#00464f]"
+                                className="text-left text-sm font-semibold leading-[1.3] text-brand underline decoration-[1px] underline-offset-[2px] transition-colors hover:text-ink"
                               >
                                 {e.name}
                               </button>
                               {e.description && (
-                                <p className="mt-0.5 text-[14px] leading-[1.3] text-[#706a67]">
+                                <p className="mt-0.5 text-[13px] leading-[1.3] text-muted">
                                   {e.description}
                                 </p>
                               )}
@@ -1627,27 +1585,29 @@ export default function Accounting() {
                                 </span>
                               )}
                             </div>
-                          </td>
+                          </Td>
                           {/* Category */}
-                          <td className="px-3 py-[10px] align-middle">
-                            <span className="text-[15px] leading-[1.3] text-[#514c49]">
+                          <Td>
+                            <span className="inline-flex items-center gap-1.5 text-sm text-ink">
+                              <span
+                                className={`h-1.5 w-1.5 shrink-0 rounded-full ${categoryDotStyle(
+                                  categories,
+                                  e.categoryId
+                                )}`}
+                              />
                               {categoryName(e.categoryId)}
                             </span>
-                          </td>
+                          </Td>
                           {/* Date */}
-                          <td className="whitespace-nowrap px-3 py-[10px] align-middle">
-                            <span className="text-[15px] text-[#514c49]">
-                              {formatDate(e.date)}
-                            </span>
-                          </td>
+                          <Td className="whitespace-nowrap text-sm text-muted">
+                            {formatDate(e.date)}
+                          </Td>
                           {/* Amount */}
-                          <td className="whitespace-nowrap px-3 py-[10px] text-right align-middle">
-                            <span className="font-display text-[15px] font-medium text-[#292624]">
-                              {formatK(e.amount)}
-                            </span>
-                          </td>
+                          <Td align="right" className="whitespace-nowrap font-display font-medium text-ink">
+                            {formatK(e.amount)}
+                          </Td>
                           {/* Actions */}
-                          <td className="px-2 py-[10px] align-middle">
+                          <Td>
                             <div className="flex items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                               {e.photoUrl && (
                                 <button
@@ -1658,7 +1618,7 @@ export default function Accounting() {
                                   }}
                                   aria-label="View receipt"
                                   title="View receipt"
-                                  className="flex h-7 w-7 items-center justify-center rounded-md text-[#706a67] transition-colors hover:bg-[#f0edeb] hover:text-[#005d68]"
+                                  className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-mist hover:text-brand"
                                 >
                                   <PaperclipIcon />
                                 </button>
@@ -1673,7 +1633,7 @@ export default function Accounting() {
                                 }}
                                 aria-label="Edit expense"
                                 title="Edit expense"
-                                className="flex h-7 w-7 items-center justify-center rounded-md text-[#706a67] transition-colors hover:bg-[#f0edeb] hover:text-[#292624]"
+                                className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-mist hover:text-ink"
                               >
                                 <PencilSimple size={13} weight="duotone" />
                               </button>
@@ -1686,35 +1646,35 @@ export default function Accounting() {
                                 }}
                                 aria-label="Delete expense"
                                 title="Delete expense"
-                                className="flex h-7 w-7 items-center justify-center rounded-md text-[#706a67] transition-colors hover:bg-red-50 hover:text-red-600"
+                                className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-red-50 hover:text-red-600"
                               >
                                 <Trash size={13} weight="duotone" />
                               </button>
                             </div>
-                          </td>
+                          </Td>
                         </tr>
                       ))}
 
                     {/* No search results */}
                     {isReady && pageRows.length === 0 && (
-                      <tr>
-                        <td colSpan={5} className="px-3 py-10">
+                      <tr className="hover:bg-transparent">
+                        <Td colSpan={5} className="py-10">
                           <div className="flex flex-col items-center justify-center text-center">
-                            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#f5f2f0] text-[#706a67]">
+                            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-mist text-muted">
                               <Receipt size={20} weight="duotone" />
                             </span>
-                            <p className="mt-3 text-[14px] font-semibold text-[#292624]">
+                            <p className="mt-3 text-sm font-semibold text-ink">
                               No expenses found
                             </p>
-                            <p className="mt-1 text-[13px] text-[#706a67]">
+                            <p className="mt-1 text-[13px] text-muted">
                               Try changing your search or category filter.
                             </p>
                           </div>
-                        </td>
+                        </Td>
                       </tr>
                     )}
-                  </tbody>
-                </table>
+                  </DataTableBody>
+                </DataTable>
               </div>
       
 
@@ -1831,6 +1791,7 @@ export default function Accounting() {
                     </div>
                   )}
               </div>
+            </TableCard>
 
               {/* ---------------------------------------------------------- */}
               {/* Receipt lightbox                                           */}
@@ -1939,7 +1900,6 @@ export default function Accounting() {
                   />
                 </div>
               )}
-            </div>
           </>
         ) : (
           /* -------------------------------------------------------------- */

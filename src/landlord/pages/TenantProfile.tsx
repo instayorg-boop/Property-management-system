@@ -18,6 +18,7 @@ import {
   FileText,
   Link as LinkIcon,
   BookmarkSimple,
+  Camera,
 } from "@phosphor-icons/react";
 import PageHeader from "../components/PageHeader";
 import SectionLabel from "../components/SectionLabel";
@@ -41,8 +42,10 @@ import {
 import { useMaintenance } from "../MaintenanceContext";
 import { calcTotalOwed, calcPenalty } from "../invoiceUtils";
 import { useSettings } from "../SettingsContext";
+import { dicebearAvatarUrl } from "../avatar";
 import Button from "../components/Button";
 import Select from "../components/Select";
+import { uploadPhoto } from "../../lib/storage";
 import {
   listTenantDocuments,
   uploadTenantDocument,
@@ -171,6 +174,113 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
       <p className="mt-1 text-[15px] font-semibold text-ink">{value}</p>
     </div>
   );
+}
+
+/** A self-contained white card with a title row (and an optional edit action) — the "Personal
+ * information" / "Emergency contact" boxes the Information tab is built from, matching the boxed
+ * card-per-section look of a typical HR profile page rather than one long unboxed list of fields. */
+function InfoCard({
+  title,
+  onEdit,
+  children,
+}: {
+  title: string;
+  onEdit?: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-lg border border-line bg-paper p-5">
+      <div className="flex items-center justify-between gap-3 border-b border-line pb-3">
+        <p className="text-sm font-semibold text-ink">{title}</p>
+        {onEdit && (
+          <button
+            type="button"
+            onClick={onEdit}
+            aria-label={`Edit ${title.toLowerCase()}`}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-mist hover:text-ink"
+          >
+            <PencilSimple size={14} weight="bold" />
+          </button>
+        )}
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-5">{children}</div>
+    </div>
+  );
+}
+
+/** The avatar plus a small camera button pinned to its bottom-right corner — lets a photo be
+ * swapped right here on the profile, without having to go into the edit page just for that. */
+function TenantAvatar({
+  id,
+  name,
+  photoUrl,
+  uploading,
+  onPick,
+  onView,
+}: {
+  id: string;
+  name: string;
+  photoUrl?: string;
+  uploading?: boolean;
+  onPick?: (file: File) => void;
+  onView?: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  return (
+    <div className="relative shrink-0">
+      <button
+        type="button"
+        onClick={onView}
+        aria-label="View photo"
+        title="View photo"
+        className="block rounded-full"
+      >
+        <img
+          src={photoUrl || dicebearAvatarUrl(id || name)}
+          alt=""
+          className="h-16 w-16 rounded-full bg-mist object-cover"
+        />
+      </button>
+      {onPick && (
+        <>
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) onPick(file);
+              e.target.value = "";
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            disabled={uploading}
+            aria-label="Change photo"
+            title="Change photo"
+            className="absolute -bottom-0.5 -right-0.5 flex h-6 w-6 items-center justify-center rounded-full border-2 border-paper bg-ink text-paper shadow-sm transition-colors hover:bg-ink/80 disabled:opacity-60"
+          >
+            <Camera size={12} weight="fill" />
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** "2.5 years" / "8 months" — how long a tenant has actually been here, the way the reference
+ * design's "(2.5 years ago)" caption reads, computed from the stored move-in date rather than
+ * hardcoded. */
+function tenureLabel(moveInDate: string | null | undefined): string | null {
+  if (!moveInDate) return null;
+  const start = new Date(moveInDate);
+  if (Number.isNaN(start.getTime())) return null;
+  const months = Math.max(0, (Date.now() - start.getTime()) / (1000 * 60 * 60 * 24 * 30.44));
+  if (months < 1) return "just moved in";
+  if (months < 12) return `${Math.round(months)} month${Math.round(months) === 1 ? "" : "s"}`;
+  return `${(months / 12).toFixed(1)} years`;
 }
 
 /** One column of the top stat row — icon + small-caps label, then a big value underneath, with an
@@ -419,6 +529,9 @@ export default function TenantProfile() {
   const [documentsError, setDocumentsError] = useState<string | null>(null);
   const [uploadingDocs, setUploadingDocs] = useState(false);
   const documentInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const [showPhotoLightbox, setShowPhotoLightbox] = useState(false);
 
   const tenant = tenants.find((t) => t.portalToken === code) ?? null;
   const reservedRoom = tenant ? (roomsView.find((r) => r.reservedFor?.id === tenant.id) ?? null) : null;
@@ -460,6 +573,20 @@ export default function TenantProfile() {
       );
     } finally {
       setUploadingDocs(false);
+    }
+  };
+
+  const handlePhotoPick = async (file: File) => {
+    if (!tenant || !propertyId) return;
+    setUploadingPhoto(true);
+    setPhotoError(null);
+    try {
+      const photoUrl = await uploadPhoto("tenant-photos", file, propertyId);
+      updateTenant(tenant.id, { photoUrl });
+    } catch (e) {
+      setPhotoError(e instanceof Error ? e.message : "Failed to upload photo");
+    } finally {
+      setUploadingPhoto(false);
     }
   };
 
@@ -762,42 +889,75 @@ export default function TenantProfile() {
           Back
         </button>
 
-        {/* Name + quick actions — the number that matters (outstanding balance) lives in the stat
-            row below, not buried in a card; this row is identity only. */}
+        {/* Identity header, HR-profile style: round avatar, name + a status/role badge inline,
+            a plain contact line, then a muted tenure line ("Started on ... (2.5 years) · Active") —
+            the operational tags (reserved room, deposit not collected) that used to live crammed
+            into this same line now sit on their own row underneath instead of competing with it. */}
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="font-display text-3xl font-bold tracking-tight text-ink sm:text-4xl">
-              {tenant.name}
-            </h1>
-            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
-              <span className="flex items-center gap-1.5">
+          <div className="flex items-start gap-4">
+            <TenantAvatar
+              id={tenant.id}
+              name={tenant.name}
+              photoUrl={tenant.photoUrl}
+              uploading={uploadingPhoto}
+              onPick={(file) => void handlePhotoPick(file)}
+              onView={() => setShowPhotoLightbox(true)}
+            />
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="font-display text-2xl font-bold tracking-tight text-ink sm:text-3xl">
+                  {tenant.name}
+                </h1>
+                <span className="rounded-full bg-brand-soft px-2.5 py-0.5 text-[11px] font-semibold text-brand">
+                  {tenant.roomType || "Tenant"}
+                </span>
+              </div>
+              <p className="mt-1 flex items-center gap-1.5 text-sm text-muted">
                 <DoorOpen size={14} weight="duotone" />
                 {tenant.room ? `Unit ${tenant.room}` : "Unassigned"}
-              </span>
-              <span className="text-line">·</span>
-              {tenant.active ? (
-                <span className="flex items-center gap-1.5">
-                  <CalendarBlank size={14} weight="duotone" />
-                  Tenant since {formatDisplayDate(tenant.moveInDate)}
-                </span>
-              ) : (
-                <span className="rounded-full bg-red-50 px-2.5 py-0.5 text-[11px] font-semibold text-red-600">
-                  Moved out {formatDisplayDate(tenant.moveOutDate)}
-                </span>
+                {tenant.phones[0] && ` · ${tenant.phones[0]}`}
+              </p>
+              <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+                {tenant.active ? (
+                  <>
+                    <span>
+                      Started on {formatDisplayDate(tenant.moveInDate)}
+                      {tenureLabel(tenant.moveInDate) ? ` (${tenureLabel(tenant.moveInDate)})` : ""}
+                    </span>
+                    <span className="flex items-center gap-1 font-medium text-emerald-600">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                      Active
+                    </span>
+                  </>
+                ) : (
+                  <span className="flex items-center gap-1 font-medium text-red-500">
+                    <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                    Moved out {formatDisplayDate(tenant.moveOutDate)}
+                  </span>
+                )}
+              </p>
+
+              {photoError && (
+                <p className="mt-1.5 text-xs text-red-500">{photoError}</p>
               )}
-              {reservedRoom && (
-                <span className="flex items-center gap-1 rounded-full bg-brand-soft px-2.5 py-0.5 text-[11px] font-semibold text-brand">
-                  <BookmarkSimple size={11} weight="fill" />
-                  Room {reservedRoom.number} reserved{tenant.reservationFeeCollected ? ` · ${formatCurrency(tenant.reservationFeeAmount ?? 0)} held` : ""}
-                </span>
-              )}
-              {/* Its own tag, separate from "Outstanding balance" — a deposit that hasn't been
-                  collected is never folded into that figure (it's rent-only, see owedAmount), so
-                  without this a landlord had no way to see it was still owed at a glance. */}
-              {tenant.depositAmount > 0 && tenant.depositStatus === "Not collected" && (
-                <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700">
-                  Deposit not collected · {formatCurrency(tenant.depositAmount)}
-                </span>
+
+              {(reservedRoom || (tenant.depositAmount > 0 && tenant.depositStatus === "Not collected")) && (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  {reservedRoom && (
+                    <span className="flex items-center gap-1 rounded-full bg-brand-soft px-2.5 py-0.5 text-[11px] font-semibold text-brand">
+                      <BookmarkSimple size={11} weight="fill" />
+                      Room {reservedRoom.number} reserved{tenant.reservationFeeCollected ? ` · ${formatCurrency(tenant.reservationFeeAmount ?? 0)} held` : ""}
+                    </span>
+                  )}
+                  {/* Its own tag, separate from "Outstanding balance" — a deposit that hasn't been
+                      collected is never folded into that figure (it's rent-only, see owedAmount), so
+                      without this a landlord had no way to see it was still owed at a glance. */}
+                  {tenant.depositAmount > 0 && tenant.depositStatus === "Not collected" && (
+                    <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700">
+                      Deposit not collected · {formatCurrency(tenant.depositAmount)}
+                    </span>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -925,8 +1085,8 @@ export default function TenantProfile() {
           />
         </div>
 
-        <div className="min-w-0 rounded-lg border border-line bg-paper">
-          <div className="flex items-center gap-1 border-b border-line px-4">
+        <div className="min-w-0  bg-paper">
+          <div className="flex items-center gap-1 border-b border-line px-2">
             {tabs.map((t) => (
               <button
                 key={t}
@@ -953,7 +1113,7 @@ export default function TenantProfile() {
             ))}
           </div>
 
-          <div className="overflow-hidden p-5">
+          <div className="overflow-hidden py-5">
             <AnimatePresence mode="wait">
               <motion.div
                 key={tab}
@@ -963,103 +1123,43 @@ export default function TenantProfile() {
                 transition={tabTransition}
               >
                 {tab === "Information" && (
-                  <div className="space-y-7">
-                    <div>
-                      <SectionLabel>Tenant information</SectionLabel>
-                      <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-3">
-                        <Field label="Full name" value={tenant.name} />
-                        <Field label="Property" value={tenant.property} />
-                        <Field
-                          label="Unit"
-                          value={tenant.room || "Unassigned"}
-                        />
-                        <Field
-                          label="Room type"
-                          value={tenant.roomType || "—"}
-                        />
-                        <Field
-                          label="Rent"
-                          value={`${formatCurrency(tenant.rentAmount)}/mo`}
-                        />
-                        <Field
-                          label={
-                            tenant.active ? "Move-in date" : "Move-out date"
-                          }
-                          value={
-                            (tenant.active
-                              ? tenant.moveInDate
-                              : tenant.moveOutDate) || "—"
-                          }
-                        />
-                        <Field
-                          label="Security deposit"
-                          value={`${formatCurrency(tenant.depositAmount)} · ${tenant.depositStatus}`}
-                        />
-                        <Field
-                          label="On-time payments"
-                          value={`${tenant.onTimeCount}/${tenant.totalMonthsCount || tenant.onTimeCount} months`}
-                        />
-                        <Field
-                          label="Phone number"
-                          value={
-                            tenant.phones.length === 0 ? "—" : tenant.phones[0]
-                          }
-                        />
-                        {tenant.phones.slice(1).map((p, i) => (
-                          <Field
-                            key={i}
-                            label={`Additional phone ${i + 2}`}
-                            value={p}
-                          />
-                        ))}
-                      </div>
-                      {tenant.notes && (
-                        <div className="mt-5">
-                          <SectionLabel>Landlord note</SectionLabel>
-                          <p className="mt-1 text-sm text-ink">
-                            {tenant.notes}
-                          </p>
-                        </div>
-                      )}
-                    </div>
+                  <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+                    <InfoCard title="Personal information" onEdit={() => navigate(`/tenants/${tenant.portalToken}/edit`)}>
+                      <Field label="Full name" value={tenant.name} />
+                      <Field label="Phone number" value={tenant.phones.length === 0 ? "—" : tenant.phones[0]} />
+                      {tenant.phones.slice(1).map((p, i) => (
+                        <Field key={i} label={`Additional phone ${i + 2}`} value={p} />
+                      ))}
+                      <Field
+                        label={tenant.active ? "Move-in date" : "Move-out date"}
+                        value={formatDisplayDate((tenant.active ? tenant.moveInDate : tenant.moveOutDate) || undefined) || "—"}
+                      />
+                      <Field label="On-time payments" value={`${tenant.onTimeCount}/${tenant.totalMonthsCount || tenant.onTimeCount} months`} />
+                      {tenant.notes && <Field label="Landlord note" value={tenant.notes} />}
+                    </InfoCard>
 
-                    <div>
-                      <SectionLabel>
-                        Emergency contact
-                        {tenant.emergencyContacts.length !== 1 ? "s" : ""}
-                      </SectionLabel>
+                    <InfoCard title="Emergency contact" onEdit={() => navigate(`/tenants/${tenant.portalToken}/edit`)}>
                       {tenant.emergencyContacts.length === 0 ? (
-                        <p className="mt-2 text-sm text-muted">None on file.</p>
+                        <p className="col-span-2 text-sm text-muted">None on file.</p>
                       ) : (
-                        <div className="mt-3 space-y-5">
-                          {tenant.emergencyContacts.map((c, ci) => (
-                            <div
-                              key={c.id}
-                              className={`grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-3 ${ci > 0 ? "border-t border-line pt-5" : ""}`}
-                            >
-                              <Field label="Name" value={c.name} />
-                              <Field
-                                label="Relationship"
-                                value={relationLabel(c)}
-                              />
-                              <Field
-                                label="Mobile"
-                                value={
-                                  c.phones.length === 0 ? "—" : c.phones[0]
-                                }
-                              />
-                              {c.phones.slice(1).map((p, i) => (
-                                <Field
-                                  key={i}
-                                  label={`Additional phone ${i + 2}`}
-                                  value={p}
-                                />
-                              ))}
-                            </div>
-                          ))}
-                        </div>
+                        tenant.emergencyContacts.flatMap((c, ci) => [
+                          <Field key={`${c.id}-name`} label={ci === 0 ? "Name" : `Name (${ci + 1})`} value={c.name} />,
+                          <Field key={`${c.id}-rel`} label="Relationship" value={relationLabel(c)} />,
+                          <Field key={`${c.id}-phone`} label="Mobile" value={c.phones.length === 0 ? "—" : c.phones[0]} />,
+                          ...c.phones.slice(1).map((p, i) => (
+                            <Field key={`${c.id}-phone-${i}`} label={`Additional phone ${i + 2}`} value={p} />
+                          )),
+                        ])
                       )}
-                    </div>
+                    </InfoCard>
+
+                    <InfoCard title="Account information" onEdit={() => navigate(`/tenants/${tenant.portalToken}/edit`)}>
+                      <Field label="Property" value={tenant.property} />
+                      <Field label="Unit" value={tenant.room || "Unassigned"} />
+                      <Field label="Room type" value={tenant.roomType || "—"} />
+                      <Field label="Rent" value={`${formatCurrency(tenant.rentAmount)}/mo`} />
+                      <Field label="Security deposit" value={`${formatCurrency(tenant.depositAmount)} · ${tenant.depositStatus}`} />
+                    </InfoCard>
                   </div>
                 )}
 
@@ -1456,6 +1556,22 @@ export default function TenantProfile() {
       </div>
 
       <AnimatePresence>
+        {showPhotoLightbox && (
+          <div
+            role="button"
+            tabIndex={0}
+            aria-label="Close"
+            onClick={() => setShowPhotoLightbox(false)}
+            onKeyDown={(e) => e.key === "Escape" && setShowPhotoLightbox(false)}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6"
+          >
+            <img
+              src={tenant.photoUrl || dicebearAvatarUrl(tenant.id || tenant.name)}
+              alt={tenant.name}
+              className="max-h-[80vh] max-w-full rounded-2xl object-contain shadow-2xl"
+            />
+          </div>
+        )}
         {showDelete && (
           <ConfirmDeleteTenantModal
             tenant={tenant}

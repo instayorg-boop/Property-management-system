@@ -39,6 +39,8 @@ import {
 } from "../RoomsContext";
 import { useSettings } from "../SettingsContext";
 import { supabase } from "../../lib/supabaseClient";
+import { uploadPhoto } from "../../lib/storage";
+import { dicebearAvatarUrl } from "../avatar";
 import {
   uploadTenantDocument,
   listTenantDocuments,
@@ -717,6 +719,23 @@ export default function AddTenant() {
   const [prefix, setPrefix] = useState(initialName.prefix);
   const [firstName, setFirstName] = useState(initialName.firstName);
   const [lastName, setLastName] = useState(initialName.lastName);
+  const [photoUrl, setPhotoUrl] = useState(editingTenant?.photoUrl);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
+  const handlePhotoChange = async (file: File | undefined) => {
+    if (!file || !propertyId) return;
+    setUploadingPhoto(true);
+    setPhotoError(null);
+    try {
+      setPhotoUrl(await uploadPhoto("tenant-photos", file, propertyId));
+    } catch (e) {
+      setPhotoError(e instanceof Error ? e.message : "Failed to upload photo");
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
   const [phones, setPhones] = useState<string[]>(
     editingTenant?.phones.length ? editingTenant.phones : [""],
   );
@@ -1008,6 +1027,7 @@ export default function AddTenant() {
     if (isEditing && editingTenant) {
       updateTenant(editingTenant.id, {
         name,
+        photoUrl,
         phones: phones.map((p) => p.trim()).filter(Boolean),
         emergencyContacts: cleanContacts(contacts),
         room: selectedRoom.room,
@@ -1053,6 +1073,7 @@ export default function AddTenant() {
 
     const created = addTenant({
       name,
+      photoUrl,
       phones: phones.map((p) => p.trim()).filter(Boolean),
       emergencyContacts: cleanContacts(contacts),
       property: propertyName,
@@ -1230,6 +1251,43 @@ export default function AddTenant() {
             subtitle="The tenant's legal name as it appears on their ID/Passport."
           />
           <div className="mt-4 space-y-4">
+            {/* Photo — optional, uploaded straight to the tenant-photos bucket (see lib/storage.ts's
+                uploadPhoto), same compress-then-upload path expense/maintenance photos already use.
+                Falls back to an initials avatar on the profile page when there isn't one. */}
+            <div className="flex items-center gap-4">
+              {/* Seeded on the editing tenant's id when there is one, otherwise the name typed so
+                  far — a new tenant has no id yet until this form actually submits, so the preview
+                  here won't always exactly match the seed TenantProfile's avatar ends up using, but
+                  it's close enough for a before-you've-saved preview. */}
+              <img
+                src={photoUrl || dicebearAvatarUrl(editingTenant?.id || `${firstName} ${lastName}`)}
+                alt=""
+                className="h-16 w-16 shrink-0 rounded-full bg-mist object-cover"
+              />
+              <div>
+                <input
+                  ref={photoInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    void handlePhotoChange(e.target.files?.[0]);
+                    e.target.value = "";
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => photoInputRef.current?.click()}
+                  disabled={uploadingPhoto}
+                >
+                  {uploadingPhoto ? "Uploading…" : photoUrl ? "Change photo" : "Add photo"}
+                </Button>
+                {photoError && <p className="mt-1.5 text-xs text-red-600">{photoError}</p>}
+              </div>
+            </div>
+
             <div className="grid grid-cols-[100px_1fr_1fr] gap-3">
               <div>
                 <FieldLabel>Prefix</FieldLabel>

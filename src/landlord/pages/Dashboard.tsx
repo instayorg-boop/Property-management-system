@@ -1,26 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import LogPaymentModal from "../components/LogPaymentModal";
 import TenantSearchDrawer from "../components/TenantSearchDrawer";
 import TenantPaymentDrawer from "../components/TenantPaymentDrawer";
 import MoveOutModal from "../components/MoveOutModal";
 import ExpenseFormDrawer from "../components/ExpenseFormDrawer";
 import { type UpcomingPayout } from "../components/PayoutDetailDrawer";
-import Select, { type SelectOption } from "../components/Select";
 import { Skeleton } from "../components/Skeleton";
 import { useTenants, useCollectedRent, formatCurrency, type Tenant } from "../TenantsContext";
-import { useExpenses } from "../ExpensesContext";
-import { useMaintenance } from "../MaintenanceContext";
+import { useNotifications } from "../NotificationsContext";
 import { useRoomsView } from "../RoomsContext";
 import { useSettings } from "../SettingsContext";
 import { getLencoBalance } from "../../lib/payoutApi";
 import { supabase } from "../../lib/supabaseClient";
 import { calcTotalOwed } from "../invoiceUtils";
+import TodaysTasks from "../components/TodaysTasks";
+import ExpensesBreakdownCard from "../components/ExpensesBreakdownCard";
 import {
   ArrowRight as ArrowIcon,
-  Wrench as WrenchIcon,
   CheckCircle as CheckCircleIcon,
   Money as CashIcon,
   Receipt as ReceiptIcon,
@@ -28,11 +26,17 @@ import {
   Plus as PlusIcon,
   DoorOpen as DoorIcon,
   Coins,
+  Wallet as WalletIcon,
+  DotsThreeVertical,
+  CaretRightIcon,
+
 } from "@phosphor-icons/react";
-import MetricCard from "../components/MetricCard";
 import SectionLabel from "../components/SectionLabel";
 import SetupChecklist from "../components/SetupChecklist";
 import Button from "../components/Button";
+import ActivityRow from "../components/ActivityRow";
+import DashboardTabs from "../components/DashboardTabs";
+import { Bell } from "lucide-react";
 
 type QuickAction = "log-payment" | "add-expense" | "add-tenant";
 
@@ -120,47 +124,10 @@ function Greeting({ onAction }: { propertyId: string | null; onAction: (action: 
   );
 }
 
-function timeAgo(iso: string) {
-  const ms = Date.now() - new Date(iso).getTime();
-  const minutes = Math.round(ms / 60000);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.round(hours / 24);
-  return `${days}d ago`;
-}
-
-const collectionRangeOptions: SelectOption[] = [
-  { value: "3", label: "Last 3 months" },
-  { value: "6", label: "Last 6 months" },
-  { value: "12", label: "Last 12 months" },
-];
-
-const statusStyle: Record<string, string> = {
-  Paid: "bg-emerald-50 text-emerald-600",
-  Overdue: "bg-red-50 text-red-600",
-  Partial: "bg-amber-50 text-amber-600",
-  Unpaid: "bg-slate-100 text-slate-600",
-  // A credit/waiver reduces what's owed rather than being money the tenant paid in — its own
-  // color so it never reads as either a completed payment (green) or a problem (red).
-  Credit: "bg-brand-soft text-brand",
-};
-
-const ledgerStatusLabel: Record<string, string> = { paid: "Paid", overdue: "Overdue", partial: "Partial", unpaid: "Unpaid" };
-
-const methodLabel: Record<string, string> = {
-  cash: "Cash",
-  "mobile-money": "Mobile money",
-  "bank-transfer": "Bank transfer",
-  other: "Other",
-};
-
 type PaymentStep = "search" | "ledger" | "confirm";
 
 export default function Dashboard() {
   const { tenants, logPayments, moveOutTenant, isReady: tenantsReady } = useTenants();
-  const { expenses } = useExpenses();
-  const { reports } = useMaintenance();
   const rooms = useRoomsView();
   const { lencoConnected, bankName, accountNumber, propertyId, isReady: settingsReady } = useSettings();
   const totalCollected = useCollectedRent();
@@ -171,103 +138,6 @@ export default function Dashboard() {
     () => ({ occupied: rooms.filter((r) => r.status === "occupied").length, total: rooms.length }),
     [rooms]
   );
-
-  const activeTenantCount = useMemo(() => tenants.filter((t) => t.active).length, [tenants]);
-
-  // Last 12 real calendar months, built from ledger entry timestamps across every tenant plus
-  // logged expenses — one series each, same month buckets, so the chart can show both without
-  // a second fetch or a second set of month math.
-  const collections = useMemo(() => {
-    const now = new Date();
-    const months = Array.from({ length: 12 }, (_, i) => {
-      const d = new Date(now.getFullYear(), now.getMonth() - (11 - i), 1);
-      return { key: `${d.getFullYear()}-${d.getMonth()}`, label: d.toLocaleDateString("en-US", { month: "short" }), amount: 0, expenses: 0 };
-    });
-    const byKey = new Map(months.map((m) => [m.key, m]));
-    for (const t of tenants) {
-      for (const row of t.ledger) {
-        if (!row.createdAt || (row.status !== "paid" && row.status !== "partial")) continue;
-        const created = new Date(row.createdAt);
-        const bucket = byKey.get(`${created.getFullYear()}-${created.getMonth()}`);
-        if (bucket) bucket.amount += row.status === "partial" ? (row.paidAmount ?? 0) : row.amount;
-      }
-    }
-    for (const e of expenses) {
-      if (!e.date) continue;
-      const created = new Date(e.date);
-      const bucket = byKey.get(`${created.getFullYear()}-${created.getMonth()}`);
-      if (bucket) bucket.expenses += e.amount;
-    }
-    return months.map(({ label, amount, expenses }) => ({ label, amount, expenses }));
-  }, [tenants, expenses]);
-
-  // Every actual money-movement ledger entry across every tenant, newest first — replaces a
-  // hardcoded "recent payments" list. Deliberately narrower than "every ledger row": a charge
-  // that's still unpaid/overdue never involved money changing hands, so it's excluded rather than
-  // showing up as a red, sign-less amount under a widget titled "Recent payments". Likewise a
-  // penalty or a positive ad-hoc adjustment only changes what's *owed* — it isn't a payment either,
-  // so it's left out here (it still shows on the tenant's own ledger).
-  const payments = useMemo(() => {
-    const rows: {
-      key: string;
-      tenantId: string;
-      portalToken?: string;
-      tenant: string;
-      room: string;
-      status: string;
-      method: string;
-      date: string;
-      amount: string;
-      isCredit: boolean;
-      createdAt: string;
-    }[] = [];
-    for (const t of tenants) {
-      for (const row of t.ledger) {
-        // A voided entry is a record correction — it never happened financially (see
-        // voidLedgerEntry), so it must never read as recent activity here.
-        if (!row.createdAt || row.voidedAt) continue;
-
-        let value = 0;
-        let label: string;
-        // A credit/waiver forgives part of what's owed rather than being cash the tenant handed
-        // over — shown with its own label/color, never folded into "Paid".
-        let isCredit = false;
-
-        if (row.eventType === "payment") {
-          value = Math.abs(row.amount);
-          label = "Paid";
-        } else if (row.eventType === "credit") {
-          value = Math.abs(row.amount);
-          label = "Credit";
-          isCredit = true;
-        } else if (row.eventType === "penalty" || row.eventType === "adjustment") {
-          continue;
-        } else {
-          // Legacy row or a projected charge — one row per billing period; status carries whether
-          // (and how much of) it was actually collected.
-          if (row.status !== "paid" && row.status !== "partial") continue;
-          value = row.status === "partial" ? (row.paidAmount ?? 0) : row.amount;
-          if (value <= 0) continue;
-          label = ledgerStatusLabel[row.status] ?? "Paid";
-        }
-
-        rows.push({
-          key: row.id,
-          tenantId: t.id,
-          portalToken: t.portalToken,
-          tenant: t.name,
-          room: t.room,
-          status: label,
-          method: row.method ? (methodLabel[row.method] ?? row.method) : "Manual",
-          date: new Date(row.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
-          amount: `${isCredit ? "" : "+"}${formatCurrency(value)}`,
-          isCredit,
-          createdAt: row.createdAt,
-        });
-      }
-    }
-    return rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 5);
-  }, [tenants]);
 
   // What's actually sitting in Lenco, ready to withdraw — real mobile-money collections minus
   // whatever's already been paid out. Deliberately NOT gross-collected-minus-fee-minus-expenses
@@ -337,10 +207,10 @@ export default function Dashboard() {
   const [payingTenant, setPayingTenant] = useState<Tenant | null>(null);
   const [movingOutTenant, setMovingOutTenant] = useState<Tenant | null>(null);
   const [addingExpense, setAddingExpense] = useState(false);
-  const [collectionRange, setCollectionRange] = useState("6");
 
-  // Unread maintenance reports — hide the whole card when empty.
-  const unreadMaintenance = useMemo(() => reports.filter((r) => r.unread).slice(0, 5), [reports]);
+  const { notifications, isReady: notificationsReady, markRead: markNotificationRead } = useNotifications();
+  const recentActivity = useMemo(() => notifications.slice(0, 7), [notifications]);
+
 
   const outstanding = useMemo(() => {
     const behind = tenants.filter((t) => t.active && (t.status === "overdue" || t.status === "unpaid" || t.status === "partial"));
@@ -356,454 +226,252 @@ export default function Dashboard() {
 
   return (
     <>
+      <DashboardTabs />
       <Greeting propertyId={propertyId} onAction={handleAction} />
 
-      {/* Stat cards — their own full-width row, not sharing space with any other panel. Card
-          chrome renders immediately; only the figures inside shimmer while loading. */}
-      <div className="px-4 sm:px-8">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {!dataReady ? (
-            <div className="rounded-lg border border-line bg-paper p-4">
-              <Skeleton className="h-3 w-24" />
-              <Skeleton className="mt-2.5 h-6 w-28" />
-              <Skeleton className="mt-2 h-3 w-32" />
-            </div>
-          ) : (
-            <MetricCard
-              tone="success"
-              label="Total collected"
-              value={`K${totalCollected.toLocaleString()}`}
-              caption={totalCollected > 0 ? "Collected from active tenants" : "Logged payments will show up here"}
-              to="/rent"
-            />
-          )}
-          {!dataReady ? (
-            <div className="rounded-lg border border-line bg-paper p-4">
-              <Skeleton className="h-3 w-28" />
-              <Skeleton className="mt-2.5 h-6 w-28" />
-              <Skeleton className="mt-2 h-3 w-32" />
-            </div>
-          ) : (
-            <MetricCard
-              label="Outstanding balance"
-              value={`K${outstanding.total.toLocaleString()}`}
-              tone={outstanding.total > 0 ? "danger" : "success"}
-              caption={
-                outstanding.total > 0
-                  ? `${outstanding.count} tenant${outstanding.count === 1 ? "" : "s"} behind on rent`
-                  : "Every active tenant is paid up"
-              }
-              to="/rent"
-            />
-          )}
-          {!dataReady ? (
-            <div className="rounded-lg border border-line bg-paper p-4">
-              <Skeleton className="h-3 w-20" />
-              <Skeleton className="mt-2.5 h-6 w-20" />
-              <Skeleton className="mt-2 h-3 w-24" />
-            </div>
-          ) : roomsOccupied.total > 0 ? (
-            <MetricCard
-              label="Rooms occupied"
-              value={`${roomsOccupied.occupied} / ${roomsOccupied.total}`}
-              tone={roomsOccupied.occupied === roomsOccupied.total ? "success" : "default"}
-              caption={`${roomsOccupied.total - roomsOccupied.occupied} room${roomsOccupied.total - roomsOccupied.occupied === 1 ? "" : "s"} empty`}
-              to="/rooms"
-            />
-          ) : (
-            <button
-              type="button"
-              onClick={() => navigate("/rooms")}
-              className="group rounded-lg border border-line bg-paper p-4 text-left transition-colors hover:border-ink/20 hover:bg-mist/40"
-            >
-              <p className="text-sm text-muted">Rooms occupied</p>
-              <div className="mt-2.5 flex items-center gap-2.5">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-mist text-muted">
-                  <DoorIcon size={14} weight="duotone" />
-                </span>
-                <div>
-                  <p className="text-sm font-medium text-ink">No rooms yet</p>
-                  <p className="flex items-center gap-1 text-[11px] text-muted">
-                    Add a room to get started
-                    <ArrowIcon size={10} weight="bold" className="opacity-0 transition-opacity group-hover:opacity-100" />
-                  </p>
-                </div>
-              </div>
-            </button>
-          )}
-          {!dataReady ? (
-            <div className="rounded-lg border border-line bg-paper p-4">
-              <Skeleton className="h-3 w-24" />
-              <Skeleton className="mt-2.5 h-6 w-28" />
-              <Skeleton className="mt-2 h-3 w-32" />
-            </div>
-          ) : (
-            <MetricCard
-              label="Total tenants"
-              value={`${activeTenantCount}`}
-              caption={activeTenantCount > 0 ? "Across all your rooms" : "Add a tenant to get started"}
-              to="/tenants"
-            />
-          )}
-        </div>
-      </div>
-
-      <div className="mt-4 grid grid-cols-1 gap-4 px-4 sm:px-8 pb-10 lg:grid-cols-3">
+      {/* Left and right columns are two independent stacks within one grid row, so each side's
+          own content determines its own height — no column is ever stretched or gapped to match
+          the other's height. */}
+      <div className="grid grid-cols-1 items-start gap-4 px-4 sm:px-8 pb-10 lg:grid-cols-3">
         {/* Left / main column */}
         <div className="space-y-4 lg:col-span-2">
-          {dataReady && <SetupChecklist />}
-
-          {/* Rent income vs expenses chart */}
-          <div className="rounded-lg border border-gray-200 bg-paper p-5">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm font-medium text-ink">
-                  Rent income vs expenses
-                </p>
-
-                <span className="mt-1.5 flex items-center gap-3 text-[11px] text-muted">
-                  <span className="flex items-center gap-1">
-                    <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                    Income
-                  </span>
-
-                  <span className="flex items-center gap-1">
-                    <span className="h-2 w-2 rounded-full bg-red-700" />
-                    Expenses
-                  </span>
-                </span>
-              </div>
-
-              <Select
-                value={collectionRange}
-                onChange={setCollectionRange}
-                options={collectionRangeOptions}
-                className="py-1.5 text-xs"
-              />
-            </div>
-
+          {/* Overview snapshot — first three stats as plain tiles */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             {!dataReady ? (
-              <div className="mt-6 flex h-48 items-end gap-3 border-l border-line pl-3">
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <Skeleton
-                    key={i}
-                    className="w-full"
-                    style={{
-                      height: `${30 + ((i * 17) % 60)}%`,
-                    }}
-                  />
-                ))}
-              </div>
-            ) : collections.length === 0 ? (
-              <div className="mt-6 flex h-48 flex-col items-center justify-center gap-1 text-center">
-                <p className="text-sm font-semibold text-ink">
-                  No income yet
-                </p>
-
-                <p className="text-xs text-muted">
-                  Logged payments will show up here month by month.
-                </p>
+              <div className="rounded-lg border border-line bg-paper p-4">
+                <Skeleton className="h-3 w-24" />
+                <Skeleton className="mt-2.5 h-6 w-28" />
               </div>
             ) : (
-              <div className="mt-6 h-48">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={collections.slice(-Number(collectionRange))}
-                    barGap={4}
-                    margin={{
-                      top: 4,
-                      right: 4,
-                      left: 0,
-                      bottom: 4,
-                    }}
-                  >
-                    <CartesianGrid
-                      vertical={false}
-                      horizontal={true}
-                      stroke="var(--color-line)"
-                    />
-
-                    <XAxis
-                      dataKey="label"
-                      tickLine={false}
-                      axisLine={false}
-                      tick={{
-                        fill: "var(--color-muted)",
-                        fontSize: 11,
-                      }}
-                      dy={6}
-                    />
-
-                    <YAxis
-                      tickLine={false}
-                      axisLine={false}
-                      domain={[0, "auto"]}
-                      allowDecimals={false}
-                      tickMargin={6}
-                      tick={{
-                        fill: "var(--color-muted)",
-                        fontSize: 11,
-                      }}
-                      tickFormatter={(v: number) => {
-                        if (v === 0) return "K0";
-
-                        const value = v / 1000;
-
-                        return Number.isInteger(value)
-                          ? `K${value}k`
-                          : `K${value.toFixed(1)}k`;
-                      }}
-                      width={52}
-                    />
-
-                    <Tooltip
-                      cursor={{
-                        fill: "var(--color-mist)",
-                      }}
-                      content={({ active, payload, label }) => {
-                        if (!active || !payload?.length) return null;
-
-                        const income = payload.find(
-                          (p) => p.dataKey === "amount"
-                        )?.value as number | undefined;
-
-                        const expenses = payload.find(
-                          (p) => p.dataKey === "expenses"
-                        )?.value as number | undefined;
-
-                        return (
-                          <div className="rounded-md bg-ink px-2.5 py-1.5 text-center shadow-lg">
-                            <p className="text-[11px] font-semibold text-paper">
-                              {label}
-                            </p>
-
-                            <p className="text-[11px] text-paper/90">
-                              K{(income ?? 0).toLocaleString()} income
-                            </p>
-
-                            {!!expenses && (
-                              <p className="text-[11px] text-paper/70">
-                                K{expenses.toLocaleString()} expenses
-                              </p>
-                            )}
-                          </div>
-                        );
-                      }}
-                    />
-
-                    <Bar
-                      dataKey="amount"
-                      name="Income"
-                      fill="var(--color-success)"
-                      radius={[4, 4, 0, 0]}
-                      maxBarSize={18}
-                    />
-
-                    <Bar
-                      dataKey="expenses"
-                      name="Expenses"
-                      fill="var(--color-danger)"
-                      radius={[4, 4, 0, 0]}
-                      maxBarSize={18}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
+              <button
+                type="button"
+                onClick={() => navigate("/rent")}
+                className="rounded-lg border border-line bg-paper p-4 text-left transition-colors hover:border-ink/20 hover:bg-mist/40"
+              >
+                <p className="text-sm text-muted">Total collected</p>
+                <p className="font-display mt-1.5 text-2xl font-semibold tracking-tight text-emerald-600">
+                  K{totalCollected.toLocaleString()}
+                </p>
+              </button>
+            )}
+            {!dataReady ? (
+              <div className="rounded-lg border border-line bg-paper p-4">
+                <Skeleton className="h-3 w-28" />
+                <Skeleton className="mt-2.5 h-6 w-28" />
               </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => navigate("/rent")}
+                className="rounded-lg border border-line bg-paper p-4 text-left transition-colors hover:border-ink/20 hover:bg-mist/40"
+              >
+                <p className="text-sm text-muted">Outstanding balance</p>
+                <p className={`font-display mt-1.5 text-2xl font-semibold tracking-tight ${outstanding.total > 0 ? "text-red-700" : "text-emerald-600"}`}>
+                  K{outstanding.total.toLocaleString()}
+                </p>
+              </button>
+            )}
+            {!dataReady ? (
+              <div className="rounded-lg border border-line bg-paper p-4">
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="mt-2.5 h-6 w-20" />
+              </div>
+            ) : roomsOccupied.total > 0 ? (
+              <button
+                type="button"
+                onClick={() => navigate("/rooms")}
+                className="rounded-lg border border-line bg-paper p-4 text-left transition-colors hover:border-ink/20 hover:bg-mist/40"
+              >
+                <p className="text-sm text-muted">Rooms occupied</p>
+                <p className="font-display mt-1.5 text-2xl font-semibold tracking-tight text-ink">
+                  {roomsOccupied.occupied} / {roomsOccupied.total}
+                </p>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => navigate("/rooms")}
+                className="group rounded-lg border border-line bg-paper p-4 text-left transition-colors hover:border-ink/20 hover:bg-mist/40"
+              >
+                <p className="text-sm text-muted">Rooms occupied</p>
+                <div className="mt-2.5 flex items-center gap-2.5">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-mist text-muted">
+                    <DoorIcon size={14} weight="duotone" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-medium text-ink">No rooms yet</p>
+                    <p className="flex items-center gap-1 text-[11px] text-muted">
+                      Add a room to get started
+                      <ArrowIcon size={10} weight="bold" className="opacity-0 transition-opacity group-hover:opacity-100" />
+                    </p>
+                  </div>
+                </div>
+              </button>
             )}
           </div>
 
-          {/* Recent payments table */}
-          <div className="rounded-lg border border-line bg-paper p-5">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-ink">Recent payments</p>
-              <Link to="/rent" className="text-xs font-medium text-brand hover:text-ink">
-                View all
+          {dataReady && <SetupChecklist />}
+
+          {/* Today's tasks. The list is decided by the database (detect_* + sync_tasks); Gemini
+              only rewords titles, so nothing here is a model's opinion about what matters. This
+              replaces the old dashboard-tasks card, which asked an LLM to invent the whole list
+              fresh on every dashboard load. */}
+          <TodaysTasks propertyId={propertyId} />
+
+          {/* Recent activity */}
+          <div className="border border-gray-200 p-4 rounded-lg">
+            {/* Header */}
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2.5">
+                <p className="text-xl font-semibold font-display tracking-tight text-ink">
+                  Recent activity
+                </p>
+
+                {recentActivity.length > 0 && (
+                  <span className="rounded-md bg-mist px-1.5 py-0.5 text-[10px] font-medium text-muted">
+                    {recentActivity.length}
+                  </span>
+                )}
+              </div>
+
+              <Link
+                to="/notifications"
+                className="
+        flex
+        items-center
+        gap-1
+        text-sm
+        font-medium
+        text-muted
+        transition-colors
+        hover:text-ink
+      "
+              >
+                View all activity
+                <CaretRightIcon size={12} />
               </Link>
             </div>
 
-            {!dataReady ? (
-              <div className="mt-4 space-y-3">
-                {Array.from({ length: 4 }).map((_, i) => (
-                  <div key={i} className="flex items-center gap-2.5">
-                    <Skeleton className="h-7 w-7 shrink-0 rounded-full" />
-                    <div className="flex-1 space-y-1.5">
-                      <Skeleton className="h-3 w-1/3" />
-                      <Skeleton className="h-2.5 w-1/5" />
-                    </div>
-                    <Skeleton className="h-3 w-14" />
-                  </div>
-                ))}
-              </div>
-            ) : payments.length === 0 ? (
-              <div className="mt-4 flex flex-col items-center justify-center gap-1 py-10 text-center">
-                <p className="text-sm font-semibold text-ink">No payments yet</p>
-                <p className="text-xs text-muted">Payments you log will show up here.</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="mt-4 w-full text-left text-sm">
-                  <thead>
-                    <tr className="text-xs text-muted">
-                      <th className="pb-2 font-medium">Tenant</th>
-                      <th className="pb-2 font-medium">Status</th>
-                      <th className="pb-2 font-medium">Method</th>
-                      <th className="pb-2 font-medium">Date</th>
-                      <th className="pb-2 text-right font-medium">Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {payments.map((p) => {
-                      return (
-                        <tr
-                          key={p.key}
-                          onClick={() => navigate("/rent", { state: { openTenantId: p.tenantId } })}
-                          className="cursor-pointer border-t border-line transition-colors duration-200 ease-in-out hover:bg-mist"
-                        >
-                          <td className="py-2.5">
-                            <div className="flex items-center gap-2.5">
+            {/* Activity feed */}
+            <div className="mt-3">
+              {!notificationsReady ? (
+                <div className="divide-y divide-line/70">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-4 py-4"
+                    >
+                      <Skeleton className="h-2.5 w-10 shrink-0" />
 
-                              <div>
-                                <Link
-                                  to={`/tenants/${p.portalToken ?? p.tenantId}`}
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="font-medium text-ink hover:underline"
-                                >
-                                  {p.tenant}
-                                </Link>
-                                <p className="text-[11px] text-muted">{p.room}</p>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="py-2.5">
-                            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[p.status]}`}>
-                              {p.status}
-                            </span>
-                          </td>
-                          <td className="py-2.5 text-muted">{p.method}</td>
-                          <td className="py-2.5 text-muted">{p.date}</td>
-                          <td
-                            className={`py-2.5 text-right font-medium ${p.isCredit ? "text-brand" : "text-emerald-600"}`}
-                          >
-                            {p.amount}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                      <div className="min-w-0 flex-1">
+                        <Skeleton className="h-3.5 w-3/4" />
+                        <Skeleton className="mt-2 h-2.5 w-1/3" />
+                      </div>
+
+                      <Skeleton className="h-6 w-6 rounded-md" />
+                    </div>
+                  ))}
+                </div>
+              ) : recentActivity.length === 0 ? (
+                <div
+                  className="
+          flex
+          flex-col
+          items-center
+          justify-center
+          border-y
+          border-line/70
+          py-12
+          text-center
+        "
+                >
+                  <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-full bg-mist">
+                    <Bell size={17} className="text-muted" />
+                  </div>
+
+                  <p className="text-[13px] font-medium text-ink">
+                    No recent activity
+                  </p>
+
+                  <p className="mt-1 text-[11px] text-muted">
+                    Updates from your property will appear here.
+                  </p>
+                </div>
+              ) : (
+                <div className="divide-y divide-line/70">
+                  {recentActivity.map((n) => (
+                    <ActivityRow key={n.id} notification={n} tenants={tenants} onMarkRead={markNotificationRead} />
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
         {/* Right column */}
         <div className="space-y-4">
 
+          {/* Online payments balance — a wallet-card treatment (icon + title header, a distinct
+              shaded balance panel, one full-width primary action) rather than a plain stat tile,
+              since this is the one number on the page that's actually sitting in a payment
+              gateway, ready to be moved, not just a reporting figure. */}
+          <div className="rounded-lg border border-line bg-paper p-4">
+          
 
-          {/* Online payments balance — its own brand-tinted surface (every other card on this page
-              is plain bg-paper) so the one number that's actually sitting in a payment gateway,
-              waiting to be moved, reads as different in kind from a stat card, not just another
-              tile in the column. */}
-          <div className="rounded-lg border border-brand/15 bg-brand-soft p-5">
+                <p className="text-xl text-center text-blue-800 font-semibold font-display tracking-tight ">Online payments</p>
+            
+
             {!dataReady ? (
-              <div className="space-y-2">
-                <Skeleton className="h-4 w-2/3" />
-                <Skeleton className="h-7 w-1/2" />
-                <Skeleton className="h-3 w-full" />
-                <Skeleton className="mt-2 h-9 w-full rounded-lg" />
+              <div className="mt-4 space-y-2 rounded-xl bg-mist p-5">
+                <Skeleton className="mx-auto h-3 w-24" />
+                <Skeleton className="mx-auto h-8 w-32" />
+                <Skeleton className="mx-auto h-3 w-28" />
+                <Skeleton className="mt-3 h-10 w-full rounded-full" />
               </div>
             ) : payout ? (
-              <>
-                <div className="flex items-center gap-2">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-paper text-brand">
-                    <Coins size={16} weight="duotone" />
+              <div className="mt-4 rounded-xl bg-mist p-5 text-center">
+                <p className="text-xs font-medium text-muted">Your balance</p>
+
+                <div className="mt-2 flex items-center justify-center gap-2">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand text-paper">
+                    <Coins size={12} weight="fill" />
                   </span>
-                  <SectionLabel>Online payments balance</SectionLabel>
+                  <p className="font-display text-[28px] leading-none font-bold tracking-tight text-ink">
+                    {payout.amount}
+                  </p>
                 </div>
-                <p className="font-display mt-3 text-[32px] leading-none font-bold tracking-tight text-brand">{payout.amount}</p>
-                <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-paper px-2 py-0.5 text-[11px] font-semibold text-emerald-600">
+
+                <p className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-emerald-600">
                   <CheckCircleIcon size={11} weight="fill" />
                   {payout.status}
-                </span>
-                <p className="mt-2 text-xs text-ink/70">Collected via mobile money · {payout.date}</p>
+                </p>
+
                 <Button
                   variant="primary"
-                  size="sm"
                   onClick={() => navigate("/online-payments")}
-                  className="mt-4 block w-full text-center"
+                  className="mt-5 flex w-full items-center justify-center gap-1.5"
                 >
                   Transfer to bank
+                  <ArrowIcon size={14} weight="bold" />
                 </Button>
-              </>
+              </div>
             ) : (
-              <div className="flex flex-col items-center justify-center gap-2 py-4 text-center">
-                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-paper text-brand/50">
+              <div className="mt-4 flex flex-col items-center justify-center gap-2 rounded-xl bg-mist p-6 text-center">
+                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-paper text-muted">
                   <Coins size={22} weight="duotone" />
                 </span>
                 <p className="text-sm font-semibold text-ink">Nothing to transfer yet</p>
-                <p className="max-w-[220px] text-xs text-ink/70">
+                <p className="max-w-[220px] text-xs text-muted">
                   Rent collected automatically will show up here.
                 </p>
               </div>
             )}
           </div>
 
-          {/* Maintenance inbox preview */}
-          <div className="rounded-lg border border-line bg-paper p-5">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-ink">Maintenance requests</p>
-              {unreadMaintenance.length > 0 && (
-                <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-600">
-                  {unreadMaintenance.length} new
-                </span>
-              )}
-            </div>
-
-            {unreadMaintenance.length > 0 ? (
-              <>
-                <div className="mt-3 space-y-3">
-                  {unreadMaintenance.map((r) => (
-                    <button
-                      key={r.id}
-                      type="button"
-                      onClick={() => navigate("/maintenance", { state: { openReportId: r.id } })}
-                      className="flex w-full items-start gap-2.5 rounded-lg text-left transition-colors hover:bg-mist"
-                    >
-                      <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-mist text-muted">
-                        <WrenchIcon size={14} weight="duotone" />
-                      </span>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <p className="text-xs font-semibold text-ink">{r.location}</p>
-                          <span className="text-[11px] text-muted">· {timeAgo(r.submittedAt)}</span>
-                        </div>
-                        <p className="mt-0.5 truncate text-xs text-muted">{r.description}</p>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-
-                <Link
-                  to="/maintenance"
-                  className="mt-4 flex items-center justify-center gap-1.5 rounded-lg bg-mist py-2 text-xs font-medium text-ink transition-colors hover:bg-line/40"
-                >
-                  View all
-                  <ArrowIcon size={14} weight="bold" />
-                </Link>
-              </>
-            ) : (
-              <div className="flex flex-col items-center justify-center gap-3 py-8 text-center">
-                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-500">
-                  <CheckCircleIcon size={24} weight="duotone" />
-                </span>
-                <div>
-                  <p className="text-xs font-semibold text-ink">All caught up</p>
-                  <p className="mt-0.5 text-xs text-muted">No open maintenance requests right now.</p>
-                </div>
-              </div>
-            )}
-          </div>
-
+          {/* Expenses this month — a donut broken down by category, replacing the old
+              maintenance-inbox preview (maintenance requests already have their own dashboard
+              entry point via Recent activity / the sidebar). */}
+          <ExpensesBreakdownCard />
         </div>
       </div>
 

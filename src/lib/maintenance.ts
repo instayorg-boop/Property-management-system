@@ -2,6 +2,7 @@ import { supabase } from "./supabaseClient";
 import type { Tables, TablesUpdate } from "./database.types";
 
 export type MaintenanceStatus = "open" | "in-progress" | "resolved";
+export type MaintenancePriority = "low" | "medium" | "high" | "urgent";
 
 export type MaintenanceReport = {
   id: string;
@@ -13,6 +14,7 @@ export type MaintenanceReport = {
   description: string;
   submittedAt: string;
   status: MaintenanceStatus;
+  priority: MaintenancePriority;
   unread: boolean;
   photoUrls: string[];
   resolvedAt?: string;
@@ -27,6 +29,7 @@ type ReportRow = Pick<
   | "description"
   | "submitted_at"
   | "status"
+  | "priority"
   | "unread"
   | "photo_urls"
   | "resolved_at"
@@ -41,6 +44,7 @@ function toReport(row: ReportRow): MaintenanceReport {
     description: row.description,
     submittedAt: row.submitted_at,
     status: row.status as MaintenanceStatus,
+    priority: (row.priority as MaintenancePriority) ?? "medium",
     unread: row.unread,
     photoUrls: row.photo_urls ?? [],
     resolvedAt: row.resolved_at ?? undefined,
@@ -53,7 +57,7 @@ const REPORT_LIST_LIMIT = 500;
 export async function listReports(propertyId: string): Promise<MaintenanceReport[]> {
   const { data, error } = await supabase
     .from("maintenance_reports")
-    .select("id, tenant, tenant_id, location, description, submitted_at, status, unread, photo_urls, resolved_at")
+    .select("id, tenant, tenant_id, location, description, submitted_at, status, priority, unread, photo_urls, resolved_at")
     .eq("property_id", propertyId)
     .order("submitted_at", { ascending: false })
     .limit(REPORT_LIST_LIMIT);
@@ -75,6 +79,7 @@ export async function insertReport(
     description: report.description,
     submitted_at: report.submittedAt,
     status: report.status,
+    priority: report.priority,
     photo_urls: report.photoUrls,
   });
   if (error) throw error;
@@ -83,6 +88,7 @@ export async function insertReport(
 export async function updateReportRow(id: string, patch: Partial<Omit<MaintenanceReport, "id">>): Promise<void> {
   const row: TablesUpdate<"maintenance_reports"> = {};
   if (patch.status !== undefined) row.status = patch.status;
+  if (patch.priority !== undefined) row.priority = patch.priority;
   if (patch.unread !== undefined) row.unread = patch.unread;
   if (patch.resolvedAt !== undefined) row.resolved_at = patch.resolvedAt ?? null;
   if (patch.location !== undefined) row.location = patch.location;
