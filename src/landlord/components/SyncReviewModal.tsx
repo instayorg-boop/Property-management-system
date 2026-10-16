@@ -33,7 +33,7 @@ function ConflictRow({ action }: { action: QueuedAction }) {
   };
 
   return (
-    <div className="rounded-xl border border-line p-4">
+    <div className="rounded-xl bg-mist p-4">
       <div className="flex items-center gap-2">
         <GitMerge size={16} weight="duotone" className="text-amber-600" />
         <p className="text-sm font-semibold text-ink">{ACTION_LABEL[action.type]}</p>
@@ -86,7 +86,7 @@ function NeedsReviewRow({ action }: { action: QueuedAction }) {
   };
 
   return (
-    <div className="rounded-xl border border-line p-4">
+    <div className="rounded-xl bg-mist p-4">
       <div className="flex items-center gap-2">
         <Warning size={16} weight="duotone" className="text-amber-600" />
         <p className="text-sm font-semibold text-ink">{ACTION_LABEL[action.type]}</p>

@@ -59,7 +59,7 @@ export default function DatePicker({
       <button
         type="button"
         onClick={openPicker}
-        className={`flex w-full items-center justify-between gap-2 rounded-lg border border-line bg-paper px-3 py-2.5 text-left text-sm outline-none transition-colors focus:border-brand ${className}`}
+        className={`flex w-full items-center justify-between gap-2 rounded-lg border border-transparent bg-mist px-3 py-2.5 text-left text-sm outline-none transition-colors focus:ring-2 focus:ring-brand/30 ${className}`}
       >
         <span className={selected ? "text-ink" : "text-muted"}>
           {selected ? selected.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : placeholder}
@@ -76,7 +76,7 @@ export default function DatePicker({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -4, scale: 0.98 }}
               transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
-              className="absolute top-full left-0 z-20 mt-1.5 w-64 rounded-lg border border-line bg-paper p-3 shadow-card"
+              className="absolute top-full left-0 z-20 mt-1.5 w-56 rounded-lg border border-line bg-paper p-2.5 shadow-card"
             >
               <div className="flex items-center justify-between">
                 <button
@@ -118,7 +118,7 @@ export default function DatePicker({
                         onChange(toIso(day));
                         setOpen(false);
                       }}
-                      className={`mx-auto flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
+                      className={`mx-auto flex h-7 w-7 items-center justify-center rounded-full text-[13px] transition-colors ${
                         isSelected
                           ? "bg-brand font-semibold text-paper"
                           : isToday

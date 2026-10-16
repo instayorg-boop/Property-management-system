@@ -20,7 +20,7 @@ const steps = [
   {
     n: "04",
     title: "Reports, ready when you need them",
-    desc: "Collection rates, arrears and rent roll are always up to date — export as PDF, email or WhatsApp for owners in one tap.",
+    desc: "Collection rates, arrears and rent roll are always up to date: export as PDF, email or WhatsApp for owners in one tap.",
   },
 ];
 

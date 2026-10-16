@@ -372,7 +372,7 @@ export default function AssistantPanel() {
           whileHover={{ y: -2 }}
           whileTap={{ scale: 0.96 }}
           transition={{ duration: 0.18, ease: EASE_STANDARD }}
-          className="floating-elevated group fixed right-5 bottom-5 z-40 hidden h-14 w-14 overflow-hidden rounded-full bg-paper lg:block"
+          className="floating-elevated group fixed right-4 bottom-4 z-40 h-12 w-12 overflow-hidden rounded-full bg-paper sm:right-5 sm:bottom-5 sm:h-14 sm:w-14"
         >
           <img
             src={ASSISTANT_MASCOT_URL}

@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { useSettings } from "./SettingsContext";
+import { useToast } from "./ToastContext";
 import { supabase } from "../lib/supabaseClient";
 import {
   listReports,
@@ -34,6 +35,7 @@ const MaintenanceContext = createContext<MaintenanceContextValue | null>(null);
 
 export function MaintenanceProvider({ children }: { children: ReactNode }) {
   const { propertyId } = useSettings();
+  const { showToast } = useToast();
   const [reports, setReports] = useState<MaintenanceReport[]>([]);
   const [isReady, setIsReady] = useState(false);
 
@@ -112,7 +114,12 @@ export function MaintenanceProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    void updateReportRow(id, { status, resolvedAt }).catch((e) => console.error("Failed to update report status", e));
+    void updateReportRow(id, { status, resolvedAt })
+      .then(() => showToast("Request status updated", "success"))
+      .catch((e) => {
+        console.error("Failed to update report status", e);
+        showToast("Couldn't update that request, please try again.", "error");
+      });
   };
 
   const markRead = (id: string) => {
@@ -128,17 +135,31 @@ export function MaintenanceProvider({ children }: { children: ReactNode }) {
   const addReport = (report: Omit<MaintenanceReport, "id" | "unread" | "resolvedAt" | "priority">) => {
     const created: MaintenanceReport = { ...report, id: crypto.randomUUID(), unread: false, priority: "medium" };
     setReports((prev) => [created, ...prev]);
-    if (propertyId) void insertReport(propertyId, created.id, created).catch((e) => console.error("Failed to save report", e));
+    if (propertyId)
+      void insertReport(propertyId, created.id, created)
+        .then(() => showToast("Request added", "success"))
+        .catch((e) => {
+          console.error("Failed to save report", e);
+          showToast("Couldn't save that request, please try again.", "error");
+        });
   };
 
   const updateReport = (id: string, patch: Partial<Pick<MaintenanceReport, "location" | "description" | "photoUrls" | "priority">>) => {
     setReports((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
-    void updateReportRow(id, patch).catch((e) => console.error("Failed to update report", e));
+    void updateReportRow(id, patch)
+      .then(() => showToast("Request updated", "success"))
+      .catch((e) => {
+        console.error("Failed to update report", e);
+        showToast("Couldn't save that change, please try again.", "error");
+      });
   };
 
   const deleteReport = (id: string) => {
     setReports((prev) => prev.filter((r) => r.id !== id));
-    void deleteReportRow(id).catch((e) => console.error("Failed to delete report", e));
+    void deleteReportRow(id).catch((e) => {
+      console.error("Failed to delete report", e);
+      showToast("Couldn't delete that request, please try again.", "error");
+    });
   };
 
   return (

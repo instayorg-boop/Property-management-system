@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { MagnifyingGlass as SearchIcon } from "@phosphor-icons/react";
+import { MagnifyingGlass as SearchIcon, X } from "@phosphor-icons/react";
+import { dicebearAvatarUrl } from "../avatar";
 import SlideOver from "./SlideOver";
 import { useTenants, formatCurrency, type Tenant } from "../TenantsContext";
 import { calcTotalOwed } from "../invoiceUtils";
@@ -31,50 +32,67 @@ export default function TenantSearchDrawer({
   const { tenants } = useTenants();
   const [query, setQuery] = useState("");
 
-  const results = tenants.filter(
-    (t) =>
-      t.active &&
-      t.id !== excludeTenantId &&
-      (t.name.toLowerCase().includes(query.toLowerCase()) || t.room.toLowerCase().includes(query.toLowerCase()))
-  );
+  const q = query.trim().toLowerCase();
+  // People who owe come first, then everyone else alphabetically.
+  const results = tenants
+    .filter(
+      (t) =>
+        t.active &&
+        t.id !== excludeTenantId &&
+        (t.name.toLowerCase().includes(q) || t.room.toLowerCase().includes(q) || t.phones.some((p) => p.replace(/\D/g, "").includes(q.replace(/\D/g, "") || "~")))
+    )
+    .sort((a, b) => (calcTotalOwed(b) > 0 ? 1 : 0) - (calcTotalOwed(a) > 0 ? 1 : 0) || a.name.localeCompare(b.name));
 
   return (
     <SlideOver onClose={onClose} title={title} description={description}>
-      <div className="flex items-center gap-2 rounded-lg border border-line px-3 py-2.5">
-        <SearchIcon size={16} weight="duotone" />
+      <div className="flex items-center gap-2.5 rounded-md border border-transparent bg-mist px-3 py-2.5 transition-colors focus-within:border-brand focus-within:bg-paper focus-within:ring-2 focus-within:ring-brand/15">
+        <SearchIcon size={16} weight="bold" className="shrink-0 text-muted" />
         <input
           autoFocus
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by name or room"
-          className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
+          placeholder="Name, room or phone"
+          className="min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-muted"
         />
+        {query && (
+          <button type="button" onClick={() => setQuery("")} aria-label="Clear search" className="text-muted hover:text-ink">
+            <X size={14} weight="bold" />
+          </button>
+        )}
       </div>
+      <p className="mt-2 px-1 text-[11px] text-muted">
+        {results.length} tenant{results.length === 1 ? "" : "s"}
+        {q ? " found" : ", people who owe first"}
+      </p>
 
-      <div className="mt-3 space-y-1">
+      <div className="mt-2 space-y-1">
         {results.map((t) => (
           <button
             key={t.id}
             type="button"
             onClick={() => onPick(t)}
-            className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-mist"
+            className="flex w-full items-center justify-between gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-mist"
           >
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-mist text-[10px] font-semibold text-muted">
-                {t.name.split(" ").map((s) => s[0]).join("")}
-              </div>
-              <div>
-                <p className="text-sm font-medium text-ink">{t.name}</p>
-                <p className="text-xs text-muted">
-                  {t.room} · {t.roomType}
+            <div className="flex min-w-0 items-center gap-3">
+              <img
+                src={t.photoUrl || dicebearAvatarUrl(t.id || t.name)}
+                alt=""
+                className="h-10 w-10 shrink-0 rounded-md bg-mist object-cover"
+              />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-ink">{t.name}</p>
+                <p className="truncate text-xs text-muted">
+                  {[t.room ? (/^[A-Za-z]?\d+[A-Za-z]?$/.test(t.room) ? `Room ${t.room}` : t.room) : "No unit", t.roomType].filter(Boolean).join(" · ")}
                 </p>
               </div>
             </div>
-            <div className="text-right">
-              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[t.status]}`}>
+            <div className="shrink-0 text-right">
+              <span className={`rounded-md px-2 py-0.5 text-xs font-semibold ${statusStyle[t.status]}`}>
                 {statusLabel[t.status]}
               </span>
-              <p className="mt-1 text-xs text-muted">{formatCurrency(calcTotalOwed(t) || t.rentAmount)}</p>
+              <p className="mt-1 text-xs text-muted">
+                {calcTotalOwed(t) > 0 ? `Owes ${formatCurrency(calcTotalOwed(t))}` : `Rent ${formatCurrency(t.rentAmount)}`}
+              </p>
             </div>
           </button>
         ))}
@@ -83,7 +101,7 @@ export default function TenantSearchDrawer({
             <p className="text-sm text-muted">No tenants match.</p>
             <Link
               to="/tenants/new"
-              className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-paper"
+              className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-brand px-4 py-2 text-sm font-medium text-paper"
             >
               + Add tenant
             </Link>

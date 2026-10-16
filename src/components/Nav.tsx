@@ -197,6 +197,7 @@ export default function Nav({
 
           <Button
             variant="primary"
+            onClick={() => window.location.assign("/get-started")}
             className="
               px-4 py-2 text-sm
               font-medium text-white
@@ -207,7 +208,7 @@ export default function Nav({
               hover:bg-[#0041A3]
             "
           >
-            Book Free Demo
+            Get started free
           </Button>
 
           
@@ -283,9 +284,9 @@ export default function Nav({
                 hover:bg-[#0041A3]
                 hover:shadow
               "
-              onClick={() => setMobileMenuOpen(false)}
+              onClick={() => { setMobileMenuOpen(false); window.location.assign("/get-started"); }}
             >
-              Book Free Demo
+              Get started free
             </Button>
           </nav>
         </div>

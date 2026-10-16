@@ -129,7 +129,7 @@ export default function AdjustmentModal({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder={kind === CHARGE ? "e.g. Broken window" : "e.g. Move-in discount"}
-            className="w-full rounded-lg border border-line px-3.5 py-2.5 text-sm text-ink outline-none focus:border-brand"
+            className="w-full rounded-lg border border-transparent bg-mist px-3.5 py-2.5 text-sm text-ink outline-none focus:ring-2 focus:ring-brand/30"
           />
         </div>
 
@@ -142,7 +142,7 @@ export default function AdjustmentModal({
             onChange={(e) => setReason(e.target.value)}
             rows={3}
             placeholder="Why this charge/credit was applied — stays visible on the tenant's ledger."
-            className="w-full resize-none rounded-lg border border-line px-3.5 py-2.5 text-sm text-ink outline-none focus:border-brand"
+            className="w-full resize-none rounded-lg border border-transparent bg-mist px-3.5 py-2.5 text-sm text-ink outline-none focus:ring-2 focus:ring-brand/30"
           />
         </div>
       </div>

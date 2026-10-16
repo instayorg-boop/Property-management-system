@@ -14,6 +14,9 @@ import {
   Paperclip,
   FileText,
   Trash,
+  IdentificationBadge,
+  Coins,
+  type Icon,
 } from "@phosphor-icons/react";
 import PageHeader from "../components/PageHeader";
 import AddRoomTypeDrawer from "../components/AddRoomTypeDrawer";
@@ -38,6 +41,7 @@ import {
   type VacantRoom,
 } from "../RoomsContext";
 import { useSettings } from "../SettingsContext";
+import MoneyStepper from "../components/MoneyStepper";
 import { supabase } from "../../lib/supabaseClient";
 import { uploadPhoto } from "../../lib/storage";
 import { dicebearAvatarUrl } from "../avatar";
@@ -100,18 +104,27 @@ function cleanContacts(drafts: ContactDraft[]): EmergencyContact[] {
 // section dividers) rather than a softer/rounder alternate style. -------------------------------
 
 /** Title-case, semibold, near-black — not the shared SectionLabel's uppercase brand-colored
- * treatment, which reads louder than this page's own section headers should. */
+ * treatment, which reads louder than this page's own section headers should. A small icon tile
+ * precedes it so the five sections (Personal, Property, Deposit, Lease, Documents) read as
+ * distinct steps at a glance instead of one long undifferentiated scroll. */
 function SectionTitle({
   title,
   subtitle,
+  icon: SectionIcon,
 }: {
   title: string;
   subtitle?: string;
+  icon: Icon;
 }) {
   return (
-    <div>
-      <h2 className="text-base font-semibold text-ink">{title}</h2>
-      {subtitle && <p className="mt-1 text-xs text-muted">{subtitle}</p>}
+    <div className="flex items-start gap-3">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand">
+        <SectionIcon size={17} weight="duotone" />
+      </span>
+      <div>
+        <h2 className="text-base font-semibold text-ink">{title}</h2>
+        {subtitle && <p className="mt-1 text-xs text-muted">{subtitle}</p>}
+      </div>
     </div>
   );
 }
@@ -743,6 +756,7 @@ export default function AddTenant() {
     toContactDrafts(editingTenant?.emergencyContacts ?? []),
   );
   const [notes, setNotes] = useState(editingTenant?.notes ?? "");
+  const [gender, setGender] = useState(editingTenant?.gender ?? "");
   const [documents, setDocuments] = useState<File[]>([]);
   const [draftRestored, setDraftRestored] = useState(false);
   // True once the landlord has tried to submit at least once — field errors only show up after
@@ -751,10 +765,27 @@ export default function AddTenant() {
   const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
   const restoringDraft = useRef(true);
 
-  const [selectedRoom, setSelectedRoom] = useState<VacantRoom | null>(
+  const [pickedRoom, setSelectedRoom] = useState<VacantRoom | null>(
     editingTenant
       ? (vacantRooms.find((r) => r.room === editingTenant.room) ?? null)
       : null,
+  );
+  // Informal properties have no room types or rooms: the landlord can skip the picker, type the
+  // rent by hand and optionally describe the unit in free text ("Back house").
+  const [manualRent, setManualRent] = useState(editingTenant?.rentAmount ?? 0);
+  const [unitLabel, setUnitLabel] = useState(editingTenant?.room ?? "");
+  const noRoom = !pickedRoom;
+  const selectedRoom: VacantRoom = useMemo(
+    () =>
+      pickedRoom ?? {
+        room: unitLabel.trim(),
+        roomType: "" as VacantRoom["roomType"],
+        rent: manualRent,
+        depositAmount: 0,
+        depositRefundability: "Refundable",
+        openBeds: 1,
+      },
+    [pickedRoom, unitLabel, manualRent],
   );
   const [moveInDate, setMoveInDate] = useState(todayISO());
 
@@ -856,6 +887,11 @@ export default function AddTenant() {
     [selectedRoom, moveInDateObj],
   );
 
+  useEffect(() => {
+    if (noRoom && !pickedRoom && !isEditing) setRentAmountCollected(manualRent);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [manualRent, noRoom]);
+
   const selectRoom = (r: VacantRoom) => {
     setSelectedRoom(r);
     if (!isEditing) {
@@ -951,7 +987,7 @@ export default function AddTenant() {
       contacts,
       notes,
       moveInDate,
-      selectedRoomNumber: selectedRoom?.room ?? null,
+      selectedRoomNumber: pickedRoom?.room ?? null,
       tenantDueDay,
       tenantGracePeriodDays,
       wantsDeposit,
@@ -1014,12 +1050,12 @@ export default function AddTenant() {
   const canSubmit =
     firstName.trim().length > 0 &&
     lastName.trim().length > 0 &&
-    !!selectedRoom &&
+    selectedRoom.rent > 0 &&
     hasValidPhone &&
     phonesAllValid;
 
   const finalizeAndSave = async () => {
-    if (!canSubmit || !selectedRoom) {
+    if (!canSubmit) {
       setSubmitAttempted(true);
       return;
     }
@@ -1041,6 +1077,7 @@ export default function AddTenant() {
         }),
         depositMethod: depositCollectMethod,
         notes,
+        gender,
         dueDay: tenantDueDay !== dueDay ? tenantDueDay : null,
         gracePeriodDays:
           tenantGracePeriodDays !== gracePeriodDays
@@ -1062,9 +1099,14 @@ export default function AddTenant() {
     const rentAmountToLog = isMidCycle
       ? Math.round(prorata!.amount)
       : Math.round(rentAmountCollected);
+    // The rent collected at setup is for the move-in month when the tenant moves in later, not
+    // for whatever month the landlord happens to be filling in the form.
+    const todayForLabel = new Date();
+    const rentPeriodDate =
+      moveInDateObj > todayForLabel ? moveInDateObj : todayForLabel;
     const rentLedgerLabel = isMidCycle
-      ? `${moveInDateObj.toLocaleDateString("en-US", { month: "long" })} rent, partial month`
-      : `${new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })} rent`;
+      ? `${moveInDateObj.toLocaleDateString("en-US", { month: "long", year: "numeric" })} rent, partial month`
+      : `${rentPeriodDate.toLocaleDateString("en-US", { month: "long", year: "numeric" })} rent`;
 
     const depositWasCollected =
       wantsDeposit === "yes" &&
@@ -1096,6 +1138,7 @@ export default function AddTenant() {
       depositMethod: depositCollectMethod,
       depositStatus: depositWasCollected ? "Held" : "Not collected",
       notes,
+      gender,
       dueDay: tenantDueDay !== dueDay ? tenantDueDay : null,
       gracePeriodDays:
         tenantGracePeriodDays !== gracePeriodDays
@@ -1247,6 +1290,7 @@ export default function AddTenant() {
         {/* Personal */}
         <section>
           <SectionTitle
+            icon={IdentificationBadge}
             title="Personal information"
             subtitle="The tenant's legal name as it appears on their ID/Passport."
           />
@@ -1323,8 +1367,27 @@ export default function AddTenant() {
                 )}
               </div>
             </div>
+            <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
+            <div>
+              <FieldLabel>Gender</FieldLabel>
+              <Select
+                value={gender || "none"}
+                onChange={(v) => setGender(v === "none" ? "" : v)}
+                options={[
+                  { value: "none", label: "Prefer not to say" },
+                  { value: "Male", label: "Male" },
+                  { value: "Female", label: "Female" },
+                  { value: "Other", label: "Other" },
+                ]}
+                className="w-full"
+              />
+            </div>
+
             <div>
               <FieldLabel required>Phone number(s)</FieldLabel>
+              <p className="-mt-0.5 mb-2 text-[11px] leading-snug text-muted">
+                Important: rent reminders, receipts, payment links and property updates are sent to this number by SMS. Double-check it.
+              </p>
               <PhoneListEditor
                 phones={phones}
                 onChange={setPhones}
@@ -1335,6 +1398,7 @@ export default function AddTenant() {
                   At least one valid phone number is required.
                 </FieldError>
               )}
+            </div>
             </div>
           </div>
         </section>
@@ -1432,6 +1496,9 @@ export default function AddTenant() {
                     </div>
                     <div>
                       <FieldLabel>Phone number(s)</FieldLabel>
+                      <p className="-mt-0.5 mb-2 text-[11px] leading-snug text-muted">
+                        Contacted if the tenant is overdue or can't be reached.
+                      </p>
                       <PhoneListEditor
                         phones={contact.phones}
                         onChange={(next) => updateContact(i, { phones: next })}
@@ -1460,11 +1527,12 @@ export default function AddTenant() {
         {/* Property */}
         <section>
           <SectionTitle
+            icon={DoorOpen}
             title="Property placement"
             subtitle={
               isEditing
-                ? "Which room is this tenant assigned to?"
-                : `Which room will ${name.trim() || "this tenant"} occupy, and from when?`
+                ? "Where is this tenant staying? A room is optional."
+                : `Where will ${name.trim() || "this tenant"} stay, and from when? A room is optional.`
             }
           />
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -1475,7 +1543,7 @@ export default function AddTenant() {
               </div>
             )}
             <div className={isEditing ? "sm:col-span-2" : ""}>
-              <FieldLabel required>Room</FieldLabel>
+              <FieldLabel>Room (optional)</FieldLabel>
               {roomTypeConfigs.length === 0 ? (
                 <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-line px-3.5 py-2.5">
                   <div className="flex items-center gap-2.5">
@@ -1500,19 +1568,51 @@ export default function AddTenant() {
                   onSelect={selectRoom}
                 />
               )}
-              {submitAttempted && !selectedRoom && (
-                <FieldError>A room is required.</FieldError>
-              )}
+              {pickedRoom ? (
+                <button
+                  type="button"
+                  onClick={() => setSelectedRoom(null)}
+                  className="mt-2 text-xs font-semibold text-muted hover:underline"
+                >
+                  Clear room
+                </button>
+              ) : null}
             </div>
           </div>
 
-          <div className="mt-4 flex items-center justify-between rounded-lg bg-mist px-3.5 py-3">
-            <span className="text-sm text-muted">
-              Agreed rent, set by the room selected above
-            </span>
-            <span className="text-sm font-semibold text-ink">
-              {selectedRoom ? `${formatCurrency(selectedRoom.rent)}/mo` : "—"}
-            </span>
+          <div className="mt-4 grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
+          <div>
+            <FieldLabel required>Agreed rent (K/mo)</FieldLabel>
+            <MoneyStepper
+              value={selectedRoom.rent}
+              step={100}
+              onChange={(v) =>
+                pickedRoom
+                  ? setSelectedRoom((prev) => (prev ? { ...prev, rent: v } : prev))
+                  : setManualRent(v)
+              }
+            />
+            {submitAttempted && selectedRoom.rent <= 0 && (
+              <FieldError>Enter the monthly rent.</FieldError>
+            )}
+            {selectedRoom && selectedRoom.roomType && (
+              <p className="mt-1.5 text-xs text-muted">
+                Defaults to {selectedRoom.roomType}'s rate - edit if this
+                tenant's rent differs.
+              </p>
+            )}
+          </div>
+          {!pickedRoom && (
+            <div>
+              <FieldLabel>Unit or description (optional)</FieldLabel>
+              <input
+                value={unitLabel}
+                onChange={(e) => setUnitLabel(e.target.value)}
+                placeholder="e.g. Back house, Flat 2"
+                className={inputCls}
+              />
+            </div>
+          )}
           </div>
         </section>
 
@@ -1521,12 +1621,9 @@ export default function AddTenant() {
         {/* Deposit */}
         <section>
           <SectionTitle
+            icon={Coins}
             title="Security deposit"
-            subtitle={
-              selectedRoom
-                ? `Does this tenant need to pay ${selectedRoom.roomType}'s security deposit upfront?`
-                : "Does this tenant need to pay a security deposit upfront? Select a room above first - the amount is set by that room type."
-            }
+            subtitle="Does this tenant need to pay a security deposit upfront? You set the amount yourself."
           />
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <ChoiceCard
@@ -1537,7 +1634,6 @@ export default function AddTenant() {
             />
             <ChoiceCard
               selected={wantsDeposit === "yes"}
-              disabled={!selectedRoom}
               onClick={() => setWantsDeposit("yes")}
               title="Charge security deposit"
               description="Collected as a separate upfront payment."
@@ -1549,16 +1645,8 @@ export default function AddTenant() {
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <FieldLabel required>Security deposit amount (K)</FieldLabel>
-                  <input
-                    type="number"
-                    min={0}
-                    value={depositAmount}
-                    onChange={(e) =>
-                      setDepositAmount(Number(e.target.value) || 0)
-                    }
-                    className={inputCls}
-                  />
-                  {!isEditing && (
+                  <MoneyStepper value={depositAmount} step={100} onChange={setDepositAmount} />
+                  {!isEditing && !!selectedRoom?.roomType && (
                     <p className="mt-1.5 text-xs text-muted">
                       Defaults to {selectedRoom?.roomType}'s configured deposit
                       - edit if this tenant's terms differ.
@@ -1632,6 +1720,7 @@ export default function AddTenant() {
         {/* Lease terms */}
         <section>
           <SectionTitle
+            icon={CalendarBlank}
             title="Lease & billing terms"
             subtitle="Pre-filled from your property's billing settings - adjust for this tenant if their terms are different."
           />
@@ -1665,8 +1754,8 @@ export default function AddTenant() {
           </div>
           <p className="mt-2 text-[11px] text-muted">
             {roomDailyRate !== null
-              ? `Late fee once the grace period lapses: ${formatCurrency(roomDailyRate)}/day, this room type's rent ÷ days in the month.`
-              : "Select a room above to see this room type's daily late-fee rate."}
+              ? `Late fee once the grace period lapses: ${formatCurrency(roomDailyRate)}/day, the monthly rent ÷ days in the month.`
+              : "Enter the rent above to see the daily late-fee rate."}
           </p>
 
           {!isEditing && (
@@ -1783,6 +1872,7 @@ export default function AddTenant() {
 
         <section>
           <SectionTitle
+            icon={FileText}
             title="Documents"
             subtitle="Tenancy agreement, national ID, acceptance letter - anything worth keeping on file for this tenant. Optional."
           />

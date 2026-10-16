@@ -75,13 +75,6 @@ Deno.serve(async (req) => {
       { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
-  if (!confirmationToken) {
-    return new Response(JSON.stringify({ error: "A confirmation is required — verify the code emailed to your account first." }), {
-      status: 401,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) {
     return new Response(JSON.stringify({ error: "Missing Authorization header" }), {
@@ -104,25 +97,40 @@ Deno.serve(async (req) => {
     global: { headers: { Authorization: authHeader } },
   });
 
-  // The actual authorization check — see this file's top comment. payout_withdrawal_otp_codes has
-  // no RLS policies at all, hence the service-role client; validates + immediately burns the token
-  // in one update so it can't be replayed.
-  const serviceClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-  const confirmationTokenHash = await sha256Hex(confirmationToken);
-  const { data: burnedConfirmation } = await serviceClient
-    .from("payout_withdrawal_otp_codes")
-    .update({ confirmation_token_hash: null })
-    .eq("property_id", propertyId)
-    .eq("purpose", "add_recipient")
-    .eq("confirmation_token_hash", confirmationTokenHash)
-    .gt("confirmation_expires_at", new Date().toISOString())
-    .select("id")
-    .maybeSingle();
-  if (!burnedConfirmation) {
-    return new Response(JSON.stringify({ error: "That confirmation has expired or was already used. Request a new code." }), {
+  // The very first payout method of a property (setup) needs no emailed code: there is nothing
+  // existing to hijack. Every later addition must present a valid confirmation token.
+  const { count: priorCount } = await supabase
+    .from("payout_recipients")
+    .select("id", { count: "exact", head: true })
+    .eq("property_id", propertyId);
+  if (!confirmationToken && (priorCount ?? 0) > 0) {
+    return new Response(JSON.stringify({ error: "A confirmation is required. Verify the code emailed to your account first." }), {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+  }
+
+  if (confirmationToken) {
+    // The actual authorization check: see this file's top comment. payout_withdrawal_otp_codes has
+    // no RLS policies at all, hence the service-role client; validates + immediately burns the token
+    // in one update so it can't be replayed.
+    const serviceClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const confirmationTokenHash = await sha256Hex(confirmationToken);
+    const { data: burnedConfirmation } = await serviceClient
+      .from("payout_withdrawal_otp_codes")
+      .update({ confirmation_token_hash: null })
+      .eq("property_id", propertyId)
+      .eq("purpose", "add_recipient")
+      .eq("confirmation_token_hash", confirmationTokenHash)
+      .gt("confirmation_expires_at", new Date().toISOString())
+      .select("id")
+      .maybeSingle();
+    if (!burnedConfirmation) {
+      return new Response(JSON.stringify({ error: "That confirmation has expired or was already used. Request a new code." }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
   }
 
   // Dedupe before ever touching Lenco — re-adding the same account (a double-click on "Confirm &

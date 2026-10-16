@@ -148,7 +148,7 @@ function InvoicePage({ data }: { data: InvoiceDocData }) {
       <View style={styles.body}>
         <View style={styles.headerRow}>
           <View>
-            <Text style={styles.brandLabel}>Instay PM</Text>
+            <Text style={styles.brandLabel}>Instay Manage</Text>
             <Text style={styles.invoiceTitle}>Invoice</Text>
           </View>
           <View style={styles.metaRight}>
@@ -252,7 +252,7 @@ function InvoicePage({ data }: { data: InvoiceDocData }) {
           Due {data.dueDateLabel}
           {data.lateFeeRateLabel ? ` · ${data.lateFeeRateLabel} penalty after the grace period` : ""}
         </Text>
-        <Text style={styles.footerText}>Powered by Instay PM</Text>
+        <Text style={styles.footerText}>Powered by Instay Manage</Text>
       </View>
       <Text
         style={styles.pageNumber}

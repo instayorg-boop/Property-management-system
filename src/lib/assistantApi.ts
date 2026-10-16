@@ -32,7 +32,7 @@ function toMessage(row: {
   id: string;
   conversation_id: string;
   role: string;
-  content: string;
+  content: string | null;
   tool_name: string | null;
   tool_args: Json | null;
   tool_result: Json | null;
@@ -42,7 +42,7 @@ function toMessage(row: {
     id: row.id,
     conversationId: row.conversation_id,
     role: row.role as AssistantRole,
-    content: row.content,
+    content: row.content ?? "",
     toolName: row.tool_name,
     toolArgs: row.tool_args,
     toolResult: row.tool_result,

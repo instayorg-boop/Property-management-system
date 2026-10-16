@@ -63,7 +63,7 @@ const payTypeLabel: Record<PayType, string> = {
   hourly: "Hourly Rate",
 };
 
-const inputCls = "w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand";
+const inputCls = "w-full rounded-lg border border-transparent bg-mist px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand/30";
 const labelCls = "mb-1.5 block text-xs font-medium text-muted";
 
 const formSteps = [
@@ -513,7 +513,7 @@ function EmployeeDetailDrawer({
   onReactivate: () => void;
   onUpdateAllowance: (key: keyof Employee["allowances"], value: number) => void;
 }) {
-  const rowInputCls = "w-full rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-brand";
+  const rowInputCls = "w-full rounded-lg border border-transparent bg-mist px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand/30";
 
   return (
     <SlideOver
@@ -541,7 +541,7 @@ function EmployeeDetailDrawer({
         {!employee.active && (
           <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">Inactive</span>
         )}
-        <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${payTypeStyle[employee.payType]}`}>
+        <span className={`rounded-md px-2 py-0.5 text-xs font-semibold ${payTypeStyle[employee.payType]}`}>
           {payTypeLabel[employee.payType]}
         </span>
         <TpinBadge tpin={employee.tpin} />
@@ -739,14 +739,14 @@ export default function StaffEmployees() {
               <col className="w-40" />
               <col className="w-16" />
             </colgroup>
-            <thead className="border-b border-line bg-paper text-[11px] text-muted uppercase">
+            <thead className="border-b border-line bg-paper text-[10.5px] text-muted uppercase">
               <tr>
-                <th className="px-6 py-4 font-medium tracking-wide">Employee</th>
-                <th className="px-6 py-4 font-medium tracking-wide">Contact</th>
-                <th className="px-6 py-4 font-medium tracking-wide">Pay setup</th>
-                <th className="px-6 py-4 font-medium tracking-wide">Start date</th>
-                <th className="px-6 py-4 font-medium tracking-wide">Compliance</th>
-                <th className="px-6 py-4 font-medium"></th>
+                <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Employee</th>
+                <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Contact</th>
+                <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Pay setup</th>
+                <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Start date</th>
+                <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Compliance</th>
+                <th className="px-4 pt-[11px] pb-2.5 font-bold"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
@@ -782,7 +782,7 @@ export default function StaffEmployees() {
                     )}
                   </td>
                   <td className="px-6 py-4">
-                    <span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${payTypeStyle[e.payType]}`}>
+                    <span className={`whitespace-nowrap rounded-md px-2 py-0.5 text-xs font-semibold ${payTypeStyle[e.payType]}`}>
                       {payTypeLabel[e.payType]}
                     </span>
                     <p className="mt-1 text-xs text-muted">

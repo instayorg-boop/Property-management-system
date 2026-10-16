@@ -111,7 +111,7 @@ Deno.serve(async (req) => {
   }
 
   const property = tenant.properties as unknown as { name: string } | null;
-  const portalLink = `https://pay.instay.co/p/${tenant.portal_token}`;
+  const portalLink = `https://portal.instayhomes.com/p/${tenant.portal_token}`;
   const message = `Hi ${firstName(tenant.name)}, welcome to ${property?.name ?? "your new home"}, glad to have you with us. Use this link for future payments: ${portalLink}`;
 
   if (!(await withinDailySmsCap(serviceClient, tenant.property_id))) {

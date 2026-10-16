@@ -1,17 +1,21 @@
 ﻿import { useMemo, useState } from "react";
+import PageHeader from "../components/PageHeader";
+import SearchInput from "../components/SearchInput";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
 import ConfirmDeleteTenantModal from "../components/ConfirmDeleteTenantModal";
 import { useTenants, formatCurrency } from "../TenantsContext";
 import {
   DotsThreeVertical,
-  MagnifyingGlass,
   Trash,
   UsersThree,
+  UploadSimple,
+  Plus,
 } from "@phosphor-icons/react";
 import Pagination, { DEFAULT_PAGE_SIZE } from "../components/Pagination";
 import { Skeleton, SkeletonRow } from "../components/Skeleton";
 import Button from "../components/Button";
+import ImportTenantsModal from "../components/ImportTenantsModal";
 import {
   TableCard,
   TableCardHeader,
@@ -22,8 +26,14 @@ import {
   StatusPill,
 } from "../components/DataTable";
 
-function SearchIcon({ size = 22 }: { size?: number }) {
-  return <MagnifyingGlass size={size} weight="regular" />;
+/** "Moving in 1 Nov" when the tenant's move-in date is still in the future, else null. */
+function movingInLabel(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  const now = new Date();
+  if (new Date(d.getFullYear(), d.getMonth(), d.getDate()) <= new Date(now.getFullYear(), now.getMonth(), now.getDate())) return null;
+  return `Moving in ${d.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`;
 }
 
 function formatDisplayDate(value: string | null | undefined): string {
@@ -40,6 +50,7 @@ function formatDisplayDate(value: string | null | undefined): string {
 export default function Tenants() {
   const { tenants, isReady, deleteTenant } = useTenants();
   const navigate = useNavigate();
+  const [importOpen, setImportOpen] = useState(() => new URLSearchParams(window.location.search).get("import") === "1");
 
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"active" | "moved-out">("active");
@@ -78,23 +89,26 @@ export default function Tenants() {
 
   return (
     <>
+      {importOpen && <ImportTenantsModal onClose={() => setImportOpen(false)} />}
       <div className="min-h-full bg-paper text-ink">
         {/* Page header */}
-        <header className="flex flex-col gap-4 px-4 pb-0 pt-6 sm:px-8 lg:flex-row lg:items-center lg:justify-between lg:px-12 lg:pt-8">
-          <h1 className="font-display text-2xl font-bold tracking-tight text-brand">
-            Tenants
-          </h1>
-          < Button
-            type="button"
-            variant="primary"
-            onClick={() => navigate("/tenants/new")}
-          >
-            <span>Add tenant</span>
-          </Button>
-        </header>
+        <PageHeader
+          title="Tenants"
+          description="Everyone renting from you: see their rent status, contact details and unit, and open a profile to manage payments."
+          actions={
+            <div className="flex w-full gap-2 sm:w-auto">
+              <Button type="button" variant="secondary" className="flex-1 sm:flex-none" onClick={() => setImportOpen(true)}>
+                <span className="inline-flex items-center gap-2"><UploadSimple size={16} weight="bold" />Import</span>
+              </Button>
+              <Button type="button" variant="primary" className="flex-1 sm:flex-none" onClick={() => navigate("/tenants/new")}>
+                <span className="inline-flex items-center gap-2"><Plus size={16} weight="bold" />Add tenant</span>
+              </Button>
+            </div>
+          }
+        />
    
 
-        <main className="px-3 pb-10 pt-7 sm:px-8 lg:px-12">
+        <main className="px-4 pb-10 sm:px-8">
           <TableCard>
             <TableCardHeader>
               <div className="inline-flex gap-0.5 rounded-md bg-mist p-1">
@@ -110,7 +124,7 @@ export default function Tenants() {
                         setOpenActionId(null);
                       }}
                       className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
-                        active ? "bg-paper text-ink shadow-sm" : "text-muted hover:text-ink"
+                        active ? "border border-line bg-paper text-ink shadow-sm" : "text-muted hover:text-ink"
                       }`}
                     >
                       {tab === "active" ? "Active" : "Moved out"}
@@ -119,20 +133,7 @@ export default function Tenants() {
                 })}
               </div>
 
-              <div className="relative w-full sm:w-[280px]">
-                <div className="flex h-9 items-center rounded-md border border-line bg-paper px-2.5 transition-colors focus-within:border-brand">
-                  <SearchIcon size={16} />
-                  <input
-                    value={query}
-                    onChange={(e) => {
-                      setQuery(e.target.value);
-                      setPage(1);
-                    }}
-                    placeholder="Search tenants"
-                    className="ml-2 w-full bg-transparent text-sm text-ink outline-none placeholder:text-muted"
-                  />
-                </div>
-              </div>
+              <SearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} placeholder="Search tenants" className="w-full sm:w-[280px]" />
             </TableCardHeader>
 
 
@@ -174,7 +175,7 @@ export default function Tenants() {
 
                       <td className="px-4 py-3 align-middle">
                         <p className="text-sm text-ink">{t.roomType}</p>
-                        <p className="mt-0.5 text-xs text-muted">{t.room}</p>
+                        <p className="mt-0.5 text-xs text-muted">{t.room || "No unit"}</p>
                       </td>
 
                       <td className="px-4 py-3 align-middle text-sm text-muted">
@@ -186,9 +187,13 @@ export default function Tenants() {
                       </td>
 
                       <td className="px-4 py-3 align-middle">
-                        <StatusPill tone={t.active ? "success" : "danger"}>
-                          {t.active ? "Active" : "Moved out"}
-                        </StatusPill>
+                        {t.active && movingInLabel(t.moveInDate) ? (
+                          <StatusPill tone="info">{movingInLabel(t.moveInDate)}</StatusPill>
+                        ) : (
+                          <StatusPill tone={t.active ? "success" : "danger"}>
+                            {t.active ? "Active" : "Moved out"}
+                          </StatusPill>
+                        )}
                       </td>
 
                       <td className="relative px-2 py-3 align-middle">
@@ -264,11 +269,13 @@ export default function Tenants() {
           </div>
 
 
-          {/* Mobile cards */}
-          <div className="divide-y divide-line md:hidden">
+          {/* Mobile cards — each tenant is its own bordered card (not just a hairline-divided
+              list row), so it reads as a distinct, tappable item rather than blending into one
+              continuous strip. */}
+          <div className="space-y-3 p-3 md:hidden">
             {!isReady &&
               Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="space-y-2 py-5">
+                <div key={i} className="space-y-2 rounded-xl border border-line p-4">
                   <Skeleton className="h-4 w-1/2" />
                   <Skeleton className="h-3 w-1/3" />
                 </div>
@@ -279,7 +286,7 @@ export default function Tenants() {
                 <div
                   key={t.id}
                   onClick={() => navigate(`/tenants/${t.portalToken}`)}
-                  className="relative py-5"
+                  className="relative rounded-xl border border-line bg-paper p-4 transition-colors active:bg-mist/40"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
@@ -307,7 +314,7 @@ export default function Tenants() {
                   <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
                     <div>
                       <p className="text-muted">Room</p>
-                      <p className="mt-1 text-ink">{t.room}</p>
+                      <p className="mt-1 text-ink">{t.room || "No unit"}</p>
                     </div>
                     <div>
                       <p className="text-muted">Move-in</p>
@@ -324,9 +331,13 @@ export default function Tenants() {
                     <div>
                       <p className="text-muted">Status</p>
                       <p className="mt-1">
-                        <StatusPill tone={t.active ? "success" : "danger"}>
-                          {t.active ? "Active" : "Moved out"}
-                        </StatusPill>
+                        {t.active && movingInLabel(t.moveInDate) ? (
+                          <StatusPill tone="info">{movingInLabel(t.moveInDate)}</StatusPill>
+                        ) : (
+                          <StatusPill tone={t.active ? "success" : "danger"}>
+                            {t.active ? "Active" : "Moved out"}
+                          </StatusPill>
+                        )}
                       </p>
                     </div>
                   </div>

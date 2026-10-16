@@ -41,11 +41,17 @@ function periodOf(label: string): { year: number; month: number } | null {
 
 /** "September Rent 2026" style labels running from the current month through December of *this*
  * year only — no past months (nothing to backdate into), no rollover into next year. */
-function monthOptions() {
-  const now = new Date();
-  const monthsLeftThisYear = 12 - now.getMonth();
+function monthOptions(moveInDate?: string | null) {
+  // Nothing is owed before the tenant moves in, so a future move-in starts the list at that month.
+  const today = new Date();
+  let start = new Date(today.getFullYear(), today.getMonth(), 1);
+  if (moveInDate) {
+    const m = new Date(moveInDate);
+    if (!Number.isNaN(m.getTime()) && m > start) start = new Date(m.getFullYear(), m.getMonth(), 1);
+  }
+  const monthsLeftThisYear = 12 - start.getMonth();
   return Array.from({ length: monthsLeftThisYear }, (_, i) => {
-    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    const d = new Date(start.getFullYear(), start.getMonth() + i, 1);
     return {
       key: d.toLocaleDateString("en-US", { month: "long" }),
       label: `${d.toLocaleDateString("en-US", { month: "long" })} Rent ${d.getFullYear()}`,
@@ -61,6 +67,7 @@ export default function LogPaymentModal({
   outstanding,
   rentAmount,
   ledger,
+  moveInDate,
   onClose,
   onConfirm,
 }: {
@@ -72,6 +79,8 @@ export default function LogPaymentModal({
   /** This tenant's payment history — used to hide months that are already fully paid off (so the
    * same month can't be logged twice) and to work out what's left owing on a partially-paid one. */
   ledger: LedgerRow[];
+  /** Tenant's move-in date; months before it are not offered. */
+  moveInDate?: string | null;
   onClose: () => void;
   /** One array entry per month settled — a single-month payment is a one-item array, an advance
    * payment covering several months at once comes through as several. */
@@ -95,8 +104,8 @@ export default function LogPaymentModal({
   // ahead and log a future month while this one still has a balance. Paying several months at once
   // is instead handled by the "months to pay" stepper below, which always fills forward from here.
   const options = useMemo(
-    () => monthOptions().filter((o) => !settledPeriods.has(`${o.year}-${o.month}`)),
-    [settledPeriods]
+    () => monthOptions(moveInDate).filter((o) => !settledPeriods.has(`${o.year}-${o.month}`)),
+    [settledPeriods, moveInDate]
   );
   const currentLabel = options[0]?.label;
   function remainingFor(label: string) {
@@ -307,7 +316,7 @@ export default function LogPaymentModal({
             value={customLabel}
             onChange={(e) => setCustomLabel(e.target.value)}
             placeholder="e.g. Partial month rent, deposit top-up"
-            className="w-full rounded-lg border border-line bg-paper px-3 py-2.5 text-sm outline-none focus:border-brand"
+            className="w-full rounded-lg border border-transparent bg-mist px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand/30"
           />
         )}
 
@@ -336,7 +345,7 @@ export default function LogPaymentModal({
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder="e.g. Paid in cash, dropped off by proxy"
-              className="w-full rounded-lg border border-line bg-paper px-3 py-2.5 text-sm outline-none focus:border-brand"
+              className="w-full rounded-lg border border-transparent bg-mist px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand/30"
             />
           </div>
         )}

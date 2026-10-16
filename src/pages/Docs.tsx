@@ -1,4 +1,5 @@
 import PageShell from "../components/PageShell";
+import { SUPPORT_EMAIL } from "../lib/supportContact";
 
 const endpoints = [
   { method: "GET", path: "/v1/properties", desc: "List all properties in your account" },
@@ -37,7 +38,7 @@ export default function Docs() {
 
       <p className="mt-6 text-center text-sm text-muted">
         API access is available on the Growth and Portfolio plans.{" "}
-        <a href="mailto:hello@instay.app" className="font-medium text-ink underline-offset-2 hover:underline">
+        <a href={`mailto:${SUPPORT_EMAIL}`} className="font-medium text-ink underline-offset-2 hover:underline">
           Request API keys
         </a>
       </p>

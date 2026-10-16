@@ -4,29 +4,64 @@ import {
   List as MenuIcon,
   MagnifyingGlass,
   Bell as BellIcon,
-  UserCircle,
-  DotsThreeVertical,
   GearSix,
   SignOut,
+  CaretDown,
+  Wallet,
+  Phone,
+  WhatsappLogo,
 } from "@phosphor-icons/react";
+import { AnimatePresence, motion } from "framer-motion";
 import { useSidebar } from "../SidebarContext";
 import { useSettings } from "../SettingsContext";
 import { useNotifications } from "../NotificationsContext";
 import { signOut as signOutRequest } from "../../lib/auth";
+import { SUPPORT_PHONE_DISPLAY, SUPPORT_PHONE_TEL, SUPPORT_WHATSAPP_URL } from "../../lib/supportContact";
 import GlobalSearch from "./GlobalSearch";
+import TierBadge from "./TierBadge";
+import NotificationsDropdown from "./NotificationsDropdown";
+
+/** Property logo, or its initials on a brand tint when there's no logo. */
+function AccountAvatar({ logoUrl, name, size }: { logoUrl?: string | null; name: string; size: "sm" | "md" }) {
+  const dim = size === "sm" ? "h-8 w-8 text-xs" : "h-10 w-10 text-sm";
+  if (logoUrl) return <img src={logoUrl} alt="" className={`${dim} shrink-0 rounded-md border border-line object-cover`} />;
+  const initials =
+    (name || "")
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((w) => w[0]?.toUpperCase())
+      .join("") || "IM";
+  return <span className={`${dim} flex shrink-0 items-center justify-center rounded-md bg-brand-soft font-semibold text-brand`}>{initials}</span>;
+}
+
+function MenuLink({ to, icon, onClick, children }: { to: string; icon: React.ReactNode; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <Link
+      to={to}
+      onClick={onClick}
+      className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist"
+    >
+      <span className="text-muted">{icon}</span>
+      {children}
+    </Link>
+  );
+}
 
 /** Full-width top bar — logo, search and account all live here, spanning the whole viewport width
  * above both the sidebar and the page content, rather than being boxed into the sidebar column. */
 export default function Header() {
   const { setOpen } = useSidebar();
-  const { propertyName, propertyLogoUrl } = useSettings();
+  const { propertyName, propertyLogoUrl, landlordName, accountEmail, subscriptionPlan } = useSettings();
   const { unreadCount } = useNotifications();
   const navigate = useNavigate();
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchDraft, setSearchDraft] = useState("");
   const [accountOpen, setAccountOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
   const accountRef = useRef<HTMLDivElement>(null);
+  const notifRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -44,6 +79,24 @@ export default function Header() {
       document.removeEventListener("keydown", onEscape);
     };
   }, [accountOpen]);
+
+  // Same pattern as the account menu's own outside-click/Escape handling, kept as a separate
+  // effect (rather than merged into one) since the two dropdowns open and close independently.
+  useEffect(() => {
+    if (!notifOpen) return;
+    const onClick = (e: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false);
+    };
+    const onEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setNotifOpen(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onEscape);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onEscape);
+    };
+  }, [notifOpen]);
 
   // Cmd/Ctrl+K opens global search from anywhere in the dashboard.
   useEffect(() => {
@@ -120,15 +173,45 @@ export default function Header() {
           <MagnifyingGlass size={18} weight="bold" />
         </button>
 
-        <button
-          type="button"
-          onClick={() => navigate("/notifications")}
-          aria-label="Notifications"
-          className="relative flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-ink"
-        >
-          <BellIcon size={18} weight="bold" />
-          {unreadCount > 0 && <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-red-500" />}
-        </button>
+        <div ref={notifRef} className="relative">
+          <button
+            type="button"
+            onClick={() => setNotifOpen((v) => !v)}
+            aria-label="Notifications"
+            aria-expanded={notifOpen}
+            className="relative flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-ink"
+          >
+            <BellIcon size={18} weight="bold" />
+            {unreadCount > 0 && <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-red-500" />}
+          </button>
+
+          <AnimatePresence>
+            {notifOpen && (
+              <>
+                {/* A faint backdrop over the rest of the dashboard — not to block clicks (the
+                    outside-click handler above already closes on any of them), just so the eye
+                    settles on the panel instead of competing with the page behind it. */}
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                  className="fixed inset-0 z-20 bg-ink/15"
+                  aria-hidden="true"
+                />
+                <motion.div
+                  initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                  transition={{ duration: 0.15, ease: "easeOut" }}
+                  className="absolute top-full right-0 z-30 mt-2"
+                >
+                  <NotificationsDropdown onClose={() => setNotifOpen(false)} />
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
+        </div>
 
         <div ref={accountRef} className="relative ml-1">
           <button
@@ -136,51 +219,93 @@ export default function Header() {
             onClick={() => setAccountOpen((v) => !v)}
             aria-label="Open account menu"
             aria-expanded={accountOpen}
-            className="flex items-center gap-2 rounded-md  p-1.5 transition-colors"
+            className={`flex items-center gap-2.5 rounded-md border px-1.5 py-1 transition-colors md:pr-2.5 ${
+              accountOpen ? "border-brand/40 bg-mist" : "border-transparent hover:border-line hover:bg-mist/60"
+            }`}
           >
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full">
-              {propertyLogoUrl ? (
-                <img src={propertyLogoUrl} alt="" className="h-10 w-10 rounded-full border border-gray-200 object-cover" />
-              ) : (
-                <UserCircle size={26} weight="fill" className="text-muted" />
-              )}
+            <AccountAvatar logoUrl={propertyLogoUrl} name={propertyName} size="sm" />
+            <span className="hidden min-w-0 max-w-40 flex-col items-start text-left leading-tight md:flex">
+              <span className="flex w-full items-center gap-1.5">
+                <span className="truncate text-sm font-semibold text-ink">{propertyName || "Your property"}</span>
+                <TierBadge plan={subscriptionPlan} size="sm" />
+              </span>
+              <span className="w-full truncate text-[11px] text-muted">{landlordName || "Landlord"}</span>
             </span>
-            <span className="hidden min-w-0 max-w-40 flex-col items-start text-left md:flex">
-              <span className="w-full truncate text-sm font-semibold text-ink">{propertyName}</span>
-
-            </span>
-            <DotsThreeVertical size={16} weight="bold" className="hidden shrink-0 text-muted md:block" />
+            <CaretDown
+              size={12}
+              weight="bold"
+              className={`hidden shrink-0 text-muted transition-transform md:block ${accountOpen ? "rotate-180" : ""}`}
+            />
           </button>
 
-          {accountOpen && (
-            <div className="absolute top-full right-0 z-10 mt-2 w-56 overflow-hidden rounded-lg border border-line bg-paper shadow-card">
-              <div className="px-4 pt-3.5 pb-3">
-                <p className="truncate text-sm font-semibold text-ink">{propertyName}</p>
-                <p className="text-xs text-muted">Property account</p>
-              </div>
-              <div className="h-px bg-line" />
-              <div className="p-1">
-                <Link
-                  to="/settings"
-                  onClick={() => setAccountOpen(false)}
-                  className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist"
-                >
-                  <GearSix size={16} weight="duotone" />
-                  Settings
-                </Link>
-              </div>
-              <div className="p-1">
-                <button
-                  type="button"
-                  onClick={handleSignOut}
-                  className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
-                >
-                  <SignOut size={16} weight="duotone" />
-                  Log out
-                </button>
-              </div>
-            </div>
-          )}
+          <AnimatePresence>
+            {accountOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                transition={{ duration: 0.15, ease: "easeOut" }}
+                className="absolute top-full right-0 z-30 mt-2 w-64 origin-top-right overflow-hidden rounded-md border border-line bg-paper shadow-lg"
+              >
+                <div className="flex items-center gap-3 border-b border-line bg-mist/50 px-4 py-3.5">
+                  <AccountAvatar logoUrl={propertyLogoUrl} name={propertyName} size="md" />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <p className="truncate text-sm font-semibold text-ink">{propertyName || "Your property"}</p>
+                      <TierBadge plan={subscriptionPlan} size="sm" />
+                    </div>
+                    <p className="truncate text-xs text-muted">{accountEmail || landlordName || "Property account"}</p>
+                  </div>
+                </div>
+                <div className="p-1.5">
+                  <MenuLink to="/settings" icon={<GearSix size={16} weight="duotone" />} onClick={() => setAccountOpen(false)}>
+                    Settings
+                  </MenuLink>
+                  <MenuLink to="/online-payments" icon={<Wallet size={16} weight="duotone" />} onClick={() => setAccountOpen(false)}>
+                    Online payments
+                  </MenuLink>
+                  <MenuLink to="/notifications" icon={<BellIcon size={16} weight="duotone" />} onClick={() => setAccountOpen(false)}>
+                    Notifications
+                    {unreadCount > 0 && (
+                      <span className="ml-auto rounded-md bg-red-50 px-1.5 py-0.5 text-[11px] font-semibold text-red-600">{unreadCount}</span>
+                    )}
+                  </MenuLink>
+                </div>
+                <div className="border-t border-line p-2.5">
+                  <p className="px-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">Need help?</p>
+                  <div className="flex items-center gap-2">
+                    <a
+                      href={SUPPORT_PHONE_TEL}
+                      className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-line px-2 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-mist"
+                    >
+                      <Phone size={14} weight="duotone" />
+                      Call
+                    </a>
+                    <a
+                      href={SUPPORT_WHATSAPP_URL}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-line px-2 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-mist"
+                    >
+                      <WhatsappLogo size={14} weight="duotone" />
+                      WhatsApp
+                    </a>
+                  </div>
+                  <p className="px-1 pt-1.5 text-[11px] text-muted">{SUPPORT_PHONE_DISPLAY}</p>
+                </div>
+                <div className="border-t border-line p-1.5">
+                  <button
+                    type="button"
+                    onClick={handleSignOut}
+                    className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+                  >
+                    <SignOut size={16} weight="duotone" />
+                    Log out
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 

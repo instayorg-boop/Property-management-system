@@ -15,6 +15,7 @@ import {
 import { useTenants } from "../TenantsContext";
 import { useRooms, roomLabel } from "../RoomsContext";
 import { useMaintenance } from "../MaintenanceContext";
+import { dicebearAvatarUrl } from "../avatar";
 
 type Group = "Tenants" | "Rooms" | "Maintenance" | "Pages";
 
@@ -26,6 +27,10 @@ type ResultItem = {
   subtitle: string;
   badge?: string;
   to: string;
+  /** Tenant results show their real photo (or the same generated avatar the rest of the app falls
+   * back to) instead of the generic category icon, same as the tenant list, Tenants search drawer,
+   * etc. — recognisable at a glance rather than every person getting the same silhouette. */
+  avatarUrl?: string;
   /** For a tenant result: lets the panel jump to the Maintenance tab pre-filtered to their reports. */
   relatedMaintenanceCount?: number;
 };
@@ -39,12 +44,14 @@ const GROUP_ICON: Record<Group, typeof UsersThree> = {
   Pages: Compass,
 };
 
-// Each group gets its own quiet accent so the eye can sort results before it even reads them.
-const GROUP_STYLE: Record<Group, { bg: string; fg: string; ring: string }> = {
-  Tenants: { bg: "bg-blue-50", fg: "text-blue-600", ring: "ring-blue-100" },
-  Rooms: { bg: "bg-violet-50", fg: "text-violet-600", ring: "ring-violet-100" },
-  Maintenance: { bg: "bg-amber-50", fg: "text-amber-600", ring: "ring-amber-100" },
-  Pages: { bg: "bg-slate-100", fg: "text-slate-500", ring: "ring-slate-100" },
+// Each group gets its own quiet accent so the eye can sort results before it even reads them. One
+// flat tint, not a tint plus a lighter ring around it — the ring read as a second, redundant
+// rounded shape stacked on the first.
+const GROUP_STYLE: Record<Group, { bg: string; fg: string }> = {
+  Tenants: { bg: "bg-blue-50", fg: "text-blue-600" },
+  Rooms: { bg: "bg-violet-50", fg: "text-violet-600" },
+  Maintenance: { bg: "bg-amber-50", fg: "text-amber-600" },
+  Pages: { bg: "bg-slate-100", fg: "text-slate-500" },
 };
 
 const BADGE_STYLE: Record<string, string> = {
@@ -135,6 +142,7 @@ export default function GlobalSearch({
         key: `tenant-${t.id}`,
         group: "Tenants" as const,
         icon: UsersThree,
+        avatarUrl: t.photoUrl || dicebearAvatarUrl(t.id || t.name),
         title: t.name,
         subtitle: `${t.room} · ${t.roomType}`,
         badge: statusLabel[t.status] ?? undefined,
@@ -173,7 +181,7 @@ export default function GlobalSearch({
         title: r.location || "Maintenance request",
         subtitle: r.tenant ? `${r.tenant} · ${r.description}` : r.description,
         badge: r.status === "open" ? "Open" : r.status === "in-progress" ? "In progress" : "Resolved",
-        to: "/maintenance",
+        to: `/maintenance?report=${r.id}`,
       }));
 
     const pageResults: ResultItem[] = PAGES.filter(
@@ -255,49 +263,67 @@ export default function GlobalSearch({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.15 }}
-      className="fixed inset-0 z-60 flex flex-col bg-paper/95 backdrop-blur-sm"
+      className="fixed inset-0 z-60 flex items-center justify-center overflow-y-auto bg-ink/40 p-4"
+      onClick={onClose}
     >
+      {/* The modal card itself — same backdrop, border, radius and shadow as every other dialog in
+          the app (Modal.tsx), just with its own header/body layout since a live search input
+          doesn't fit that component's title-bar shape. A centered, bounded surface rather than a
+          full-screen takeover, so the dimmed dashboard stays visible (and dismissible by clicking
+          it) behind the search. */}
       <motion.div
-        initial={{ y: -16, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        exit={{ y: -16, opacity: 0 }}
-        transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-        className="flex h-full flex-col"
+        initial={{ y: -16, opacity: 0, scale: 0.98 }}
+        animate={{ y: 0, opacity: 1, scale: 1 }}
+        exit={{ y: -16, opacity: 0, scale: 0.98 }}
+        transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+        onClick={(e) => e.stopPropagation()}
+        className="flex h-[600px] max-h-[calc(100vh-7rem)] w-full max-w-[540px] flex-col overflow-hidden rounded-md border border-line bg-paper shadow-2xl"
       >
-        {/* Header bar — search input sits where the sidebar logo/search icon lives, so opening this
-            feels like the trigger simply expanded into a full-screen surface. */}
-        <div className="shrink-0 border-b border-line px-4 py-4 sm:px-8">
-          <div className="mx-auto flex max-w-3xl items-center gap-3 rounded-2xl border border-line bg-paper px-4 py-2.5 shadow-sm">
-            <SearchIcon size={20} weight="bold" className="shrink-0 text-muted" />
+        {/* Header — icon chip, title and a short description, exactly the shape every other modal
+            in the app (Modal.tsx) uses, rather than the search field itself doubling as the
+            header. */}
+        <div className="flex shrink-0 items-start gap-3 border-b border-line px-5 py-4">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand">
+            <SearchIcon size={20} weight="duotone" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="m-0 font-display text-[18px] font-bold tracking-tight text-ink">Search</h2>
+            <p className="mt-0.5 text-[12px] leading-5 text-muted">Find tenants, rooms, maintenance requests and pages</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close search"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-mist hover:text-ink"
+          >
+            <CloseIcon size={16} weight="bold" />
+          </button>
+        </div>
+
+        {/* Search field — a plain inline row (icon, text, clear button) with just the section's
+            own border underneath it, not a second boxed/rounded pill sitting right under the
+            header's own rounded corners. */}
+        <div className="shrink-0 border-b border-line px-5 py-3.5">
+          <div className="flex items-center gap-2.5">
+            <SearchIcon size={16} weight="bold" className="shrink-0 text-muted" />
             <input
               ref={inputRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Search tenants, rooms, maintenance requests, pages…"
-              className="flex-1 bg-transparent text-lg outline-none placeholder:text-muted"
+              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
             />
             {query && (
               <button
                 type="button"
                 onClick={() => setQuery("")}
                 aria-label="Clear search"
-                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-mist hover:text-ink"
+                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-mist hover:text-ink"
               >
-                <CloseIcon size={13} weight="bold" />
+                <CloseIcon size={12} weight="bold" />
               </button>
             )}
-            <span className="hidden shrink-0 items-center gap-1 rounded-md border border-line px-1.5 py-0.5 text-[10px] font-medium text-muted sm:flex">
-              esc
-            </span>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close search"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-mist hover:text-ink"
-            >
-              <CloseIcon size={16} weight="bold" />
-            </button>
           </div>
 
           <AnimatePresence>
@@ -307,7 +333,7 @@ export default function GlobalSearch({
                 animate={{ opacity: 1, height: "auto" }}
                 exit={{ opacity: 0, height: 0 }}
                 transition={{ duration: 0.15 }}
-                className="mx-auto mt-3 flex max-w-3xl items-center gap-1 overflow-x-auto"
+                className="mt-3 flex items-center gap-1 overflow-x-auto"
               >
                 {tabs.map((t) => (
                   <button
@@ -330,8 +356,8 @@ export default function GlobalSearch({
         </div>
 
         {/* Results */}
-        <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-8">
-          <div className="mx-auto max-w-3xl">
+        <div className="flex-1 overflow-y-auto px-5 py-5">
+          <div>
             {query.trim() === "" && (
               <div className="flex flex-col items-center py-16 text-center">
                 <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-mist text-muted">
@@ -384,7 +410,7 @@ export default function GlobalSearch({
                       variants={listVariants}
                       initial="hidden"
                       animate="show"
-                      className="overflow-hidden rounded-xl border border-line bg-paper"
+                      className="overflow-hidden rounded-md border border-line bg-paper"
                     >
                       {section.items.map((item, i) => {
                         const ItemIcon = item.icon;
@@ -400,9 +426,13 @@ export default function GlobalSearch({
                             } ${isActive ? "bg-mist" : "hover:bg-mist"}`}
                           >
                             <button type="button" onClick={() => select(item)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
-                              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ring-4 ${style.bg} ${style.fg} ${style.ring}`}>
-                                <ItemIcon size={16} weight="bold" />
-                              </span>
+                              {item.avatarUrl ? (
+                                <img src={item.avatarUrl} alt="" className="h-9 w-9 shrink-0 rounded-md bg-mist object-cover" />
+                              ) : (
+                                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${style.bg} ${style.fg}`}>
+                                  <ItemIcon size={16} weight="bold" />
+                                </span>
+                              )}
                               <span className="min-w-0 flex-1">
                                 <span className="block truncate text-sm font-medium text-ink">
                                   <Highlight text={item.title} query={query} />
@@ -422,7 +452,7 @@ export default function GlobalSearch({
                             )}
 
                             {item.badge && (
-                              <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${BADGE_STYLE[item.badge] ?? "bg-paper text-muted"}`}>
+                              <span className={`shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold ${BADGE_STYLE[item.badge] ?? "bg-paper text-muted"}`}>
                                 {item.badge}
                               </span>
                             )}

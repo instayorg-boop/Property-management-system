@@ -71,7 +71,7 @@ export default function MetricCard({
         tabIndex={to ? 0 : undefined}
         onClick={to ? () => navigate(to) : undefined}
         onKeyDown={to ? (e) => (e.key === "Enter" || e.key === " ") && navigate(to) : undefined}
-        className={`group rounded-lg border border-line bg-paper p-4 ${to ? "cursor-pointer transition-colors hover:border-ink/20 hover:bg-mist/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand" : ""}`}
+        className={`group rounded-lg border border-line bg-paper px-5 py-[18px] ${to ? "cursor-pointer transition-colors hover:border-ink/20 hover:bg-mist/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand" : ""}`}
       >
         <div className="flex items-center justify-between gap-2">
           <p className="text-sm font-medium text-ink/70">{label}</p>
@@ -115,7 +115,13 @@ export default function MetricCard({
   }
 
   return (
-    <div className="rounded-lg border border-line bg-paper p-4">
+    <div
+      role={to ? "button" : undefined}
+      tabIndex={to ? 0 : undefined}
+      onClick={to ? () => navigate(to) : undefined}
+      onKeyDown={to ? (e) => (e.key === "Enter" || e.key === " ") && navigate(to) : undefined}
+      className={`group rounded-lg border border-line bg-paper p-4 ${to ? "cursor-pointer transition-colors hover:border-ink/20 hover:bg-mist/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand" : ""}`}
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2">
           {icon && <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${iconClassName ?? t.icon}`}>{icon}</span>}
@@ -136,7 +142,12 @@ export default function MetricCard({
           {insight}
         </p>
       )}
-      {caption && <p className={`text-xs text-muted ${insight ? "mt-0.5" : "mt-3"}`}>{caption}</p>}
+      {caption && (
+        <p className={`flex items-center gap-1 text-xs text-muted ${insight ? "mt-0.5" : "mt-3"}`}>
+          {caption}
+          {to && <ArrowRight size={11} weight="bold" className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />}
+        </p>
+      )}
     </div>
   );
 }

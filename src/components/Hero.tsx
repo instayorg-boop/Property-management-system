@@ -42,9 +42,10 @@ export default function Hero() {
         >
           <Button
             variant="primary"
+            onClick={() => window.location.assign("/get-started")}
             className="inline-block bg-[#0056D2] hover:bg-[#0041A3] text-white font-medium text-base   shadow-sm hover:shadow transition-all"
           >
-            Book Free Demo
+            Get started free
           </Button>
         </motion.div>
 

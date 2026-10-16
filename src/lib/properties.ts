@@ -17,20 +17,27 @@ function slugify(name: string) {
   return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || `property-${Date.now()}`;
 }
 
-export async function createProperty(name: string, address?: string, propertyType?: string): Promise<Property> {
+export async function createProperty(name: string, address?: string, propertyType?: string, coords?: { lat: number; lng: number } | null): Promise<Property> {
   const { data: userData } = await supabase.auth.getUser();
-  const { data, error } = await supabase
-    .from("properties")
-    .insert({ name, address, property_type: propertyType, slug: slugify(name), owner_id: userData.user?.id })
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
+  const baseSlug = slugify(name);
+  // slug is globally unique (it is part of the tenant-facing URL), so two landlords can easily
+  // pick the same property name. On a collision retry with a short random suffix.
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const slug = attempt === 0 ? baseSlug : `${baseSlug}-${Math.random().toString(36).slice(2, 6)}`;
+    const { data, error } = await supabase
+      .from("properties")
+      .insert({ name, address, property_type: propertyType, address_lat: coords?.lat ?? null, address_lng: coords?.lng ?? null, slug, owner_id: userData.user?.id })
+      .select()
+      .single();
+    if (!error) return data;
+    if (error.code !== "23505") throw error;
+  }
+  throw new Error("Could not create your property. Please try again.");
 }
 
 export async function updateProperty(
   id: string,
-  patch: Partial<Pick<Property, "name" | "address" | "property_type" | "logo_url">>
+  patch: Partial<Pick<Property, "name" | "address" | "property_type" | "logo_url" | "address_lat" | "address_lng">>
 ): Promise<void> {
   const { error } = await supabase.from("properties").update(patch).eq("id", id);
   if (error) throw error;
@@ -58,5 +65,8 @@ export async function getOrCreatePrimaryProperty(): Promise<Property> {
 
   const { data: userData } = await supabase.auth.getUser();
   const name = (userData.user?.user_metadata?.property_name as string | undefined)?.trim() || "My Property";
-  return createProperty(name);
+  const address = (userData.user?.user_metadata?.property_address as string | undefined)?.trim() || undefined;
+  const lat = userData.user?.user_metadata?.property_lat;
+  const lng = userData.user?.user_metadata?.property_lng;
+  return createProperty(name, address, undefined, typeof lat === "number" && typeof lng === "number" ? { lat, lng } : null);
 }

@@ -47,14 +47,14 @@ export function DataTable({
 }) {
   return (
     <div className="overflow-x-auto">
-      <table className={`w-full text-left text-sm ${className}`}>{children}</table>
+      <table className={`w-full text-left text-[13px] ${className}`}>{children}</table>
     </div>
   );
 }
 
 export function DataTableHead({ children }: { children: ReactNode }) {
   return (
-    <thead className="border-b border-line bg-paper text-[11px] text-muted uppercase">
+    <thead className="border-b border-line bg-paper text-[10.5px] text-muted uppercase">
       <tr>{children}</tr>
     </thead>
   );
@@ -71,7 +71,7 @@ export function Th({
 }) {
   return (
     <th
-      className={`px-4 py-3 font-medium tracking-wide ${align === "right" ? "text-right" : ""} ${className}`}
+      className={`px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap ${align === "right" ? "text-right" : ""} ${className}`}
     >
       {children}
     </th>
@@ -79,7 +79,7 @@ export function Th({
 }
 
 export function DataTableBody({ children }: { children: ReactNode }) {
-  return <tbody className="divide-y divide-line">{children}</tbody>;
+  return <tbody className="divide-y divide-line [&>tr]:transition-colors [&>tr]:duration-100 [&>tr:hover]:bg-mist/40">{children}</tbody>;
 }
 
 /** Plain <td> has no padding of its own — always use this (or pass px-4 py-3
@@ -123,7 +123,7 @@ export function StatusPill({
   children: ReactNode;
 }) {
   return (
-    <span className={`rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${TONE_STYLE[tone]}`}>
+    <span className={`rounded-md px-2 py-0.5 text-xs font-semibold whitespace-nowrap ${TONE_STYLE[tone]}`}>
       {children}
     </span>
   );
@@ -144,12 +144,12 @@ export function TableEmptyState({
     <tr>
       <td colSpan={colSpan} className="px-4 py-10">
         <div className="flex flex-col items-center justify-center gap-3 text-center">
-          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-mist text-muted">
             {icon}
           </span>
           <div>
-            <p className="text-xs font-semibold text-ink">{title}</p>
-            {description && <p className="mt-1 text-xs text-muted">{description}</p>}
+            <p className="text-[13px] font-bold text-ink">{title}</p>
+            {description && <p className="mt-1 text-[13px] text-muted">{description}</p>}
           </div>
         </div>
       </td>

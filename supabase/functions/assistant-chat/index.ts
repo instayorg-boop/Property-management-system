@@ -426,13 +426,20 @@ Deno.serve(async (req) => {
         toolResult = { error: toolErr instanceof Error ? toolErr.message : "Tool failed" };
       }
 
-      await supabase.from("assistant_messages").insert({
-        conversation_id: conversationId,
-        role: "tool",
-        tool_name: functionCall.name,
-        tool_args: functionCall.args ?? {},
-        tool_result: toolResult,
-      });
+      // Logged for audit, but nothing in this request reads it back, so it doesn't need to block
+      // the next round. Each round was previously waiting out a full extra database round trip
+      // (on top of the much slower Gemini call) before it could even start the next tool call or
+      // reach the final answer — on a compound question with 2-3 tool calls that alone added up to
+      // real, noticeable delay. EdgeRuntime.waitUntil lets it finish in the background instead.
+      EdgeRuntime.waitUntil(
+        supabase.from("assistant_messages").insert({
+          conversation_id: conversationId,
+          role: "tool",
+          tool_name: functionCall.name,
+          tool_args: functionCall.args ?? {},
+          tool_result: toolResult,
+        })
+      );
 
       // Extend the running contents so the next round (or the final answer) sees this
       // tool's result, enabling more than one tool call per turn for compound questions.
@@ -447,11 +454,15 @@ Deno.serve(async (req) => {
       }
     }
 
-    await supabase.from("assistant_messages").insert({
-      conversation_id: conversationId,
-      role: "assistant",
-      content: answer,
-    });
+    // Same reasoning as the per-round tool log above: the landlord is waiting on this response,
+    // and nothing about returning it depends on this write having finished yet.
+    EdgeRuntime.waitUntil(
+      supabase.from("assistant_messages").insert({
+        conversation_id: conversationId,
+        role: "assistant",
+        content: answer,
+      })
+    );
 
     return new Response(JSON.stringify({ answer }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

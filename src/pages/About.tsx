@@ -246,7 +246,7 @@ export default function AboutPage() {
 
             <p className="mt-7 max-w-2xl text-base leading-7 text-white/60 sm:text-lg sm:leading-8">
               Instay Manage brings the everyday operations of a property
-              together — from tenants and rooms to rent collection,
+              together, from tenants and rooms to rent collection,
               maintenance, payroll and reporting.
             </p>
           </div>
@@ -301,7 +301,7 @@ export default function AboutPage() {
 
               <p>
                 That means understanding the realities of local property
-                management — from mobile money and local payment workflows to
+                management, from mobile money and local payment workflows to
                 the way landlords, managers and tenants actually communicate.
               </p>
 

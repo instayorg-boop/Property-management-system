@@ -7,7 +7,6 @@ import {
   insertTenant,
   generatePortalToken,
   updateTenantRow,
-  deleteTenantRow,
   addLedgerEntry,
   addLedgerEvent,
   type NewLedgerEventInsert,
@@ -31,6 +30,7 @@ import { readCachedView, writeCachedView } from "../lib/offline/cachedView";
 import { enqueueAction } from "../lib/offline/sync";
 import { ACTION_PRIORITY } from "../lib/offline/db";
 import { calcPenalty, calcTotalOwed } from "./invoiceUtils";
+import { logAuditEvent } from "../lib/auditLog";
 
 const TENANTS_VIEW_KEY = "tenants";
 
@@ -208,6 +208,13 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
       saved = insertTenant(propertyId, tenant.id, tenant)
         .then(() => {
           showToast(`${t.name || "Tenant"} added`, "success");
+          void logAuditEvent({
+            propertyId,
+            action: "tenant.created",
+            summary: `${t.name || "Tenant"} added`,
+            targetType: "tenant",
+            targetId: tenant.id,
+          });
         })
         .catch((e) => {
           console.error("Failed to save tenant", e);
@@ -264,34 +271,75 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
     // instead of silently dropping it like this used to.
     if (ledger && ledger.length > 0) writes.push(addLedgerEntry(id, ledger[0]));
     if (writes.length === 0) return;
-    void Promise.all(writes).catch((e) => {
+    void Promise.all(writes)
+      .then(() => {
+        if (hasRowPatch) showToast("Tenant updated", "success");
+        void logAuditEvent({
+          propertyId,
+          action: "tenant.updated",
+          summary: hasRowPatch ? "Tenant details updated" : "Tenant note added",
+          targetType: "tenant",
+          targetId: id,
+        });
+      })
+      .catch((e) => {
       console.error("Failed to update tenant", e);
       showToast("Couldn't save that change — please try again.", "error");
     });
   };
 
+  // Archive instead of hard delete: deleting cascades to ledger/payment history. Name kept so
+  // callers don't change; rolls the optimistic update back if the save fails.
   const deleteTenant = (id: string) => {
-    commitTenants((prev) => prev.filter((t) => t.id !== id));
-    void deleteTenantRow(id).catch((e) => {
-      console.error("Failed to delete tenant", e);
-      showToast("Couldn't delete that tenant — please try again.", "error");
-    });
+    const snapshot = tenantsRef.current;
+    const moveOutDate = new Date().toISOString().slice(0, 10);
+    commitTenants((prev) => prev.map((t) => (t.id === id ? { ...t, active: false, moveOutDate } : t)));
+    if (!propertyId) return;
+    void updateTenantRow(propertyId, id, { active: false, moveOutDate })
+      .then(() => {
+        showToast("Tenant archived", "success");
+        void logAuditEvent({
+          propertyId,
+          action: "tenant.archived",
+          summary: "Tenant archived",
+          targetType: "tenant",
+          targetId: id,
+        });
+      })
+      .catch((e) => {
+        console.error("Failed to archive tenant", e);
+        commitTenants(() => snapshot);
+        showToast("Couldn't archive that tenant, please try again.", "error");
+      });
   };
 
   const moveOutTenant = (
     id: string,
     details: { moveOutDate: string; depositStatus: DepositStatus; depositResolutionNote: string }
   ) => {
+    const snapshot = tenantsRef.current;
     commitTenants((prev) =>
       prev.map((t) => (t.id === id ? { ...t, active: false, ...details } : t))
     );
     // The Rooms page derives occupancy from active tenants' `room` field (see RoomsContext's
     // useRoomsView), so setting active: false here is what actually frees the room up there too.
     if (propertyId)
-      void updateTenantRow(propertyId, id, { active: false, ...details }).catch((e) => {
-        console.error("Failed to move out tenant", e);
-        showToast("Couldn't save the move-out — please try again.", "error");
-      });
+      void updateTenantRow(propertyId, id, { active: false, ...details })
+        .then(() => {
+          showToast("Move-out saved", "success");
+          void logAuditEvent({
+            propertyId,
+            action: "tenant.moved_out",
+            summary: `Move-out recorded (${details.moveOutDate})`,
+            targetType: "tenant",
+            targetId: id,
+          });
+        })
+        .catch((e) => {
+          console.error("Failed to move out tenant", e);
+          commitTenants(() => snapshot);
+          showToast("Couldn't save the move-out, please try again.", "error");
+        });
   };
 
   const reactivateTenant = (id: string, newMoveInDate: string) => {
@@ -308,10 +356,21 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
         moveInDate: newMoveInDate,
         moveOutDate: undefined,
         depositResolutionNote: undefined,
-      }).catch((e) => {
-        console.error("Failed to reactivate tenant", e);
-        showToast("Couldn't reactivate that tenant — please try again.", "error");
-      });
+      })
+        .then(() => {
+          showToast("Tenant reactivated", "success");
+          void logAuditEvent({
+            propertyId,
+            action: "tenant.reactivated",
+            summary: `Tenant reactivated (move-in ${newMoveInDate})`,
+            targetType: "tenant",
+            targetId: id,
+          });
+        })
+        .catch((e) => {
+          console.error("Failed to reactivate tenant", e);
+          showToast("Couldn't reactivate that tenant — please try again.", "error");
+        });
   };
 
   // NOTE: this does everything in one setTenants call, applying every payment against a running
@@ -365,7 +424,12 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
           const owedBefore = totalOwed > 0 ? totalOwed : current.rentAmount;
           const remaining = Math.max(0, owedBefore - amount);
           const settledInFull = remaining <= 0;
-          const label_ = label ?? `${new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })} rent`;
+          const moveInForLabel = current.moveInDate ? new Date(current.moveInDate) : null;
+          const labelDate =
+            moveInForLabel && !Number.isNaN(moveInForLabel.getTime()) && moveInForLabel > new Date()
+              ? moveInForLabel
+              : new Date();
+          const label_ = label ?? `${labelDate.toLocaleDateString("en-US", { month: "long", year: "numeric" })} rent`;
 
           // Phase 3D charge matching: prefer the tenant's own open (not yet fully paid) rent
           // charge for THIS calendar billing period — the shape Phase 3B's generator produces
@@ -542,6 +606,18 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
           });
 
           showToast(newEvents.length > 1 ? "Payments logged" : "Payment logged", "success");
+          const totalAmount = payments.reduce((sum, p) => sum + p.amount, 0);
+          void logAuditEvent({
+            propertyId,
+            action: "payment.logged",
+            summary:
+              newEvents.length > 1
+                ? `${newEvents.length} payments logged (total K${round2(totalAmount)})`
+                : `Payment logged (K${round2(totalAmount)})`,
+            targetType: "tenant",
+            targetId: id,
+            metadata: { amount: totalAmount, count: newEvents.length },
+          });
         } catch (e) {
           console.error("Failed to log payment", e);
           showToast("Couldn't log that payment — please try again.", "error");
@@ -634,6 +710,14 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
             await updateTenantRow(propertyId, id, { status: finalUpdated.status, owedAmount: finalUpdated.owedAmount });
           }
           showToast(input.amount >= 0 ? "Charge added" : "Credit applied", "success");
+          void logAuditEvent({
+            propertyId,
+            action: "adjustment.added",
+            summary: `${input.amount >= 0 ? "Charge" : "Credit"} added: ${input.label} (K${Math.abs(input.amount)})`,
+            targetType: "tenant",
+            targetId: id,
+            metadata: { amount: input.amount, label: input.label },
+          });
         } catch (e) {
           console.error("Failed to add adjustment", e);
           showToast("Couldn't save that change — please try again.", "error");
@@ -725,6 +809,14 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
             await updateTenantRow(propertyId, id, { daysOverdue: 0 });
           }
           showToast("Late penalty waived", "success");
+          void logAuditEvent({
+            propertyId,
+            action: "penalty.waived",
+            summary: `Late penalty waived${reason ? ` (${reason})` : ""}`,
+            targetType: "tenant",
+            targetId: id,
+            metadata: { reason: reason || null },
+          });
         } catch (e) {
           console.error("Failed to waive penalty", e);
           showToast("Couldn't save that change — please try again.", "error");
@@ -762,6 +854,16 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
       await syncTenantBalanceIfNewModel(_tenantId);
     } catch (e) {
       console.error("Failed to sync tenant balance after void", e);
+    }
+    if (propertyId) {
+      void logAuditEvent({
+        propertyId,
+        action: "ledger_entry.voided",
+        summary: `Ledger entry voided${reason ? ` (${reason})` : ""}`,
+        targetType: "tenant",
+        targetId: _tenantId,
+        metadata: { entryId, reason: reason || null },
+      });
     }
   };
 

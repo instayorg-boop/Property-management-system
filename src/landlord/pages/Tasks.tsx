@@ -235,7 +235,6 @@ export default function Tasks() {
               task={task}
               busy={busyId === task.id}
               onDone={() => void updateStatus(task, "done")}
-              onSnooze={() => void updateStatus(task, "snoozed")}
             />
           ))}
         </div>

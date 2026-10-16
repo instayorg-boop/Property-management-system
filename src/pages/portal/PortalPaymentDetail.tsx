@@ -57,7 +57,7 @@ function receiptsFor(row: PortalLedgerRow, documents: PortalDocument[] | undefin
 
 export default function PortalPaymentDetail() {
   const { token, entryKey } = useParams();
-  const { ledger, identity, tenant, loading } = usePortal(token);
+  const { ledger, tenant, loading } = usePortal(token);
   const { data: documents, loading: docsLoading } = usePortalDocuments(tenant?.id);
 
   if (loading) {
@@ -113,7 +113,7 @@ export default function PortalPaymentDetail() {
       <Card>
         <Row label="Date" value={formatDate(row.createdAt)} />
         <Row label="For" value={row.label} />
-        {tenant && <Row label="Room" value={[tenant.room, identity?.propertyName].filter(Boolean).join(", ") || "—"} />}
+        {tenant && <Row label="Room" value={tenant.room || "-"} />}
       </Card>
 
       <SectionLabel>Receipt</SectionLabel>

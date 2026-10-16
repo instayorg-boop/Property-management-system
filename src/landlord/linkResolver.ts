@@ -19,6 +19,7 @@ export const CATEGORY_LINK: Record<NotificationCategory, string> = {
   payout: "/online-payments",
   overdue: "/rent",
   system: "/dashboard",
+  reminders: "/tenants",
 };
 
 /** Tenant profile pages route by portal_token, not by tenants.id (see TenantProfile.tsx / Tenants.tsx) —
@@ -66,7 +67,12 @@ export function resolveTaskLink(task: TodayTask, tenants: Tenant[]): string {
 }
 
 export function resolveNotificationLink(n: NotificationRow, tenants: Tenant[]): string {
-  const category = (n.category as NotificationCategory) in CATEGORY_LINK ? (n.category as NotificationCategory) : "system";
+  const category =
+    n.type === "sms_daily_summary"
+      ? "reminders"
+      : (n.category as NotificationCategory) in CATEGORY_LINK
+        ? (n.category as NotificationCategory)
+        : "system";
 
   if (n.entity_type === "maintenance_report" && n.entity_id) {
     return `/maintenance?report=${n.entity_id}`;

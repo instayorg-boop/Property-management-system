@@ -18,7 +18,6 @@ import InvoicePDF, { type InvoiceDocData } from "./InvoicePDF";
 import Pagination, { DEFAULT_PAGE_SIZE } from "./Pagination";
 import Button from "./Button";
 import {
-  slugify,
   calcTenantInvoice,
   lateFeeDisclaimerLabel,
   computeInvoiceDates,
@@ -115,7 +114,6 @@ export default function GenerateInvoicesOverlay({
   const currentPage = Math.min(page, pageCount);
   const pageRows = rows.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
 
-  const paymentLink = `pay.instay.co/${slugify(propertyName)}`;
 
   // A tenant's own due-day override (set on the Add Tenant page) wins over the property default —
   // an institution invoice bundles tenants who could have different overrides, so it falls back to
@@ -123,6 +121,8 @@ export default function GenerateInvoicesOverlay({
   const rowDueDay = (row: Row) => (row.kind === "individual" ? row.calc.tenant.dueDay : row.calcs[0].tenant.dueDay) ?? dueDay;
 
   const buildDocForRow = (row: Row, invoiceNumber: string): InvoiceDocData => {
+    const linkTenant: Tenant = row.kind === "individual" ? row.calc.tenant : row.calcs[0].tenant;
+    const paymentLink = `portal.instayhomes.com/p/${linkTenant.portalToken}`;
     const { issueDate, dueDate } = computeInvoiceDates(periodDate, rowDueDay(row));
     const shared = {
       invoiceNumber,
@@ -143,7 +143,7 @@ export default function GenerateInvoicesOverlay({
         ...shared,
         lateFeeRateLabel: lateFeeDisclaimerLabel(row.calc.tenant),
         billToName: row.calc.tenant.name,
-        billToSubline: `${row.calc.tenant.room} · ${propertyName}`,
+        billToSubline: [row.calc.tenant.room, propertyName].filter(Boolean).join(" · "),
         billToPhone: row.calc.tenant.phones[0] ?? "",
         lineItems: row.calc.lineItems,
         total: row.calc.total,

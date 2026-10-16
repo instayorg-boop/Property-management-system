@@ -63,7 +63,7 @@ export default function WaivePenaltyModal({
             onChange={(e) => setReason(e.target.value)}
             rows={3}
             placeholder="Why this penalty is being waived — stays visible on the tenant's ledger."
-            className="w-full resize-none rounded-lg border border-line px-3.5 py-2.5 text-sm text-ink outline-none focus:border-brand"
+            className="w-full resize-none rounded-lg border border-transparent bg-mist px-3.5 py-2.5 text-sm text-ink outline-none focus:ring-2 focus:ring-brand/30"
           />
         </div>
       </div>

@@ -1,8 +1,9 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { getOrCreatePrimaryProperty, listProperties, createProperty, updateProperty, uploadPropertyLogo as uploadPropertyLogoRequest } from "../lib/properties";
 import { getOrCreateSettings, updateSettings, type SettingsRow } from "../lib/settingsApi";
-import { readSettingsCache, writeSettingsCache } from "../lib/offline/settingsCache";
+import { readSettingsCache, writeSettingsCache, patchCachedProperty } from "../lib/offline/settingsCache";
 import { setLateFeeConfig, type LateFeeMode } from "./invoiceUtils";
+import { logAuditEvent } from "../lib/auditLog";
 
 export type NotificationPrefs = {
   newPayment: boolean;
@@ -57,6 +58,8 @@ type SettingsContextValue = {
   uploadPropertyLogo: (file: File) => Promise<void>;
   propertyAddress: string;
   setPropertyAddress: (v: string) => void;
+  propertyCoords: { lat: number | null; lng: number | null };
+  setPropertyCoords: (v: { lat: number | null; lng: number | null }) => void;
   propertyType: string;
   setPropertyType: (v: string) => void;
   /** Displayed on invoices and elsewhere landlord contact details are needed. */
@@ -108,6 +111,12 @@ type SettingsContextValue = {
   setPreDueRemindersEnabled: (v: boolean) => void;
   escalationEnabled: boolean;
   setEscalationEnabled: (v: boolean) => void;
+
+  // Autopilot — the daily autopilot-collections job reads these.
+  autopilotEnabled: boolean;
+  setAutopilotEnabled: (v: boolean) => void;
+  autopilotConfig: AutopilotConfig;
+  setAutopilotConfig: (v: AutopilotConfig) => void;
 
   // Today's Tasks detectors — each can be switched off independently of the others.
   taskOverdueRentEnabled: boolean;
@@ -165,6 +174,34 @@ type SettingsContextValue = {
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
 
+export type AutopilotConfig = {
+  due_today: boolean;
+  late_days: number[];
+  /** Days overdue (from the due date) at which the tenant is handed to the landlord. */
+  handover_day: number;
+  /** Only ever used after the tenant has been handed over to the landlord. */
+  guardian_enabled: boolean;
+  weekly_repeat: boolean;
+};
+
+export const DEFAULT_AUTOPILOT_CONFIG: AutopilotConfig = {
+  due_today: true,
+  late_days: [1, 3, 7, 14],
+  handover_day: 14,
+  guardian_enabled: false,
+  weekly_repeat: true,
+};
+
+function parseAutopilotConfig(raw: unknown): AutopilotConfig {
+  const c = (raw ?? {}) as Partial<AutopilotConfig> & { landlord_alert_day?: number; guardian_from_day?: number };
+  return {
+    ...DEFAULT_AUTOPILOT_CONFIG,
+    ...c,
+    handover_day: c.handover_day ?? c.landlord_alert_day ?? DEFAULT_AUTOPILOT_CONFIG.handover_day,
+    guardian_enabled: c.guardian_enabled ?? false,
+  };
+}
+
 function fromRow(row: SettingsRow) {
   const prefs = (row.notification_prefs ?? {}) as Partial<NotificationPrefs>;
   const smsPrefs = (row.sms_notification_prefs ?? {}) as Partial<SmsNotificationPrefs>;
@@ -189,6 +226,8 @@ function fromRow(row: SettingsRow) {
     contactOrder: row.contact_order as "student" | "guardian",
     preDueRemindersEnabled: row.pre_due_reminders_enabled ?? true,
     escalationEnabled: row.escalation_enabled ?? true,
+    autopilotEnabled: row.autopilot_enabled ?? false,
+    autopilotConfig: parseAutopilotConfig(row.autopilot_config),
     taskOverdueRentEnabled: row.task_overdue_rent_enabled ?? true,
     taskStaleMaintenanceEnabled: row.task_stale_maintenance_enabled ?? true,
     taskCollectionsTargetEnabled: row.task_collections_target_enabled ?? true,
@@ -221,12 +260,14 @@ function fromRow(row: SettingsRow) {
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [propertyId, setPropertyId] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [invoicesOn, setInvoicesOnState] = useState(false);
   const [collectionTargetPct, setCollectionTargetPctState] = useState(90);
-  const [propertyName, setPropertyNameState] = useState("Kabulonga House");
+  const [propertyName, setPropertyNameState] = useState("");
   const [propertyNameChangeCount, setPropertyNameChangeCount] = useState(0);
-  const [propertyAddress, setPropertyAddressState] = useState("Plot 14, Kabulonga, Lusaka");
+  const [propertyAddress, setPropertyAddressState] = useState("");
+  const [propertyCoords, setPropertyCoordsState] = useState<{ lat: number | null; lng: number | null }>({ lat: null, lng: null });
   const [propertyType, setPropertyTypeState] = useState("");
   // The payment-portal URL segment — set once at property creation and never re-derived from the
   // (editable) name, unlike the old behavior in Settings.tsx that recomputed it from propertyName
@@ -235,19 +276,18 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [propertySlug, setPropertySlugState] = useState("");
   const [propertyLogoUrl, setPropertyLogoUrlState] = useState<string | null>(null);
   const [landlordName, setLandlordNameState] = useState("");
-  const [landlordPhone, setLandlordPhoneState] = useState("0977 000 000");
+  const [landlordPhone, setLandlordPhoneState] = useState("");
   const [paymentMethods, setPaymentMethodsState] = useState<PaymentMethod[]>([
-    { type: "mtn", number: "0977 000 111" },
     { type: "cash" },
   ]);
-  const [properties, setProperties] = useState<string[]>(["Kabulonga House"]);
-  const [managementFeeRate, setManagementFeeRateState] = useState(0.1);
+  const [properties, setProperties] = useState<string[]>([]);
+  const [managementFeeRate, setManagementFeeRateState] = useState(0);
 
   const [billingPeriod, setBillingPeriodState] = useState("Monthly");
-  const [dueDay, setDueDayState] = useState(30);
+  const [dueDay, setDueDayState] = useState(1);
   const [gracePeriodDays, setGracePeriodDaysState] = useState(5);
   const [dailyPenaltyRate, setDailyPenaltyRateState] = useState(15);
-  const [lateFeeEnabled, setLateFeeEnabledState] = useState(true);
+  const [lateFeeEnabled, setLateFeeEnabledState] = useState(false);
   const [lateFeeMode, setLateFeeModeState] = useState<LateFeeMode>("prorated_rent");
   const [lateFeePercent, setLateFeePercentState] = useState(1);
   const [lateFeeCapEnabled, setLateFeeCapEnabledState] = useState(false);
@@ -258,6 +298,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [contactOrder, setContactOrderState] = useState<"student" | "guardian">("student");
   const [preDueRemindersEnabled, setPreDueRemindersEnabledState] = useState(true);
   const [escalationEnabled, setEscalationEnabledState] = useState(true);
+  const [autopilotEnabled, setAutopilotEnabledState] = useState(false);
+  const [autopilotConfig, setAutopilotConfigState] = useState<AutopilotConfig>(DEFAULT_AUTOPILOT_CONFIG);
   const [taskOverdueRentEnabled, setTaskOverdueRentEnabledState] = useState(true);
   const [taskStaleMaintenanceEnabled, setTaskStaleMaintenanceEnabledState] = useState(true);
   const [taskCollectionsTargetEnabled, setTaskCollectionsTargetEnabledState] = useState(true);
@@ -314,6 +356,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setContactOrderState(s.contactOrder);
     setPreDueRemindersEnabledState(s.preDueRemindersEnabled);
     setEscalationEnabledState(s.escalationEnabled);
+    setAutopilotEnabledState(s.autopilotEnabled);
+    setAutopilotConfigState(s.autopilotConfig);
     setTaskOverdueRentEnabledState(s.taskOverdueRentEnabled);
     setTaskStaleMaintenanceEnabledState(s.taskStaleMaintenanceEnabled);
     setTaskCollectionsTargetEnabledState(s.taskCollectionsTargetEnabled);
@@ -362,6 +406,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       setPropertyId(cached.property.id);
       setPropertyNameState(cached.property.name);
       setPropertyAddressState(cached.property.address);
+      setPropertyCoordsState({ lat: cached.property.lat ?? null, lng: cached.property.lng ?? null });
       setPropertyTypeState(cached.property.propertyType);
       setPropertySlugState(cached.property.slug);
       setPropertyLogoUrlState(cached.property.logoUrl ?? null);
@@ -378,6 +423,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         setPropertyNameState(property.name);
         setPropertyNameChangeCount(property.name_change_count ?? 0);
         setPropertyAddressState(property.address ?? "");
+        setPropertyCoordsState({ lat: property.address_lat ?? null, lng: property.address_lng ?? null });
         setPropertyTypeState(property.property_type ?? "");
         setPropertySlugState(property.slug ?? "");
         setPropertyLogoUrlState(property.logo_url ?? null);
@@ -396,6 +442,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
             id: property.id,
             name: property.name,
             address: property.address ?? "",
+            lat: property.address_lat ?? null,
+            lng: property.address_lng ?? null,
             propertyType: property.property_type ?? "",
             slug: property.slug ?? "",
             logoUrl: property.logo_url ?? null,
@@ -411,6 +459,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         if (!cached) setIsReady(true);
         if (!navigator.onLine) return;
         console.error("Failed to load settings/property", e);
+        if (!cached) setLoadError(e instanceof Error ? e.message : "Unknown error");
       }
     })();
     return () => {
@@ -421,7 +470,23 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   const persist = (patch: Parameters<typeof updateSettings>[1]) => {
     if (!propertyId) return;
-    void updateSettings(propertyId, patch);
+    updateSettings(propertyId, patch)
+      .then(() => {
+        // One summarized entry per save (the fields actually changed), not one per keystroke —
+        // each persist() call already corresponds to exactly one committed settings change.
+        const fields = Object.keys(patch as Record<string, unknown>).join(", ");
+        void logAuditEvent({
+          propertyId,
+          action: "settings.updated",
+          summary: `Settings updated: ${fields}`,
+          targetType: "settings",
+          metadata: { fields: Object.keys(patch as Record<string, unknown>) },
+        });
+      })
+      .catch((e) => {
+        console.error("Failed to save settings", e);
+        window.alert("We could not save that change. Please refresh the page and try again.");
+      });
   };
 
   const setInvoicesOn = (v: boolean) => {
@@ -440,14 +505,34 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     await updateProperty(propertyId, { name: v });
     setPropertyNameState(v);
     setPropertyNameChangeCount((c) => c + 1);
+    void logAuditEvent({
+      propertyId,
+      action: "settings.updated",
+      summary: "Property name updated",
+      targetType: "settings",
+    });
   };
   const setPropertyAddress = (v: string) => {
     setPropertyAddressState(v);
-    if (propertyId) void updateProperty(propertyId, { address: v });
+    patchCachedProperty({ address: v });
+    if (propertyId)
+      updateProperty(propertyId, { address: v })
+        .then(() => {
+          void logAuditEvent({ propertyId, action: "settings.updated", summary: "Property address updated", targetType: "settings" });
+        })
+        .catch((e) => console.error("Failed to save address", e));
+  };
+  const setPropertyCoords = (v: { lat: number | null; lng: number | null }) => {
+    setPropertyCoordsState(v);
+    patchCachedProperty({ lat: v.lat, lng: v.lng });
+    if (propertyId) updateProperty(propertyId, { address_lat: v.lat, address_lng: v.lng }).catch((e) => console.error("Failed to save location", e));
   };
   const setPropertyType = (v: string) => {
     setPropertyTypeState(v);
-    if (propertyId) void updateProperty(propertyId, { property_type: v });
+    if (propertyId)
+      void updateProperty(propertyId, { property_type: v }).then(() => {
+        void logAuditEvent({ propertyId, action: "settings.updated", summary: "Property type updated", targetType: "settings" });
+      });
   };
   const uploadPropertyLogo = async (file: File) => {
     if (!propertyId) return;
@@ -525,6 +610,14 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const setEscalationEnabled = (v: boolean) => {
     setEscalationEnabledState(v);
     persist({ escalation_enabled: v });
+  };
+  const setAutopilotEnabled = (v: boolean) => {
+    setAutopilotEnabledState(v);
+    persist({ autopilot_enabled: v });
+  };
+  const setAutopilotConfig = (v: AutopilotConfig) => {
+    setAutopilotConfigState(v);
+    persist({ autopilot_config: v });
   };
   const setTaskOverdueRentEnabled = (v: boolean) => {
     setTaskOverdueRentEnabledState(v);
@@ -618,6 +711,25 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     persist({ send_payment_receipt_sms: v });
   };
 
+  if (loadError) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center", gap: 12 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 600 }}>We could not load your account</h1>
+        <p style={{ maxWidth: 420, color: "#475569" }}>
+          Something went wrong while setting up your property settings. Please try again. If it keeps happening, contact support.
+        </p>
+        <p style={{ fontSize: 12, color: "#94a3b8" }}>{loadError}</p>
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          style={{ padding: "8px 16px", borderRadius: 6, background: "#0056D2", color: "#fff", fontWeight: 500 }}
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
+
   return (
     <SettingsContext.Provider
       value={{
@@ -635,6 +747,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         uploadPropertyLogo,
         propertyAddress,
         setPropertyAddress,
+        propertyCoords,
+        setPropertyCoords,
         propertyType,
         setPropertyType,
         landlordName,
@@ -675,6 +789,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         setPreDueRemindersEnabled,
         escalationEnabled,
         setEscalationEnabled,
+        autopilotEnabled,
+        setAutopilotEnabled,
+        autopilotConfig,
+        setAutopilotConfig,
         taskOverdueRentEnabled,
         setTaskOverdueRentEnabled,
         taskStaleMaintenanceEnabled,

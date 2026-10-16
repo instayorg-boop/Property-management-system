@@ -1,53 +1,26 @@
-// Phase 4 — daily rent-reminder + overdue-escalation SMS engine. Reads exactly the settings the
-// Reminders tab already exposes (reminder_lead_days, escalation_days, contact_order) and finally
-// makes them do something (Settings.tsx used to say "nothing sends yet" — this is that automation).
-//
-// Two independent checks per active tenant, each capped at most once per billing period via the
-// unique (tenant_id, billing_period_id, reminder_type) constraint on reminder_log — the insert
-// itself is the idempotency gate: if it fails with 23505 (already logged), this run has nothing
-// left to do for that tenant/type and moves on, safe to re-invoke (a retried cron tick, a manual
-// re-trigger) without double-sending.
-//
-// Pre-due reminder: reuses planRentCharge (the exact same due-date/billing-period math
-// generate-rent-charges uses) rather than recomputing it, so a reminder and its charge can never
-// disagree about which period or due date they're talking about. Sent to the tenant or the
-// guardian first depending on contact_order ("student" | "guardian" — the existing enum, see
-// SettingsContext.tsx), falling back to whichever contact actually has a phone on file.
-//
-// Escalation: triggers off tenants.days_overdue (the app's own already-synced overdue counter,
-// not a re-derived date) crossing escalation_days, and always contacts the guardian specifically —
-// matching the existing Settings copy ("the parent/guardian is contacted automatically"). The
-// guardian is read from tenants.emergency_contacts (relation === "Guardian"), NOT the legacy
-// guardian_phone/guardian_name columns, which nothing in this app populates. Also writes the
-// landlord-facing in-app 'overdue' notification unconditionally (independent of whether an SMS
-// could actually be sent), so a missing guardian contact never hides the escalation from the
-// landlord — only the guardian text itself is skipped in that case.
-//
-// Deploy:  supabase functions deploy send-rent-reminders
-// Invoke:  POST with header x-cron-secret: <CRON_SECRET>, optional JSON body { propertyId?: string }
-
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { planRentCharge, type TenantForCharge, type SettingsForBilling } from "../_shared/generateRentCharge.ts";
 import { currentPeriodDate, todayYMD, subtractDaysYMD } from "../_shared/billingPeriod.ts";
 import { sendSms } from "../_shared/sms.ts";
 import { withinDailySmsCap } from "../_shared/smsCap.ts";
+import { isLedgerV2EnabledForLandlord, getLedgerV2DueAndOverdue } from "../_shared/ledgerV2.ts";
 
 // deno-lint-ignore no-explicit-any
 type SupabaseClient = any;
 
 type EmergencyContact = { name?: string; relation?: string; phones?: string[] };
 
+const APP_URL = Deno.env.get("APP_URL") ?? "https://portal.instayhomes.com";
+
 function findGuardian(emergencyContacts: unknown): EmergencyContact | null {
   if (!Array.isArray(emergencyContacts)) return null;
   return (emergencyContacts as EmergencyContact[]).find((c) => c?.relation === "Guardian") ?? null;
 }
 
-/** Logs the reminder first — the unique constraint IS the idempotency check. Returns true only if
- * this call actually claimed it (i.e. it wasn't already sent for this tenant/period/type). */
 async function claimReminder(supabase: SupabaseClient, tenantId: string, billingPeriodId: string, reminderType: "pre_due" | "escalation"): Promise<boolean> {
   const { error } = await supabase.from("reminder_log").insert({ tenant_id: tenantId, billing_period_id: billingPeriodId, reminder_type: reminderType });
   if (error) {
-    if (error.code === "23505") return false; // already sent for this period — not an error
+    if (error.code === "23505") return false;
     console.error("[send-rent-reminders] failed to claim reminder", tenantId, reminderType, error.message);
     return false;
   }
@@ -55,19 +28,13 @@ async function claimReminder(supabase: SupabaseClient, tenantId: string, billing
 }
 
 function portalLink(portalToken: string): string {
-  return `https://pay.instay.co/p/${portalToken}`;
+  return `https://portal.instayhomes.com/p/${portalToken}`;
 }
 
-/** First word of a full name — SMS addresses people by first name, not the combined name (which is
- * what's stored; there's no separate first/last name column, and splitting one out would ripple
- * into the tenant list, invoices, receipts, and the tenant portal for no real gain here — this is
- * enough to keep messages short and predictable). Applied to both the tenant and the guardian. */
 function firstName(fullName: string): string {
   return fullName.trim().split(/\s+/)[0] || fullName;
 }
 
-/** 'YYYY-MM-DD' -> '18 Sep 2026', matching the display-date format used elsewhere in this app
- * (e.g. AddTenant.tsx's move-in/deposit dates). */
 function formatDisplayDate(ymd: string): string {
   const [year, month, day] = ymd.split("-").map(Number);
   return new Date(year, month - 1, day).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
@@ -83,7 +50,7 @@ Deno.serve(async (req) => {
   try {
     body = await req.json();
   } catch {
-    // No body (a plain pg_cron POST) — process every property, same convention as generate-rent-charges.
+    // No body (a plain pg_cron POST), process every property, same convention as generate-rent-charges.
   }
 
   const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
@@ -92,7 +59,7 @@ Deno.serve(async (req) => {
 
   let settingsQuery = supabase
     .from("settings")
-    .select("property_id, due_day, grace_period_days, reminder_lead_days, escalation_days, contact_order, sms_notification_prefs, pre_due_reminders_enabled, escalation_enabled");
+    .select("property_id, due_day, grace_period_days, reminder_lead_days, escalation_days, contact_order, sms_notification_prefs");
   if (body.propertyId) settingsQuery = settingsQuery.eq("property_id", body.propertyId);
   const { data: settingsRows, error: settingsError } = await settingsQuery;
   if (settingsError) {
@@ -103,6 +70,13 @@ Deno.serve(async (req) => {
 
   for (const settings of settingsRows ?? []) {
     const smsPrefs = (settings.sms_notification_prefs ?? {}) as { overdueEscalated?: boolean };
+
+    // Collected across the whole run and written as ONE bundled notification per property below,
+    // instead of one row per tenant.
+    const escalatedTenants: { name: string; daysOverdue: number }[] = [];
+
+    const { data: propertyRow } = await supabase.from("properties").select("owner_id").eq("id", settings.property_id).maybeSingle();
+    const ledgerV2 = propertyRow ? await isLedgerV2EnabledForLandlord(supabase, propertyRow.owner_id) : false;
 
     const { data: tenants, error: tenantsError } = await supabase
       .from("tenants")
@@ -116,11 +90,10 @@ Deno.serve(async (req) => {
     }
 
     for (const tenant of tenants ?? []) {
-      if (Number(tenant.owed_amount ?? 0) <= 0) continue; // fully settled — nothing to remind or escalate
+      const ledgerV2Due = ledgerV2 ? await getLedgerV2DueAndOverdue(supabase, tenant.id) : null;
+      const owedNow = ledgerV2Due ? ledgerV2Due.owed : Number(tenant.owed_amount ?? 0);
+      if (owedNow <= 0) continue;
 
-      // --- Pre-due reminder ---------------------------------------------------------------
-      let plan: ReturnType<typeof planRentCharge> | null = null;
-      if (settings.pre_due_reminders_enabled !== false) {
       const chargeTenant: TenantForCharge = {
         id: tenant.id,
         rent_amount: tenant.rent_amount,
@@ -131,7 +104,7 @@ Deno.serve(async (req) => {
         grace_period_days: tenant.grace_period_days,
       };
       const billingSettings: SettingsForBilling = { due_day: settings.due_day, grace_period_days: settings.grace_period_days };
-      plan = planRentCharge(chargeTenant, billingSettings, periodDate);
+      const plan = planRentCharge(chargeTenant, billingSettings, periodDate);
 
       if (plan) {
         const reminderDate = subtractDaysYMD(plan.dueDate, settings.reminder_lead_days ?? 0);
@@ -140,7 +113,6 @@ Deno.serve(async (req) => {
           if (claimed) {
             const guardian = findGuardian(tenant.emergency_contacts);
             const tenantPhone = tenant.phones?.[0] ?? null;
-            // contact_order picks who's tried first; fall back to whichever contact has a phone.
             const primary = settings.contact_order === "guardian" ? guardian?.phones?.[0] ?? tenantPhone : tenantPhone ?? guardian?.phones?.[0] ?? null;
             if (primary) {
               const link = portalLink(tenant.portal_token);
@@ -159,23 +131,15 @@ Deno.serve(async (req) => {
           }
         }
       }
-      }
 
-      // --- Escalation -----------------------------------------------------------------------
-      const daysOverdue = tenant.days_overdue ?? 0;
-      if (settings.escalation_enabled !== false && daysOverdue >= (settings.escalation_days ?? Infinity)) {
+      const daysOverdue = ledgerV2Due ? ledgerV2Due.daysOverdue : (tenant.days_overdue ?? 0);
+      if (daysOverdue >= (settings.escalation_days ?? Infinity)) {
         const billingPeriodId = plan?.billingPeriodId ?? `${periodDate.getFullYear()}-${String(periodDate.getMonth() + 1).padStart(2, "0")}`;
         const claimed = await claimReminder(supabase, tenant.id, billingPeriodId, "escalation");
         if (claimed) {
-          // Always recorded in-app for the landlord, regardless of whether a guardian SMS can go out.
-          await supabase.from("notifications").insert({
-            property_id: settings.property_id,
-            category: "overdue",
-            type: "overdueEscalated",
-            title: "Overdue tenant escalated",
-            body: `${tenant.name} is ${daysOverdue} days overdue — their guardian has been contacted.`,
-            metadata: { tenant_id: tenant.id, days_overdue: daysOverdue },
-          });
+          // Recorded once the run finishes (see the bundled insert below), not here per tenant,
+          // a landlord with several tenants escalating the same day should see one card, not several.
+          escalatedTenants.push({ name: tenant.name, daysOverdue });
 
           const guardian = findGuardian(tenant.emergency_contacts);
           const guardianPhoneNumber = guardian?.phones?.[0] ?? null;
@@ -194,6 +158,25 @@ Deno.serve(async (req) => {
           }
         }
       }
+    }
+
+    // One bundled landlord-facing notification per property per run, listing everyone who
+    // escalated this run instead of a separate card for each tenant.
+    if (escalatedTenants.length > 0) {
+      const names = escalatedTenants.map((t) => `${t.name} (${t.daysOverdue}d)`).join(", ");
+      const title = escalatedTenants.length === 1 ? "Overdue tenant escalated" : `${escalatedTenants.length} tenants escalated to guardian`;
+      const body =
+        escalatedTenants.length === 1
+          ? `${escalatedTenants[0].name} is ${escalatedTenants[0].daysOverdue} days overdue, their guardian has been contacted.`
+          : `${names}. Guardians have been contacted. Open your dashboard (${APP_URL}/tenants) to see who and what's next.`;
+      await supabase.from("notifications").insert({
+        property_id: settings.property_id,
+        category: "overdue",
+        type: "overdueEscalated",
+        title,
+        body,
+        metadata: { tenants: escalatedTenants, count: escalatedTenants.length },
+      });
     }
   }
 

@@ -258,7 +258,7 @@ export default function PhoneNumberInput({
   return (
     <div>
       <div
-        className={`flex items-stretch rounded-lg border ${error ? "border-red-400" : "border-line"} focus-within:border-brand focus-within:ring-1 focus-within:ring-brand`}
+        className={`flex items-stretch rounded-lg border bg-mist ${error ? "border-red-400" : "border-transparent"} focus-within:ring-2 focus-within:ring-brand/30`}
       >
         <div className="relative shrink-0 border-r border-line">
           <button

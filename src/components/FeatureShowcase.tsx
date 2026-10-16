@@ -48,7 +48,7 @@ const items: FeatureItem[] = [
   {
     title: "Automated invoicing & instant tenant reminders",
     imageUrl: "https://rlmcuhejgfftcdshbrbe.supabase.co/storage/v1/object/public/Company%20assets/Landing%20page%20illustrations/I%20message%20illustration.png",
-    href: "/features/invoicing",
+    href: "/features/tenants",
   },
   {
     title: "Digital clock-in/out & automatic payroll calculation",

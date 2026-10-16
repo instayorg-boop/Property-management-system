@@ -1,9 +1,9 @@
 import { useParams } from "react-router-dom";
-import { Wrench, ClockCounterClockwise, CalendarBlank, Door, Receipt, FileText } from "@phosphor-icons/react";
+import { CalendarBlank, Door } from "@phosphor-icons/react";
 import { usePortal } from "./portalData";
 import { isPortalDevMode } from "./portalDev";
+import PortalQuickActions from "./PortalQuickActions";
 import {
-  ActionTile,
   Card,
   Pill,
   PortalButton,
@@ -12,11 +12,12 @@ import {
   Row,
   SectionLabel,
   Shimmer,
+  StatTile,
   formatDate,
   formatMoney,
   type ToneName,
 } from "./portalUi";
-import { groupPortalLedger } from "../../lib/payPortal";
+import { groupPortalLedger, portalOwedPeriodLabel } from "../../lib/payPortal";
 
 function greeting(now = new Date()): string {
   const h = now.getHours();
@@ -28,25 +29,34 @@ function greeting(now = new Date()): string {
 /** The one line at the top of the balance card that tells a tenant where they stand before they
  * read the figure — counted in whole days from midnight to midnight so "due in 1 day" doesn't
  * flip to "due in 0 days" just because it's late in the evening. */
-function dueBadge(nextDue: Date | null, owed: number, now = new Date()): { label: string; tone: ToneName } {
+function dueBadge(
+  nextDue: Date | null,
+  owed: number,
+  moveIn: string | null | undefined,
+  daysOverdue: number | undefined,
+  now = new Date(),
+): { label: string; tone: ToneName } {
   if (owed <= 0) return { label: "All paid up", tone: "green" };
+  const mi = moveIn ? new Date(moveIn) : null;
+  if (mi && !Number.isNaN(mi.getTime()) && new Date(mi.getFullYear(), mi.getMonth(), mi.getDate()).getTime() > new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()) {
+    return { label: `Moving in ${mi.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`, tone: "accent" };
+  }
   if (!nextDue) return { label: "Payment due", tone: "amber" };
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const startOfDue = new Date(nextDue.getFullYear(), nextDue.getMonth(), nextDue.getDate()).getTime();
-  const days = Math.round((startOfDue - startOfToday) / 86_400_000);
-  if (days < 0) return { label: days === -1 ? "1 day overdue" : `${Math.abs(days)} days overdue`, tone: "red" };
-  if (days === 0) return { label: "Due today", tone: "amber" };
-  if (days === 1) return { label: "Due tomorrow", tone: "amber" };
-  return { label: `Due in ${days} days`, tone: days <= 7 ? "amber" : "accent" };
-}
-
-/** The period the outstanding amount is actually for — "September 2026 rent" above the figure,
- * rather than an unlabelled number the tenant has to take on trust. Falls back to the current
- * month only when nothing is open in the ledger yet (a charge not invoiced). */
-function owedFor(labels: string[], now = new Date()): string {
-  if (labels.length === 0) return `${now.toLocaleDateString("en-GB", { month: "long", year: "numeric" })} rent`;
-  if (labels.length === 1) return labels[0];
-  return `${labels.length} unpaid periods`;
+  const rawDays = Math.round((startOfDue - startOfToday) / 86_400_000);
+  if (rawDays < 0) {
+    // Overdue — use the tenant's real days-overdue figure, which correctly accounts for the
+    // landlord's configured grace period, rather than a raw day count from the due date. Without
+    // this, a tenant with a 5-day grace period sees a bigger, wrong "days overdue" number here
+    // than their landlord sees on the Rent/tenant pages for the exact same account. Falls back to
+    // the raw count only if daysOverdue genuinely isn't available.
+    const days = daysOverdue && daysOverdue > 0 ? daysOverdue : Math.abs(rawDays);
+    return { label: days === 1 ? "1 day overdue" : `${days} days overdue`, tone: "red" };
+  }
+  if (rawDays === 0) return { label: "Due today", tone: "amber" };
+  if (rawDays === 1) return { label: "Due tomorrow", tone: "amber" };
+  return { label: `Due in ${rawDays} days`, tone: rawDays <= 7 ? "amber" : "accent" };
 }
 
 export default function PortalHome() {
@@ -87,7 +97,7 @@ export default function PortalHome() {
 
   const owed = tenant.owedAmount;
   const isClear = owed <= 0;
-  const badge = dueBadge(nextDueDate, owed);
+  const badge = dueBadge(nextDueDate, owed, tenant?.moveInDate, tenant?.daysOverdue);
   const openLabels = groupPortalLedger(ledger)
     .filter((row) => row.status !== "paid")
     .map((row) => row.label);
@@ -112,8 +122,11 @@ export default function PortalHome() {
         </p>
         <p className="display truncate text-[22px] font-semibold leading-tight">{tenant.name}</p>
         {identity.propertyName && (
-          <p className="mt-0.5 truncate text-[13px]" style={{ color: "var(--p-muted)" }}>
-            {identity.propertyName}
+          <p className="mt-1 truncate text-[15px] font-semibold">{identity.propertyName}</p>
+        )}
+        {identity.propertyAddress && (
+          <p className="mt-0.5 truncate text-[12.5px]" style={{ color: "var(--p-muted)" }}>
+            {identity.propertyAddress}
           </p>
         )}
       </header>
@@ -122,8 +135,8 @@ export default function PortalHome() {
           Everything else on the screen is secondary and sits below it. */}
       <Card className="px-5 py-6 text-center">
         <Pill tone={badge.tone}>{badge.label}</Pill>
-        <p className="mt-4 text-[13px]" style={{ color: "var(--p-muted)" }}>
-          {isClear ? "Nothing due right now" : owedFor(openLabels)}
+        <p className="mt-4 text-[10.5px] font-bold uppercase tracking-[.08em]" style={{ color: "var(--p-muted)" }}>
+          {isClear ? "Nothing due right now" : portalOwedPeriodLabel(openLabels, nextDueDate)}
         </p>
         <p
           className="num mt-1.5 text-[38px] font-semibold leading-none"
@@ -148,6 +161,16 @@ export default function PortalHome() {
         </div>
       </Card>
 
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <StatTile label="Monthly rent" value={formatMoney(tenant.rentAmount)} sub={tenant.room || undefined} />
+        <StatTile
+          label="Last payment"
+          value={lastPaid ? formatMoney(lastPaid.paidAmount ?? lastPaid.amount) : "None yet"}
+          sub={lastPaid ? formatDate(lastPaid.createdAt) : undefined}
+          tone={lastPaid ? "var(--p-green)" : undefined}
+        />
+      </div>
+
       <SectionLabel>Your tenancy</SectionLabel>
       <Card>
         <Row
@@ -158,34 +181,13 @@ export default function PortalHome() {
         <Row
           icon={<Door size={17} weight="regular" />}
           label="Room"
-          value={[tenant.room, identity.propertyName].filter(Boolean).join(", ") || "—"}
-        />
-        <Row
-          icon={<Receipt size={17} weight="regular" />}
-          label="Last payment"
-          value={
-            lastPaid ? (
-              <span className="num" style={{ color: "var(--p-green)" }}>
-                {formatMoney(lastPaid.paidAmount ?? lastPaid.amount)} · {formatDate(lastPaid.createdAt)}
-              </span>
-            ) : (
-              "None yet"
-            )
-          }
-        />
-        <Row
-          icon={<FileText size={17} weight="regular" />}
-          label="Monthly rent"
-          value={<span className="num">{formatMoney(tenant.rentAmount)}</span>}
+          value={tenant.room || "-"}
         />
       </Card>
 
       {/* Two tiles, not three — receipts live inside each payment in the history, which is where a
           tenant looks for them, rather than in a separate documents drawer. */}
-      <div className="mt-4 flex gap-3">
-        <ActionTile to={`/p/${token}/maintenance`} icon={<Wrench size={18} weight="regular" />} label="Report a problem" />
-        <ActionTile to={`/p/${token}/history`} icon={<ClockCounterClockwise size={18} weight="regular" />} label="Payment history" />
-      </div>
+      <PortalQuickActions token={token!} />
 
       <div className="flex-1" />
       <PoweredByInstay />

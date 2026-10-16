@@ -17,7 +17,7 @@ export default function ConnectedSection() {
         </h2>
         <p className="mx-auto mt-4 max-w-md text-paper/60">
           Instay sits at the center, so a payment, a receipt and a report are always the
-          same event — never three separate updates.
+          same event, never three separate updates.
         </p>
 
         <div className="mt-14 flex flex-wrap items-center justify-center gap-3">

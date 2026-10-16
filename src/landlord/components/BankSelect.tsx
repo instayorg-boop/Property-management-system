@@ -43,7 +43,7 @@ export default function BankSelect({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between rounded-lg border border-line px-3 py-2.5 text-left text-sm outline-none focus:border-brand"
+        className="flex w-full items-center justify-between rounded-lg border border-transparent bg-mist px-3 py-2.5 text-left text-sm outline-none focus:ring-2 focus:ring-brand/30"
       >
         <span className={`flex items-center gap-2 ${selected ? "text-ink" : "text-muted"}`}>
           {selected && <BankLogo bank={selected} />}

@@ -3,6 +3,7 @@ import { useLocation, useParams } from "react-router-dom";
 import { Checks, DownloadSimple, Copy, Check } from "@phosphor-icons/react";
 import { usePortal, usePortalDocuments } from "./portalData";
 import Confetti from "./Confetti";
+import PortalQuickActions from "./PortalQuickActions";
 import { Card, MoneyRow, Pill, PortalButton, PortalMessage, PoweredByInstay, formatDate, formatMoney } from "./portalUi";
 
 type SuccessState = {
@@ -204,6 +205,10 @@ export default function PortalSuccess() {
           Includes {formatMoney(fee)} transaction fee. The full breakdown is on your receipt.
         </p>
       )}
+
+      {/* Same tiles (and floating "Report a problem" button) as the portal home — right after
+          paying is when a tenant has the portal open anyway, so it's a good moment to surface them. */}
+      <PortalQuickActions token={token!} />
 
       <div className="mt-5">
         <PortalButton to={`/p/${token}`}>Back home</PortalButton>

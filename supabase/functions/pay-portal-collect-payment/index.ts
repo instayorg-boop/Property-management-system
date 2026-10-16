@@ -184,6 +184,15 @@ Deno.serve(async (req) => {
   } else {
     rawPenalty = daysOverdue * (tenant.rent_amount / daysInThisMonth);
   }
+  // A penalty line already in the ledger is the late fee (it is inside owed_amount, or was waived),
+  // so never stack the computed fee on top of it. Mirrors payPortal.ts getPortalTenant.
+  const { count: ledgerPenaltyCount } = await supabase
+    .from("ledger_entries")
+    .select("id", { count: "exact", head: true })
+    .eq("tenant_id", tenantId)
+    .eq("event_type", "penalty")
+    .is("voided_at", null);
+  if ((ledgerPenaltyCount ?? 0) > 0) rawPenalty = 0;
   rawPenalty = Math.max(0, Math.round(rawPenalty));
   const penaltyAmount =
     settings?.late_fee_cap_enabled && settings.late_fee_cap_amount != null
@@ -290,6 +299,15 @@ Deno.serve(async (req) => {
     });
     const lencoJson = await lencoResponse.json();
 
+    if (!lencoResponse.ok && lencoResponse.status >= 500) {
+      // Lenco-side error: we cannot know whether the prompt was sent. Leave pending so a late
+      // webhook/poll can still credit it.
+      return new Response(
+        JSON.stringify({ ok: true, collectionId: collectionRow.id, status: "pending", amount: totalAmount, feeAmount, rentPortion, isPartial: rentPortion < owedBefore }),
+        { status: 202, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     if (!lencoResponse.ok) {
       await supabase
         .from("collections")
@@ -326,10 +344,11 @@ Deno.serve(async (req) => {
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
-    await supabase.from("collections").update({ status: "failed", failure_reason: String(err) }).eq("id", collectionRow.id);
-    return new Response(JSON.stringify({ error: "Failed to reach Lenco", detail: String(err) }), {
-      status: 502,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    // Timeout / network error: unknown outcome. Do NOT mark failed; leave pending for webhook/poll.
+    console.error("[collect-payment] unknown outcome reaching Lenco", String(err));
+    return new Response(
+      JSON.stringify({ ok: true, collectionId: collectionRow.id, status: "pending", amount: totalAmount, feeAmount, rentPortion, isPartial: rentPortion < owedBefore }),
+      { status: 202, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   }
 });

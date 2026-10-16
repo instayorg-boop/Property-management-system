@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -14,11 +15,16 @@ import {
   Laptop as LaptopIcon,
   Coins as CoinsIcon,
   Trash as TrashIcon,
+  Bank as BankIcon,
+  DeviceMobile as DeviceMobileIcon,
+  CaretRight as CaretRightIcon,
   Plus as PlusIconBase,
   type Icon as PhosphorIcon,
+  ArrowLeft,
 } from "@phosphor-icons/react";
 import PageHeader from "../components/PageHeader";
 import Modal from "../components/Modal";
+import { useToast } from "../ToastContext";
 import Select from "../components/Select";
 import DatePicker from "../components/DatePicker";
 import Pagination, { DEFAULT_PAGE_SIZE } from "../components/Pagination";
@@ -28,7 +34,7 @@ import BankSelect from "../components/BankSelect";
 import { useSettings } from "../SettingsContext";
 import { formatCurrency } from "../TenantsContext";
 import { useIsOwner } from "../useIsOwner";
-import { useWithdrawFlow, recipientLabel } from "../useWithdrawFlow";
+import { useWithdrawFlow, recipientLabel, recipientKey, dedupeRecipients } from "../useWithdrawFlow";
 import { usePayoutSummary } from "../usePayoutSummary";
 import { MOBILE_MONEY_LOGO } from "../../lib/mobileMoneyProviders";
 import { supabase } from "../../lib/supabaseClient";
@@ -143,21 +149,40 @@ function MethodAvatar({ recipient }: { recipient: PayoutRecipient }) {
 }
 
 function MethodRow({ recipient, selected, onSelect }: { recipient: PayoutRecipient; selected: boolean; onSelect: () => void }) {
+  const isMobile = recipient.type === "mobile-money";
+  const providerLabel = MOBILE_PROVIDERS.find((p) => p.value === recipient.provider)?.label ?? (recipient.provider ?? "").toUpperCase();
+  const digits = (isMobile ? recipient.phone_number : recipient.account_number) ?? "";
   return (
     <button
       type="button"
       onClick={onSelect}
-      className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors ${
-        selected ? "border-brand bg-brand-soft" : "border-line bg-paper hover:bg-mist"
+      aria-pressed={selected}
+      className={`flex w-full items-center gap-3.5 rounded-lg border p-3.5 text-left transition-colors ${
+        selected ? "border-brand bg-brand-soft/50 ring-1 ring-brand" : "border-line bg-paper hover:border-ink/20 hover:bg-mist/40"
       }`}
     >
-      <MethodAvatar recipient={recipient} />
+      <span
+        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
+          selected ? "border-brand bg-brand text-white" : "border-line bg-paper"
+        }`}
+      >
+        {selected && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+      </span>
+      {isMobile && MethodAvatar({ recipient }) ? (
+        MethodAvatar({ recipient })
+      ) : (
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-mist text-muted">
+          {isMobile ? <DeviceMobileIcon size={18} weight="duotone" /> : <BankIcon size={18} weight="duotone" />}
+        </span>
+      )}
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold text-ink">{recipientLabel(recipient)}</p>
-        <p className="text-xs text-muted">{recipient.type === "mobile-money" ? "Mobile money" : "Bank transfer"}</p>
+        <p className="truncate text-sm font-semibold text-ink">{recipient.account_name ?? (isMobile ? `${providerLabel} mobile money` : "Bank account")}</p>
+        <p className="mt-0.5 text-xs text-muted">
+          {isMobile ? `${providerLabel} mobile money` : "Bank account"} · ending {digits.slice(-4)}
+        </p>
       </div>
       {recipient.is_default && (
-        <span className="shrink-0 rounded-full border border-line bg-paper px-2.5 py-1 text-xs font-medium text-ink">Default</span>
+        <span className="shrink-0 rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-semibold whitespace-nowrap text-emerald-700">Default</span>
       )}
     </button>
   );
@@ -265,16 +290,28 @@ function StatCard({
   value,
   valueClassName = "",
   caption,
+  wide,
+  to,
 }: {
+  wide?: boolean;
   icon: ReactNode;
   label: string;
   value: ReactNode;
   valueClassName?: string;
   caption?: string;
+  /** Route to navigate to on click, e.g. linking "Collected via payment link" back to the Rent page. */
+  to?: string;
 }) {
+  const navigate = useNavigate();
   return (
-    <div className="flex-1 px-5 py-4">
-      <p className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted uppercase">
+    <div
+      role={to ? "button" : undefined}
+      tabIndex={to ? 0 : undefined}
+      onClick={to ? () => navigate(to) : undefined}
+      onKeyDown={to ? (e) => (e.key === "Enter" || e.key === " ") && navigate(to) : undefined}
+      className={`px-5 py-4 ${wide ? "flex-[1.4]" : "flex-1"} ${to ? "cursor-pointer transition-colors hover:bg-mist/40" : ""}`}
+    >
+      <p className="flex items-center gap-1.5 whitespace-nowrap text-[11px] font-semibold tracking-wide text-muted uppercase">
         {icon}
         {label}
       </p>
@@ -322,6 +359,7 @@ function TransferFundsPanel({
     startConfirmation,
     submit,
     result,
+    stillProcessing,
   } = useWithdrawFlow(recipients);
   // usePayoutSummary's own `payout` is null both while the balance is still loading AND once it's
   // confirmed there's nothing to withdraw — those need different UI (a loading state vs. an actual
@@ -394,21 +432,26 @@ function TransferFundsPanel({
               ? "Checking your available balance…"
               : "Nothing available to transfer yet."
         }
-        actions={
-          canLeave ? (
-            <Button variant="outline" className="gap-1.5" onClick={onClose}>
-              <CaretLeft size={14} weight="bold" />
-              Back to Online payments
-            </Button>
-          ) : undefined
-        }
       />
+
+      {canLeave && (
+        <div className="px-4 pb-4 sm:px-8">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex w-fit items-center gap-1.5 text-sm text-muted transition-colors hover:text-ink hover:underline"
+          >
+            <ArrowLeft size={14} weight="bold" />
+            Back
+          </button>
+        </div>
+      )}
 
       {/* Side by side on a wide page — the flow on the left, a persistent amount/fee/destination
           summary on the right (sticky, so it's still visible while scrolling the method list or
           typing a code) — rather than stacking everything into one narrow centered column, which
           left most of a full page's width empty on anything wider than a phone. */}
-      <div className="grid grid-cols-1 gap-6 px-4 pb-10 sm:px-8 lg:grid-cols-[1fr_320px]">
+      <div className={`grid grid-cols-1 gap-6 px-4 pb-10 sm:px-8 ${payout ? "lg:grid-cols-[1fr_320px]" : ""}`}>
         <div className="min-w-0  bg-paper ">
           {payout && <TransferStepper current={stepperIndex(step)} onBack={step === "otp" ? () => setStep("confirm") : undefined} />}
 
@@ -435,14 +478,34 @@ function TransferFundsPanel({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="flex flex-col items-center gap-3 py-10 text-center"
+              className="px-6 py-10 text-center"
             >
-              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
+              <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-md bg-brand-soft text-brand">
                 <Wallet size={22} weight="duotone" />
               </span>
-              <div>
-                <p className="text-xs font-semibold text-ink">Nothing to withdraw yet</p>
-                <p className="mt-0.5 text-xs text-muted">Rent paid online through your payment link will show up here.</p>
+              <p className="mt-4 font-display text-lg font-semibold text-ink">Nothing to transfer yet</p>
+              <p className="mx-auto mt-1 max-w-sm text-sm text-muted">
+                We handle reminders and collection for you. Online rent shows up here, ready to send.
+              </p>
+
+              <ol className="mx-auto mt-6 grid max-w-xl grid-cols-1 gap-2 text-left sm:grid-cols-3">
+                {[
+                  { n: 1, title: "We remind tenants", body: "Automatically, when rent is due." },
+                  { n: 2, title: "They pay online", body: "Payments land here safely." },
+                  { n: 3, title: "You transfer", body: "To your bank or mobile money." },
+                ].map((step) => (
+                  <li key={step.n} className="rounded-md border border-line bg-paper p-3">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-md bg-mist text-xs font-semibold text-ink">{step.n}</span>
+                    <p className="mt-2 text-sm font-semibold text-ink">{step.title}</p>
+                    <p className="mt-0.5 text-xs text-muted">{step.body}</p>
+                  </li>
+                ))}
+              </ol>
+
+              <div className="mt-6 flex flex-wrap justify-center gap-2">
+                <Button variant="secondary" onClick={onClose}>
+                  Back to Online payments
+                </Button>
               </div>
             </motion.div>
           ) : step === "sending" ? (
@@ -460,7 +523,7 @@ function TransferFundsPanel({
                 <PaperPlaneTilt size={40} weight="duotone" className="text-brand" />
               </motion.div>
               <p className="mt-4 font-display text-lg font-semibold text-ink">Your payment is on its way</p>
-              <p className="mt-1 text-sm text-muted">Sending {payout.amount} — this only takes a moment.</p>
+              <p className="mt-1 text-sm text-muted">Sending {payout.amount}. This only takes a moment.</p>
             </motion.div>
           ) : step === "success" ? (
             <motion.div
@@ -473,11 +536,13 @@ function TransferFundsPanel({
               <motion.div initial={{ scale: 0.5 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 400, damping: 20 }}>
                 <CheckCircle size={40} weight="fill" className="text-emerald-500" />
               </motion.div>
-              <p className="mt-4 font-display text-lg font-semibold text-ink">Transfer sent</p>
+              <p className="mt-4 font-display text-lg font-semibold text-ink">{stillProcessing ? "Transfer processing" : "Transfer sent"}</p>
               {result ? (
                 <>
                   <p className="mt-1 text-sm text-muted">
-                    {formatCurrency(result.netAmount)} is on its way — usually within one business day.
+                    {stillProcessing
+                      ? "This transfer is still processing. Check your payout history shortly and do not send it again."
+                      : `${formatCurrency(result.netAmount)} is on its way, usually within one business day.`}
                   </p>
                   <div className="mt-4 w-full max-w-xs space-y-1.5 rounded-lg border border-line bg-mist/40 px-3 py-2.5 text-left text-xs">
                     <div className="flex items-center justify-between text-muted">
@@ -501,7 +566,7 @@ function TransferFundsPanel({
                   </div>
                 </>
               ) : (
-                <p className="mt-1 text-sm text-muted">{payout.amount} is on its way — usually within one business day.</p>
+                <p className="mt-1 text-sm text-muted">{payout.amount} is on its way, usually within one business day.</p>
               )}
             </motion.div>
           ) : step === "otp" || step === "otp-sending" ? (
@@ -515,7 +580,7 @@ function TransferFundsPanel({
               <p className="mt-1 text-center text-sm text-muted">
                 {step === "otp-sending" ? "Sending a code…" : `We emailed a 6-digit code to ${maskedEmail}. It expires in 5 minutes.`}
               </p>
-              {devCode && (
+              {import.meta.env.DEV && devCode && (
                 <p className="mt-1 text-center text-xs text-amber-600">
                   Dev mode - email isn't connected yet, your code is <span className="font-mono font-semibold">{devCode}</span>.
                 </p>
@@ -530,7 +595,7 @@ function TransferFundsPanel({
               />
               {error && <p className="mt-2 text-center text-xs text-red-600">{error}</p>}
               <p className="mt-4 text-center text-[11px] text-muted">
-                Didn't request this? Close this window — nothing is sent until the code above is confirmed.
+                Didn't request this? Close this window. Nothing is sent until the code above is confirmed.
               </p>
             </motion.div>
           ) : step === "error" ? (
@@ -554,17 +619,17 @@ function TransferFundsPanel({
           ) : (
             // step "confirm" — review the amount, pick a destination, see the real fee, then start.
             <motion.div key="confirm" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex-1">
-              <label className="mb-1.5 block text-xs font-medium text-muted">Select a method</label>
+              <p className="mb-2 text-[10.5px] font-bold uppercase tracking-[0.08em] text-muted">Send to</p>
               {recipients.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-line px-4 py-4 text-center">
                   <p className="text-xs text-muted">No payout methods saved yet.</p>
                   <div className="mt-1.5 flex justify-center">
-                    <AddMobileMoneyRecipient propertyId={propertyId} onAdded={onRecipientAdded} />
+                    <AddMobileMoneyRecipient propertyId={propertyId} existing={recipients} onAdded={onRecipientAdded} />
                   </div>
                 </div>
               ) : (
                 <>
-                  <div className="space-y-1.5">
+                  <div className="space-y-2.5">
                     {recipients.map((r) => (
                       <MethodRow
                         key={r.id}
@@ -579,8 +644,8 @@ function TransferFundsPanel({
                       the one payout method type a landlord can actually have several of. Same
                       component Payout methods' modal uses, so it matches that flow exactly rather
                       than reimplementing a second version of it here. */}
-                  <div className="mt-2.5">
-                    <AddMobileMoneyRecipient propertyId={propertyId} onAdded={onRecipientAdded} />
+                  <div className="mt-3">
+                    <AddMobileMoneyRecipient propertyId={propertyId} existing={recipients} onAdded={onRecipientAdded} />
                   </div>
                 </>
               )}
@@ -658,12 +723,28 @@ function AddMobileMoneyRecipient({
   onAdded,
   autoOpen,
   onAutoOpenHandled,
+  onCancel,
+  footerEl,
+  existing,
+  skipCode,
 }: {
   propertyId: string;
   onAdded: () => void;
+  /** First payout method during setup: no emailed code is asked for (the server allows it only then). */
+  skipCode?: boolean;
   autoOpen?: boolean;
   onAutoOpenHandled?: () => void;
+  /** Called when the landlord backs out of the form; lets the parent switch views. */
+  onCancel?: () => void;
+  /** When set, the action buttons render into the modal's pinned footer so every step keeps the same height. */
+  footerEl?: HTMLElement | null;
+  /** Saved methods, used to refuse a number that is already on file before any code is sent. */
+  existing?: PayoutRecipient[];
 }) {
+  const btn = footerEl ? "" : "flex-1";
+  const Actions = ({ children }: { children: ReactNode }) =>
+    footerEl ? createPortal(<div className="flex justify-end gap-2.5">{children}</div>, footerEl) : <div className="mt-3 flex gap-2">{children}</div>;
+  const { showToast } = useToast();
   const [step, setStep] = useState<AddMobileMoneyStep>("closed");
 
   useEffect(() => {
@@ -687,10 +768,16 @@ function AddMobileMoneyRecipient({
     setResolvedName(null);
     setError(null);
     setOtpCode("");
+    onCancel?.();
   };
 
   const resolve = async () => {
     if (phone.trim().length < 9) return;
+    const candidate = recipientKey({ type: "mobile-money", provider, phone_number: phone.trim() } as PayoutRecipient);
+    if ((existing ?? []).some((r) => recipientKey(r) === candidate)) {
+      setError("That number is already saved as a payment method.");
+      return;
+    }
     setStep("sending");
     setError(null);
     setResolvedName(null);
@@ -706,6 +793,22 @@ function AddMobileMoneyRecipient({
 
   const startConfirmation = async () => {
     if (!resolvedName) return;
+    if (skipCode) {
+      setStep("saving");
+      setError(null);
+      try {
+        await createMobileMoneyRecipient({ propertyId, phoneNumber: phone.trim(), provider, accountName: resolvedName });
+        setStep("closed");
+        setPhone("");
+        setResolvedName(null);
+        showToast("Mobile money number added", "success");
+        onAdded();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to save that payout method.");
+        setStep("confirm");
+      }
+      return;
+    }
     setStep("otp-sending");
     setError(null);
     try {
@@ -726,7 +829,11 @@ function AddMobileMoneyRecipient({
     try {
       const { confirmationToken } = await verifyWithdrawalOtp(propertyId, otpCode, "add_recipient");
       await createMobileMoneyRecipient({ propertyId, phoneNumber: phone.trim(), provider, accountName: resolvedName, confirmationToken });
-      reset();
+      setStep("closed");
+      setPhone("");
+      setResolvedName(null);
+      setOtpCode("");
+      showToast("Mobile money number added", "success");
       onAdded();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save that payout method.");
@@ -734,22 +841,24 @@ function AddMobileMoneyRecipient({
     }
   };
 
+  if (step === "closed" && onCancel) return null;
+
   if (step === "closed") {
     return (
       <button
         type="button"
         onClick={() => setStep("form")}
-        className="flex items-center gap-1.5 text-sm font-medium text-brand transition active:scale-95 hover:text-ink"
+        className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-line py-3 text-sm font-medium text-brand transition-colors hover:border-brand/40 hover:bg-brand-soft/40"
       >
         <PlusIcon />
-        Add mobile money number
+        Add a mobile money number
       </button>
     );
   }
 
   return (
-    <div className="mt-3 max-w-sm rounded-lg border border-line p-4">
-      {step === "confirm" ? (
+    <div>
+      {step === "confirm" || (skipCode && step === "saving") ? (
         <>
           <p className="text-sm font-medium text-ink">Confirm this is you</p>
           <div className="mt-2 rounded-lg bg-mist px-3 py-2.5">
@@ -757,14 +866,13 @@ function AddMobileMoneyRecipient({
             <p className="text-sm font-semibold text-ink">{resolvedName}</p>
           </div>
           {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
-          <div className="mt-3 flex gap-2">
-            <Button variant="secondary" className="flex-1" onClick={() => setStep("form")}>
+          <Actions>
+            <Button variant="secondary" className={btn} onClick={() => setStep("form")}>
               Back
             </Button>
-            <Button variant="primary" className="flex-1" onClick={startConfirmation}>
-              Continue
-            </Button>
-          </div>
+            <Button variant="primary" className={btn} disabled={step === "saving"} onClick={startConfirmation}>
+              {skipCode ? (step === "saving" ? "Saving…" : "Confirm & save") : "Continue"}
+            </Button></Actions>
         </>
       ) : step === "otp-sending" || step === "otp" || step === "saving" ? (
         <>
@@ -772,9 +880,9 @@ function AddMobileMoneyRecipient({
           <p className="mt-1 text-xs text-muted">
             {step === "otp-sending" ? "Sending a code…" : `We emailed a 6-digit code to ${maskedEmail}. It expires in 5 minutes.`}
           </p>
-          {devCode && (
+          {import.meta.env.DEV && devCode && (
             <p className="mt-1 text-xs text-amber-600">
-              Dev mode — email isn't connected yet, your code is <span className="font-mono font-semibold">{devCode}</span>.
+              Dev mode: email isn't connected yet, your code is <span className="font-mono font-semibold">{devCode}</span>.
             </p>
           )}
           <input
@@ -788,30 +896,30 @@ function AddMobileMoneyRecipient({
             className="mt-3 w-full rounded-lg border border-line bg-paper px-3 py-2.5 text-center text-lg font-semibold tracking-[0.3em] text-ink outline-none focus:border-brand"
           />
           {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
-          <div className="mt-3 flex gap-2">
-            <Button variant="secondary" className="flex-1" disabled={step === "saving"} onClick={() => setStep("confirm")}>
+          <Actions>
+            <Button variant="secondary" className={btn} disabled={step === "saving"} onClick={() => setStep("confirm")}>
               Back
             </Button>
-            <Button variant="primary" className="flex-1" disabled={step !== "otp" || otpCode.length !== 6} onClick={confirm}>
+            <Button variant="primary" className={btn} disabled={step !== "otp" || otpCode.length !== 6} onClick={confirm}>
               {step === "saving" ? "Saving…" : "Confirm & save"}
-            </Button>
-          </div>
+            </Button></Actions>
         </>
       ) : (
         <>
           <p className="text-sm font-medium text-ink">Add a mobile money number</p>
           <p className="mt-1 text-xs text-muted">We'll look up the account holder's name so you can confirm it before saving.</p>
           <div className="mt-3 space-y-2.5">
-            <div className="flex gap-2">
+            <div className="grid grid-cols-3 gap-2.5">
               {MOBILE_PROVIDERS.map((p) => (
                 <button
                   key={p.value}
                   type="button"
                   onClick={() => setProvider(p.value)}
-                  className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
+                  className={`flex flex-col items-center gap-1.5 rounded-lg border px-2 py-3 text-xs font-semibold transition-colors ${
                     provider === p.value ? "border-brand bg-brand-soft text-brand" : "border-line text-muted hover:bg-mist"
                   }`}
                 >
+                  <img src={MOBILE_MONEY_LOGO[p.value]} alt="" className="h-9 w-9 rounded-full object-cover" />
                   {p.label}
                 </button>
               ))}
@@ -821,18 +929,17 @@ function AddMobileMoneyRecipient({
               onChange={(e) => setPhone(e.target.value)}
               placeholder="e.g. 0977 123 456"
               inputMode="tel"
-              className="w-full rounded-lg border border-line bg-paper px-3 py-2.5 text-sm text-ink outline-none focus:border-brand"
+              className="w-full rounded-lg border border-transparent bg-mist px-3 py-2.5 text-sm text-ink outline-none focus:ring-2 focus:ring-brand/30"
             />
           </div>
           {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
-          <div className="mt-3 flex gap-2">
-            <Button variant="secondary" className="flex-1" onClick={reset}>
+          <Actions>
+            <Button variant="secondary" className={btn} onClick={reset}>
               Cancel
             </Button>
-            <Button variant="primary" className="flex-1" disabled={phone.trim().length < 9 || step === "sending"} onClick={resolve}>
+            <Button variant="primary" className={btn} disabled={phone.trim().length < 9 || step === "sending"} onClick={resolve}>
               {step === "sending" ? "Looking up…" : "Continue"}
-            </Button>
-          </div>
+            </Button></Actions>
         </>
       )}
     </div>
@@ -864,118 +971,247 @@ function PayoutMethodsModal({
   autoOpenAdd?: boolean;
   onAutoOpenAddHandled?: () => void;
 }) {
-  const bankRecipients = recipients.filter((r) => r.type === "bank");
-  const mobileMoneyRecipients = recipients.filter((r) => r.type === "mobile-money");
+  const { showToast } = useToast();
   const [removing, setRemoving] = useState<PayoutRecipient | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [view, setView] = useState<"list" | "choose" | "mobile">(autoOpenAdd ? "mobile" : "list");
+  const [footerEl, setFooterEl] = useState<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (autoOpenAdd) onAutoOpenAddHandled?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // One row per real account: an edited bank account can leave a second record for the same
+  // number behind, which used to show up as a duplicate. Default wins if any copy is the default.
+  const unique = useMemo(() => dedupeRecipients(recipients), [recipients]);
+  const bankRecipients = unique.filter((r) => r.type === "bank");
+  const mobileMoneyRecipients = unique.filter((r) => r.type === "mobile-money");
 
   const makeDefault = async (id: string) => {
     setBusyId(id);
     try {
       await setDefaultPayoutRecipient(propertyId, id);
+      showToast("Default payment method updated", "success");
       onChanged();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Couldn't update the default method, please try again.", "error");
     } finally {
       setBusyId(null);
     }
   };
 
+  const eyebrow = "mb-2 text-[10.5px] font-bold uppercase tracking-[0.08em] text-muted";
+  const defaultBadge = (
+    <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-semibold whitespace-nowrap text-emerald-700">Default</span>
+  );
+  const last4 = (v: string | null) => (v ?? "").slice(-4);
+
   return (
-    <Modal onClose={onClose} title="Payment methods" disableBackdropClose maxWidth="max-w-md">
-      <p className="text-xs text-muted">
-        Where your rent payouts can be sent — your connected bank account and any mobile money numbers you've
-        added. Add another one below, or set which one a withdrawal uses by default.
-      </p>
-
-      {bankRecipients.length > 0 && (
-        <div className="mt-3 divide-y divide-line rounded-lg border border-line">
-          {bankRecipients.map((r) => (
-            <div key={r.id} className="flex items-center justify-between gap-2 px-4 py-2.5">
-              <div className="flex items-center gap-2.5">
-                <MethodAvatar recipient={r} />
-                <div>
-                  <p className="text-sm font-medium text-ink">{recipientLabel(r)}</p>
-                  <p className="text-[11px] text-muted">{r.is_default ? "Default" : "Available for withdrawals"}</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={onEditBank}
-                className="rounded-md px-2 py-1 text-xs font-medium text-muted transition-colors hover:bg-mist hover:text-ink"
-              >
-                Edit
-              </button>
-            </div>
-          ))}
+    <Modal
+      onClose={onClose}
+      title="Payment methods"
+      description="Where your withdrawals are sent."
+      icon={<Wallet size={20} weight="duotone" />}
+      disableBackdropClose
+      maxWidth="max-w-md"
+      footer={
+        <div ref={setFooterEl} className="flex min-h-[38px] items-center justify-end gap-2.5">
+          {view === "list" && (
+            <Button variant="primary" onClick={() => setView("choose")} className="gap-1.5">
+              <PlusIcon />
+              Add payment method
+            </Button>
+          )}
+          {view === "choose" && (
+            <Button variant="secondary" onClick={() => setView("list")}>
+              Back
+            </Button>
+          )}
+        </div>
+      }
+    >
+      <div className="min-h-[320px]">
+      {view === "choose" && (
+        <div>
+          <p className="text-sm font-semibold text-ink">What would you like to add?</p>
+          <div className="mt-3 space-y-2.5">
+            <button
+              type="button"
+              onClick={() => setView("mobile")}
+              className="flex w-full items-center gap-3 rounded-lg border border-line bg-paper p-3 text-left transition-colors hover:border-ink/20 hover:bg-mist/40"
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-mist text-muted">
+                <DeviceMobileIcon size={20} weight="duotone" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold text-ink">Mobile money number</span>
+                <span className="block text-xs text-muted">MTN, Airtel or Zamtel</span>
+              </span>
+              <CaretRightIcon size={14} className="text-muted" />
+            </button>
+            <button
+              type="button"
+              onClick={onEditBank}
+              className="flex w-full items-center gap-3 rounded-lg border border-line bg-paper p-3 text-left transition-colors hover:border-ink/20 hover:bg-mist/40"
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-mist text-muted">
+                <BankIcon size={20} weight="duotone" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold text-ink">Bank account</span>
+                <span className="block text-xs text-muted">
+                  {bankRecipients.length > 0 ? "Replace your connected account" : "Connect your account"}
+                </span>
+              </span>
+              <CaretRightIcon size={14} className="text-muted" />
+            </button>
+          </div>
         </div>
       )}
 
-      {mobileMoneyRecipients.length > 0 && (
-        <div className="mt-3 divide-y divide-line rounded-lg border border-line">
-          {mobileMoneyRecipients.map((r) => (
-            <div key={r.id} className="flex items-center justify-between gap-2 px-4 py-2.5">
-              <div className="flex items-center gap-2.5">
-                <MethodAvatar recipient={r} />
-                <div>
-                  <p className="text-sm font-medium text-ink">{recipientLabel(r)}</p>
-                  <p className="text-[11px] text-muted">{r.is_default ? "Default" : "Available for withdrawals"}</p>
-                </div>
-              </div>
-              <div className="flex shrink-0 items-center gap-1">
-                {!r.is_default && (
-                  <button
-                    type="button"
-                    disabled={busyId === r.id}
-                    onClick={() => makeDefault(r.id)}
-                    className="rounded-md px-2 py-1 text-xs font-medium text-muted transition-colors hover:bg-mist hover:text-ink"
-                  >
-                    Make default
-                  </button>
-                )}
-                <button
-                  type="button"
-                  aria-label="Remove"
-                  onClick={() => setRemoving(r)}
-                  className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-red-50 hover:text-red-600"
-                >
-                  <TrashIcon size={14} weight="duotone" />
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="mt-3">
+      {view === "mobile" && (
         <AddMobileMoneyRecipient
           propertyId={propertyId}
-          onAdded={onChanged}
-          autoOpen={autoOpenAdd}
-          onAutoOpenHandled={onAutoOpenAddHandled}
+          existing={recipients}
+          autoOpen
+          onAdded={() => {
+            onChanged();
+            setView("list");
+          }}
+          onCancel={() => setView("list")}
+          footerEl={footerEl}
         />
+      )}
+
+      {view === "list" && (
+        <div className="space-y-5">
+          {unique.length === 0 && <p className="text-sm text-muted">No payment methods yet. Add one to start withdrawing.</p>}
+
+          {bankRecipients.length > 0 && (
+            <section>
+              <p className={eyebrow}>Bank account</p>
+              <div className="space-y-2.5">
+                {bankRecipients.map((r) => (
+                  <div key={r.id} className="flex items-center gap-3 rounded-lg border border-line bg-paper p-3">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-mist text-muted">
+                      <BankIcon size={20} weight="duotone" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-sm font-semibold text-ink">{r.account_name ?? "Bank account"}</p>
+                        {r.is_default && defaultBadge}
+                      </div>
+                      <p className="mt-0.5 text-xs text-muted">Bank account ending {last4(r.account_number)}</p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      {!r.is_default && (
+                        <button
+                          type="button"
+                          disabled={busyId === r.id}
+                          onClick={() => makeDefault(r.id)}
+                          className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold text-ink transition-colors hover:bg-mist"
+                        >
+                          Make default
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={onEditBank}
+                        className="rounded-md px-2 py-1 text-xs font-semibold text-muted transition-colors hover:bg-mist hover:text-ink"
+                      >
+                        Edit
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {mobileMoneyRecipients.length > 0 && (
+            <section>
+              <p className={eyebrow}>Mobile money</p>
+              <div className="space-y-2.5">
+                {mobileMoneyRecipients.map((r) => {
+                  const providerLabel = MOBILE_PROVIDERS.find((p) => p.value === r.provider)?.label ?? (r.provider ?? "").toUpperCase();
+                  return (
+                    <div key={r.id} className="flex items-center gap-3 rounded-lg border border-line bg-paper p-3">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center">
+                        {MethodAvatar({ recipient: r }) ?? (
+                          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-mist text-muted">
+                            <DeviceMobileIcon size={20} weight="duotone" />
+                          </span>
+                        )}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate text-sm font-semibold text-ink">{providerLabel} mobile money</p>
+                          {r.is_default && defaultBadge}
+                        </div>
+                        <p className="mt-0.5 text-xs text-muted">Number ending {last4(r.phone_number)}</p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        {!r.is_default && (
+                          <button
+                            type="button"
+                            disabled={busyId === r.id}
+                            onClick={() => makeDefault(r.id)}
+                            className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold text-ink transition-colors hover:bg-mist"
+                          >
+                            Make default
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          aria-label="Remove"
+                          onClick={() => setRemoving(r)}
+                          className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-red-50 hover:text-red-600"
+                        >
+                          <TrashIcon size={14} weight="duotone" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+        </div>
+      )}
       </div>
 
       {removing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4">
-          <div className="w-full max-w-sm rounded-xl bg-paper p-5 shadow-card">
-            <p className="text-sm font-medium text-ink">Remove this payout method?</p>
-            <p className="mt-1 text-xs text-muted">{recipientLabel(removing)} will no longer be available for withdrawals.</p>
-            <div className="mt-4 flex justify-end gap-2">
+        <Modal
+          onClose={() => setRemoving(null)}
+          title="Remove this payout method?"
+          description={`${recipientLabel(removing)} will no longer be available for withdrawals.`}
+          maxWidth="max-w-sm"
+          footer={
+            <div className="flex justify-end gap-2.5">
               <Button variant="secondary" onClick={() => setRemoving(null)}>
                 Cancel
               </Button>
               <Button
                 variant="dangerSolid"
                 onClick={async () => {
-                  await deletePayoutRecipient(removing.id);
+                  try {
+                    await deletePayoutRecipient(removing.id, propertyId);
+                    showToast("Payment method removed", "success");
+                    onChanged();
+                  } catch (e) {
+                    showToast(e instanceof Error ? e.message : "Couldn't remove that method, please try again.", "error");
+                  }
                   setRemoving(null);
-                  onChanged();
                 }}
               >
                 Remove
               </Button>
             </div>
-          </div>
-        </div>
+          }
+        >
+          <p className="text-[13px] leading-relaxed text-muted">You can add it again later from this screen.</p>
+        </Modal>
       )}
     </Modal>
   );
@@ -996,12 +1232,19 @@ function BankConnectWizard({
   editingBank,
   onCancelEdit,
   onConnected,
+  onMobileAdded,
+  onDone,
 }: {
   propertyId: string;
   editingBank: boolean;
   onCancelEdit: () => void;
   onConnected: (bank: Bank, accountNumber: string, accountHolderName: string) => void;
+  onMobileAdded: () => void;
+  onDone: () => void;
 }) {
+  const [method, setMethod] = useState<"choose" | "bank" | "mobile">(editingBank ? "bank" : "choose");
+  const [mobileDone, setMobileDone] = useState(false);
+  const { showToast } = useToast();
   const [payoutStep, setPayoutStep] = useState(editingBank ? 1 : 0);
   const [banks, setBanks] = useState<Bank[]>([]);
   const [formBank, setFormBank] = useState<Bank | null>(null);
@@ -1097,11 +1340,63 @@ function BankConnectWizard({
             </div>
             <p className="text-xs font-medium text-muted">Step {Math.min(payoutStep, 3)} of 3</p>
 
-            {payoutStep === 1 && (
+            {payoutStep === 1 && method === "choose" && (
               <>
+                <p className="mt-1 font-display text-lg font-semibold text-ink">Where should your rent be paid out?</p>
+                <p className="mt-1 text-sm text-muted">Start with one. You can add more later from Manage.</p>
+                <div className="mt-4 grid gap-2.5 sm:grid-cols-2">
+                  {([
+                    { key: "bank", label: "Bank account", detail: "Paid to your bank", Icon: BankIcon },
+                    { key: "mobile", label: "Mobile money", detail: "MTN, Airtel or Zamtel", Icon: DeviceMobileIcon },
+                  ] as const).map(({ key, label, detail, Icon }) => (
+                    <motion.button
+                      key={key}
+                      type="button"
+                      whileHover={{ y: -2 }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={() => setMethod(key)}
+                      className="flex flex-col items-start gap-3 rounded-md border border-line p-4 text-left transition-colors hover:border-brand hover:bg-brand-soft/40"
+                    >
+                      <span className="flex h-10 w-10 items-center justify-center rounded-md bg-brand-soft text-brand"><Icon size={20} /></span>
+                      <span>
+                        <span className="block text-sm font-semibold text-ink">{label}</span>
+                        <span className="block text-xs text-muted">{detail}</span>
+                      </span>
+                    </motion.button>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {payoutStep === 1 && method === "mobile" && (
+              <>
+                <p className="mt-1 font-display text-lg font-semibold text-ink">Add your mobile money number</p>
+                <div className="mt-4">
+                  <AddMobileMoneyRecipient
+                    propertyId={propertyId}
+                    autoOpen
+                    skipCode
+                    onAdded={() => {
+                      onMobileAdded();
+                      setMobileDone(true);
+                      setPayoutStep(3);
+                    }}
+                    onCancel={() => setMethod("choose")}
+                  />
+                </div>
+              </>
+            )}
+
+            {payoutStep === 1 && method === "bank" && (
+              <>
+                {!editingBank && (
+                  <button type="button" onClick={() => setMethod("choose")} className="mb-2 text-xs font-semibold text-muted hover:text-ink">
+                    Change method
+                  </button>
+                )}
                 <p className="mt-1 font-display text-lg font-semibold text-ink">Add your bank account</p>
                 <p className="mt-1 text-sm text-muted">
-                  Make sure these details match your bank exactly — payouts go here automatically.
+                  Make sure these details match your bank exactly. Payouts go here automatically.
                 </p>
                 <div className="mt-4 space-y-3">
                   <div>
@@ -1131,7 +1426,7 @@ function BankConnectWizard({
                         }}
                         inputMode="numeric"
                         placeholder="Your full account number"
-                        className="flex-1 rounded-lg border border-line bg-paper px-3 py-2 text-sm outline-none focus:border-brand"
+                        className="flex-1 rounded-lg border border-transparent bg-mist px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand/30"
                       />
                       <Button
                         type="button"
@@ -1177,7 +1472,7 @@ function BankConnectWizard({
             {payoutStep === 2 && formBank && bankOtpStage === "idle" && (
               <>
                 <p className="mt-1 font-display text-lg font-semibold text-ink">Confirm your details</p>
-                <p className="mt-1 text-sm text-muted">Double-check these are correct — this is where every payout will be sent.</p>
+                <p className="mt-1 text-sm text-muted">Double-check these are correct. This is where every payout will be sent.</p>
                 <div className="mt-4 divide-y divide-line rounded-lg border border-line">
                   <div className="px-4 py-3">
                     <p className="text-xs text-muted">Bank name</p>
@@ -1205,6 +1500,20 @@ function BankConnectWizard({
                       setSavingRecipient(true);
                       setSaveError(null);
                       try {
+                        if (!editingBank) {
+                          // First payout method of the property: no emailed code needed.
+                          if (!formBank) return;
+                          await createPayoutRecipient({
+                            accountNumber: formAccountNumber,
+                            bankCode: formBank.code,
+                            accountName: formAccountHolderName,
+                            propertyId,
+                          });
+                          showToast("Bank account saved", "success");
+                          onConnected(formBank, formAccountNumber, formAccountHolderName);
+                          setPayoutStep(3);
+                          return;
+                        }
                         const { maskedEmail, devCode } = await requestWithdrawalOtp(propertyId, "add_recipient");
                         setBankOtpMaskedEmail(maskedEmail);
                         setBankOtpDevCode(devCode ?? null);
@@ -1216,7 +1525,7 @@ function BankConnectWizard({
                       }
                     }}
                   >
-                    {savingRecipient ? "Sending…" : "Continue"}
+                    {savingRecipient ? (editingBank ? "Sending…" : "Saving…") : editingBank ? "Continue" : "Confirm & connect"}
                   </Button>
                 </div>
               </>
@@ -1228,9 +1537,9 @@ function BankConnectWizard({
                 <p className="mt-1 text-sm text-muted">
                   We emailed a 6-digit code to {bankOtpMaskedEmail}. It expires in 5 minutes.
                 </p>
-                {bankOtpDevCode && (
+                {import.meta.env.DEV && bankOtpDevCode && (
                   <p className="mt-1 text-xs text-amber-600">
-                    Dev mode — email isn't connected yet, your code is <span className="font-mono font-semibold">{bankOtpDevCode}</span>.
+                    Dev mode: email isn't connected yet, your code is <span className="font-mono font-semibold">{bankOtpDevCode}</span>.
                   </p>
                 )}
                 <input
@@ -1274,6 +1583,7 @@ function BankConnectWizard({
                         });
                         setBankOtpStage("idle");
                         setBankOtpCode("");
+                        showToast("Bank account saved", "success");
                         onConnected(formBank, formAccountNumber, formAccountHolderName);
                         if (editingBank) {
                           onCancelEdit();
@@ -1300,9 +1610,11 @@ function BankConnectWizard({
                 </span>
                 <p className="mt-4 font-display text-lg font-semibold text-ink">You're all set</p>
                 <p className="mt-1.5 text-sm text-muted">
-                  All rent collected through your payment link will now be paid out to {formBank?.name} · •••• {formAccountNumber.slice(-4)}.
+                  {mobileDone
+                    ? "All rent collected through your payment link will now be paid out to your mobile money number. You can add more methods anytime from Manage."
+                    : `All rent collected through your payment link will now be paid out to ${formBank?.name} · •••• ${formAccountNumber.slice(-4)}.`}
                 </p>
-                <Button variant="primary" className="mt-5 py-2.5" onClick={() => setPayoutStep(0)}>
+                <Button variant="primary" className="mt-5 py-2.5" onClick={onDone}>
                   Done
                 </Button>
               </>
@@ -1451,6 +1763,8 @@ export default function Payouts() {
   const [collectionPage, setCollectionPage] = useState(1);
   const [methodsModalOpen, setMethodsModalOpen] = useState(false);
   const [editingBank, setEditingBank] = useState(false);
+  // Keeps the setup wizard on screen for its "You're all set" step after the account is connected.
+  const [wizardHold, setWizardHold] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [autoOpenAddRecipient, setAutoOpenAddRecipient] = useState(false);
   const [exportModalOpen, setExportModalOpen] = useState(false);
@@ -1482,7 +1796,7 @@ export default function Payouts() {
   const refreshRecipients = () => {
     if (!propertyId) return;
     listPayoutRecipients(propertyId)
-      .then(setRecipients)
+      .then((r) => setRecipients(dedupeRecipients(r)))
       .catch((e) => console.error("Failed to load payout recipients", e));
   };
 
@@ -1516,7 +1830,7 @@ export default function Payouts() {
     let cancelled = false;
     listCollections(propertyId, { status: ["successful"] })
       .then((data) => {
-        if (!cancelled) setLifetimeCollected(data.reduce((sum, r) => sum + r.amount, 0));
+        if (!cancelled) setLifetimeCollected(data.filter((r) => !r.isTest).reduce((sum, r) => sum + r.amount, 0));
       })
       .catch((e) => console.error("Failed to load lifetime collections total", e));
     listPayouts(propertyId, { status: ["successful"] })
@@ -1561,7 +1875,7 @@ export default function Payouts() {
     );
   }
 
-  const wizardActive = propertyId && (!lencoConnected || editingBank);
+  const wizardActive = propertyId && (!lencoConnected || editingBank || wizardHold);
 
   if (transferActive && propertyId) {
     return (
@@ -1581,11 +1895,11 @@ export default function Payouts() {
         description="Your balance, payout methods, and every transfer to your bank or mobile money."
         actions={
           !wizardActive ? (
-            <div className="flex items-center gap-2">
-              <Button variant="outline" onClick={() => setMethodsModalOpen(true)}>
+            <div className="flex w-full gap-2 sm:w-auto">
+              <Button variant="outline" className="flex-1 sm:flex-none" onClick={() => setMethodsModalOpen(true)}>
                 Manage
               </Button>
-              <Button variant="primary" className="gap-1.5" onClick={() => navigate("/online-payments/transfer")}>
+              <Button variant="primary" className="flex-1 gap-1.5 sm:flex-none" onClick={() => navigate("/online-payments/transfer")}>
                 <ArrowsLeftRight size={14} weight="bold" />
                 Transfer funds
               </Button>
@@ -1604,9 +1918,17 @@ export default function Payouts() {
               setBankName(bank.name);
               setAccountNumber(accountNumber);
               setAccountHolderName(accountHolderName);
+              if (!editingBank) setWizardHold(true);
               setLencoConnected(true);
               refreshRecipients();
               if (editingBank) flash("Payout details updated");
+            }}
+            onDone={() => setWizardHold(false)}
+            onMobileAdded={() => {
+              setWizardHold(true);
+              setLencoConnected(true);
+              refreshRecipients();
+              flash("Payout method added");
             }}
           />
         ) : (
@@ -1622,9 +1944,12 @@ export default function Payouts() {
                 valueClassName="text-emerald-600"
               />
               <StatCard
+                wide
                 icon={<CoinsIcon size={13} weight="bold" />}
-                label="Total collected"
+                label="Collected via payment link"
                 value={lifetimeCollected === null ? <Skeleton className="h-8 w-24" /> : formatCurrency(lifetimeCollected)}
+                to="/rent"
+                caption="See who's paid, who hasn't"
               />
               <StatCard
                 icon={<PaperPlaneTilt size={13} weight="bold" />}
@@ -1656,7 +1981,7 @@ export default function Payouts() {
                 type="button"
                 onClick={() => setHistoryTab("sent")}
                 className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
-                  historyTab === "sent" ? "bg-paper text-ink shadow-sm" : "text-muted hover:text-ink"
+                  historyTab === "sent" ? "border border-line bg-paper text-ink shadow-sm" : "text-muted hover:text-ink"
                 }`}
               >
                 Transfers sent
@@ -1665,7 +1990,7 @@ export default function Payouts() {
                 type="button"
                 onClick={() => setHistoryTab("received")}
                 className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
-                  historyTab === "received" ? "bg-paper text-ink shadow-sm" : "text-muted hover:text-ink"
+                  historyTab === "received" ? "border border-line bg-paper text-ink shadow-sm" : "text-muted hover:text-ink"
                 }`}
               >
                 Payments received
@@ -1681,70 +2006,125 @@ export default function Payouts() {
 
           {historyTab === "sent" ? (
             <>
-              <table className="w-full text-left text-sm">
-                <thead className="border-b border-line bg-paper text-[11px] text-muted uppercase">
-                  <tr>
-                    <th className="px-4 py-3 font-medium tracking-wide">Date</th>
-                    <th className="px-4 py-3 font-medium tracking-wide">Amount</th>
-                    <th className="px-4 py-3 font-medium tracking-wide">Method</th>
-                    <th className="px-4 py-3 font-medium tracking-wide">Status</th>
-                    <th className="px-4 py-3 font-medium tracking-wide">Details</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line">
-                  {loading && Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} cols={5} />)}
-                  {!loading &&
-                    pageRows.map((r) => (
-                      <tr key={r.id}>
-                        <td className="px-4 py-3 whitespace-nowrap text-muted">{formatDate(r.createdAt)}</td>
-                        <td className="font-display px-4 py-3 font-medium whitespace-nowrap text-ink">{formatCurrency(r.amount)}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-muted">
-                          {r.recipient ? (
-                            <span className="flex items-center gap-1.5">
-                              {r.recipient.type === "mobile-money" && r.recipient.provider && (
-                                <img
-                                  src={MOBILE_MONEY_LOGO[r.recipient.provider as keyof typeof MOBILE_MONEY_LOGO]}
-                                  alt=""
-                                  className="h-4 w-4 shrink-0 rounded-full object-cover"
-                                />
-                              )}
-                              {recipientLabel(r.recipient as PayoutRecipient)}
-                            </span>
-                          ) : (
-                            "—"
-                          )}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={`rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${statusStyle[r.status]}`}>
-                            {statusLabel[r.status]}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-muted">
-                          {r.failureReason ??
-                            (r.netAmount != null && r.feeAmount != null ? (
-                              <span title={r.narration ?? undefined}>
-                                Fee {formatCurrency(r.feeAmount)} · Net {formatCurrency(r.netAmount)}
+              {/* Desktop table */}
+              <div className="hidden overflow-x-auto md:block">
+                <table className="w-full text-left text-sm">
+                  <thead className="border-b border-line bg-paper text-[10.5px] text-muted uppercase">
+                    <tr>
+                      <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Date</th>
+                      <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Amount</th>
+                      <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Method</th>
+                      <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Status</th>
+                      <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Details</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-line">
+                    {loading && Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} cols={5} />)}
+                    {!loading &&
+                      pageRows.map((r) => (
+                        <tr key={r.id}>
+                          <td className="px-4 py-3 whitespace-nowrap text-muted">{formatDate(r.createdAt)}</td>
+                          <td className="font-display px-4 py-3 font-medium whitespace-nowrap text-ink">{formatCurrency(r.amount)}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-muted">
+                            {r.recipient ? (
+                              <span className="flex items-center gap-1.5">
+                                {r.recipient.type === "mobile-money" && r.recipient.provider && (
+                                  <img
+                                    src={MOBILE_MONEY_LOGO[r.recipient.provider as keyof typeof MOBILE_MONEY_LOGO]}
+                                    alt=""
+                                    className="h-4 w-4 shrink-0 rounded-full object-cover"
+                                  />
+                                )}
+                                {recipientLabel(r.recipient as PayoutRecipient)}
                               </span>
                             ) : (
-                              "—"
-                            ))}
+                              "-"
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`rounded-md px-2 py-0.5 text-xs font-semibold whitespace-nowrap ${statusStyle[r.status]}`}>
+                              {statusLabel[r.status]}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-muted">
+                            {r.failureReason ??
+                              (r.netAmount != null && r.feeAmount != null ? (
+                                <span title={r.narration ?? undefined}>
+                                  Fee {formatCurrency(r.feeAmount)} · Net {formatCurrency(r.netAmount)}
+                                </span>
+                              ) : (
+                                "-"
+                              ))}
+                          </td>
+                        </tr>
+                      ))}
+                    {!loading && pageRows.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-10">
+                          <div className="flex flex-col items-center justify-center gap-3 text-center">
+                            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
+                              <Wallet size={22} weight="duotone" />
+                            </span>
+                            <p className="text-xs font-semibold text-ink">No transfers match these filters</p>
+                          </div>
                         </td>
                       </tr>
-                    ))}
-                  {!loading && pageRows.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="px-4 py-10">
-                        <div className="flex flex-col items-center justify-center gap-3 text-center">
-                          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
-                            <Wallet size={22} weight="duotone" />
-                          </span>
-                          <p className="text-xs font-semibold text-ink">No transfers match these filters</p>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile cards — a scrollable table of five columns doesn't fit a phone; each
+                  transfer becomes its own bordered card with the amount/status up front and the
+                  method and any fee/failure detail underneath. */}
+              <div className="space-y-3 p-3 md:hidden">
+                {loading &&
+                  Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="space-y-2 rounded-xl border border-line p-4">
+                      <Skeleton className="h-4 w-1/2" />
+                      <Skeleton className="h-3 w-1/3" />
+                    </div>
+                  ))}
+                {!loading &&
+                  pageRows.map((r) => (
+                    <div key={r.id} className="rounded-xl border border-line bg-paper p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-display text-base font-semibold text-ink">{formatCurrency(r.amount)}</p>
+                          <p className="mt-0.5 text-xs text-muted">{formatDate(r.createdAt)}</p>
                         </div>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                        <span className={`shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold whitespace-nowrap ${statusStyle[r.status]}`}>
+                          {statusLabel[r.status]}
+                        </span>
+                      </div>
+                      {r.recipient && (
+                        <div className="mt-3 flex items-center gap-1.5 text-sm text-muted">
+                          {r.recipient.type === "mobile-money" && r.recipient.provider && (
+                            <img
+                              src={MOBILE_MONEY_LOGO[r.recipient.provider as keyof typeof MOBILE_MONEY_LOGO]}
+                              alt=""
+                              className="h-4 w-4 shrink-0 rounded-full object-cover"
+                            />
+                          )}
+                          {recipientLabel(r.recipient as PayoutRecipient)}
+                        </div>
+                      )}
+                      {(r.failureReason || (r.netAmount != null && r.feeAmount != null)) && (
+                        <p className="mt-2 text-xs text-muted">
+                          {r.failureReason ?? `Fee ${formatCurrency(r.feeAmount!)} · Net ${formatCurrency(r.netAmount!)}`}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                {!loading && pageRows.length === 0 && (
+                  <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
+                    <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
+                      <Wallet size={22} weight="duotone" />
+                    </span>
+                    <p className="text-xs font-semibold text-ink">No transfers match these filters</p>
+                  </div>
+                )}
+              </div>
               {!loading && (rows?.length ?? 0) > 0 && (
                 <Pagination
                   page={page}
@@ -1761,57 +2141,121 @@ export default function Payouts() {
             </>
           ) : (
             <>
-              <table className="w-full text-left text-sm">
-                <thead className="border-b border-line bg-paper text-[11px] text-muted uppercase">
-                  <tr>
-                    <th className="px-4 py-3 font-medium tracking-wide">Date</th>
-                    <th className="px-4 py-3 font-medium tracking-wide">Tenant</th>
-                    <th className="px-4 py-3 font-medium tracking-wide">Amount</th>
-                    <th className="px-4 py-3 font-medium tracking-wide">Paid from</th>
-                    <th className="px-4 py-3 font-medium tracking-wide">Status</th>
-                    <th className="px-4 py-3 font-medium tracking-wide">Details</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line">
-                  {collectionsLoading && Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} cols={6} />)}
-                  {!collectionsLoading &&
-                    collectionPageRows.map((r) => (
-                      <tr key={r.id}>
-                        <td className="px-4 py-3 whitespace-nowrap text-muted">{formatDate(r.createdAt)}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-ink">{r.tenantName ?? "—"}</td>
-                        <td className="font-display px-4 py-3 font-medium whitespace-nowrap text-ink">{formatCurrency(r.amount)}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-muted">
-                          <span className="flex items-center gap-1.5">
-                            <img
-                              src={MOBILE_MONEY_LOGO[r.operator]}
-                              alt=""
-                              className="h-4 w-4 shrink-0 rounded-full object-cover"
-                            />
-                            {r.operator.toUpperCase()} •••• {r.phone.slice(-4)}
-                          </span>
+              {/* Desktop table */}
+              <div className="hidden overflow-x-auto md:block">
+                <table className="w-full text-left text-sm">
+                  <thead className="border-b border-line bg-paper text-[10.5px] text-muted uppercase">
+                    <tr>
+                      <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Date</th>
+                      <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Tenant</th>
+                      <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Amount</th>
+                      <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Paid from</th>
+                      <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Status</th>
+                      <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Details</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-line">
+                    {collectionsLoading && Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} cols={6} />)}
+                    {!collectionsLoading &&
+                      collectionPageRows.map((r) => (
+                        <tr key={r.id}>
+                          <td className="px-4 py-3 whitespace-nowrap text-muted">{formatDate(r.createdAt)}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-ink">{r.tenantName ?? "-"}</td>
+                          <td className="font-display px-4 py-3 font-medium whitespace-nowrap text-ink">{formatCurrency(r.amount)}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-muted">
+                            <span className="flex items-center gap-1.5">
+                              <img
+                                src={MOBILE_MONEY_LOGO[r.operator]}
+                                alt=""
+                                className="h-4 w-4 shrink-0 rounded-full object-cover"
+                              />
+                              {r.operator.toUpperCase()} •••• {r.phone.slice(-4)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`rounded-md px-2 py-0.5 text-xs font-semibold whitespace-nowrap ${collectionStatusStyle[r.status]}`}>
+                              {collectionStatusLabel[r.status]}
+                            </span>
+                            {r.isTest && (
+                              <span
+                                className="ml-1.5 rounded-md bg-mist px-2 py-0.5 text-xs font-semibold whitespace-nowrap text-muted"
+                                title="Simulated from the portal's test mode. No real money moved, so it isn't in your balance."
+                              >
+                                Test
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-muted">
+                            {r.failureReason ?? (r.isTest ? "Simulated, not in balance" : "-")}
+                          </td>
+                        </tr>
+                      ))}
+                    {!collectionsLoading && collectionPageRows.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="px-4 py-10">
+                          <div className="flex flex-col items-center justify-center gap-3 text-center">
+                            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
+                              <Wallet size={22} weight="duotone" />
+                            </span>
+                            <p className="text-xs font-semibold text-ink">No payments match these filters</p>
+                          </div>
                         </td>
-                        <td className="px-4 py-3">
-                          <span className={`rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${collectionStatusStyle[r.status]}`}>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile cards */}
+              <div className="space-y-3 p-3 md:hidden">
+                {collectionsLoading &&
+                  Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="space-y-2 rounded-xl border border-line p-4">
+                      <Skeleton className="h-4 w-1/2" />
+                      <Skeleton className="h-3 w-1/3" />
+                    </div>
+                  ))}
+                {!collectionsLoading &&
+                  collectionPageRows.map((r) => (
+                    <div key={r.id} className="rounded-xl border border-line bg-paper p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-display text-base font-semibold text-ink">{formatCurrency(r.amount)}</p>
+                          <p className="mt-0.5 text-xs text-muted">
+                            {r.tenantName ?? "-"} · {formatDate(r.createdAt)}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 flex-col items-end gap-1">
+                          <span className={`rounded-md px-2 py-0.5 text-xs font-semibold whitespace-nowrap ${collectionStatusStyle[r.status]}`}>
                             {collectionStatusLabel[r.status]}
                           </span>
-                        </td>
-                        <td className="px-4 py-3 text-muted">{r.failureReason ?? "—"}</td>
-                      </tr>
-                    ))}
-                  {!collectionsLoading && collectionPageRows.length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="px-4 py-10">
-                        <div className="flex flex-col items-center justify-center gap-3 text-center">
-                          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
-                            <Wallet size={22} weight="duotone" />
-                          </span>
-                          <p className="text-xs font-semibold text-ink">No payments match these filters</p>
+                          {r.isTest && (
+                            <span className="rounded-md bg-mist px-2 py-0.5 text-xs font-semibold whitespace-nowrap text-muted">
+                              Test
+                            </span>
+                          )}
                         </div>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                      </div>
+                      <div className="mt-3 flex items-center gap-1.5 text-sm text-muted">
+                        <img src={MOBILE_MONEY_LOGO[r.operator]} alt="" className="h-4 w-4 shrink-0 rounded-full object-cover" />
+                        {r.operator.toUpperCase()} •••• {r.phone.slice(-4)}
+                      </div>
+                      {(r.failureReason || r.isTest) && (
+                        <p className="mt-2 text-xs text-muted">
+                          {r.failureReason ?? "Simulated, not in balance"}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                {!collectionsLoading && collectionPageRows.length === 0 && (
+                  <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
+                    <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
+                      <Wallet size={22} weight="duotone" />
+                    </span>
+                    <p className="text-xs font-semibold text-ink">No payments match these filters</p>
+                  </div>
+                )}
+              </div>
               {!collectionsLoading && (collectionRows?.length ?? 0) > 0 && (
                 <Pagination
                   page={collectionPage}

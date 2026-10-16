@@ -170,10 +170,10 @@ export default function ExpenseFormDrawer({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Plumber — Room 08 leak"
-              className={`w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-brand ${
+              className={`w-full rounded-lg border bg-mist px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand/30 ${
                 submitAttempted && !name.trim()
                   ? "border-red-400"
-                  : "border-line"
+                  : "border-transparent"
               }`}
             />
             {submitAttempted && !name.trim() && (
@@ -187,7 +187,7 @@ export default function ExpenseFormDrawer({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={2}
-              className="w-full resize-none rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+              className="w-full resize-none rounded-lg border border-transparent bg-mist px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand/30"
             />
           </div>
 
@@ -197,10 +197,10 @@ export default function ExpenseFormDrawer({
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               inputMode="decimal"
-              className={`w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-brand ${
+              className={`w-full rounded-lg border bg-mist px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand/30 ${
                 submitAttempted && amountValue <= 0
                   ? "border-red-400"
-                  : "border-line"
+                  : "border-transparent"
               }`}
             />
             {submitAttempted && amountValue <= 0 && (
@@ -229,7 +229,7 @@ export default function ExpenseFormDrawer({
                   value={newCategoryName}
                   onChange={(e) => setNewCategoryName(e.target.value)}
                   placeholder="e.g. Generator fuel"
-                  className="flex-1 rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+                  className="flex-1 rounded-lg border border-transparent bg-mist px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand/30"
                 />
                 <Button
                   variant="primary"

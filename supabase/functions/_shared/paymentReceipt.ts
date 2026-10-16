@@ -30,7 +30,7 @@ export async function sendPaymentReceiptSms(supabase: SupabaseClient, capClient:
   if (settings && settings.send_payment_receipt_sms === false) return;
 
   const balance = Number(tenant.owed_amount ?? 0);
-  const portalLink = balance > 0 ? ` To settle it, visit your tenant portal: https://pay.instay.co/p/${tenant.portal_token}` : "";
+  const portalLink = balance > 0 ? ` To settle it, visit your tenant portal: https://portal.instayhomes.com/p/${tenant.portal_token}` : "";
   const message = `A payment of K${Number(amount).toLocaleString()} has been received. Your outstanding balance is K${balance.toLocaleString()}.${portalLink} Thank you.`;
 
   if (!(await withinDailySmsCap(capClient, tenant.property_id))) {

@@ -87,6 +87,7 @@ export type PortalTenant = {
   phone: string | null;
   moveInDate: string | null;
   emergencyContacts: EmergencyContact[];
+  propertyAddress?: string;
 };
 export type PortalLedgerRow = { label: string; amount: number; paidAmount?: number; status?: string; createdAt: string };
 
@@ -163,11 +164,25 @@ function dueDateIn(year: number, monthIndex0: number, dueDay: number): Date {
  * TenantProfile.tsx's furthestPaidMonth exactly (same label-parsing, same "latest paid period"
  * definition) so the portal and the landlord dashboard never disagree about when rent is next
  * due. */
-function furthestPaidMonth(groupedLedger: PortalLedgerRow[]): { year: number; month: number } | null {
+function furthestPaidMonth(
+  groupedLedger: PortalLedgerRow[],
+  moveIn?: Date | null
+): { year: number; month: number } | null {
   let furthest: { year: number; month: number } | null = null;
   for (const row of groupedLedger) {
     if (row.status !== "paid") continue;
-    const period = portalRowPeriod(row);
+    let period = portalRowPeriod(row);
+    // A payment made before the tenant moved in, whose label names no month (e.g. an older
+    // "Mobile money payment"), covers the move-in month, not the month it happened to be paid in.
+    const named = /\d{4}/.test(row.label) && MONTH_NAMES.some((name) => row.label.includes(name));
+    if (!named && moveIn && new Date(row.createdAt) < moveIn) {
+      period = { year: moveIn.getFullYear(), month: moveIn.getMonth() };
+    }
+    // Rent can't cover a month before move-in: a row labelled for an earlier month covers the
+    // move-in month.
+    if (moveIn && (period.year < moveIn.getFullYear() || (period.year === moveIn.getFullYear() && period.month < moveIn.getMonth()))) {
+      period = { year: moveIn.getFullYear(), month: moveIn.getMonth() };
+    }
     if (!furthest || period.year > furthest.year || (period.year === furthest.year && period.month > furthest.month)) {
       furthest = period;
     }
@@ -184,9 +199,15 @@ export function computePortalNextDueDate(
   status: PortalTenant["status"],
   ledger: PortalLedgerRow[],
   propertyDueDay: number,
-  now: Date = new Date()
+  now: Date = new Date(),
+  moveInDate?: string | null
 ): Date {
-  const paidThrough = furthestPaidMonth(groupPortalLedger(ledger));
+  let moveInParsed: Date | null = null;
+  if (moveInDate) {
+    const parsed = new Date(moveInDate);
+    if (!Number.isNaN(parsed.getTime())) moveInParsed = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+  }
+  const paidThrough = furthestPaidMonth(groupPortalLedger(ledger), moveInParsed);
   let nextDueDate = paidThrough
     ? dueDateIn(paidThrough.year, paidThrough.month + 1, propertyDueDay)
     : status === "paid"
@@ -199,7 +220,26 @@ export function computePortalNextDueDate(
       nextDueDate = dueDateIn(nextDueDate.getFullYear(), nextDueDate.getMonth() + 1, propertyDueDay);
     }
   }
+  // Nothing is due before the tenant moves in: someone moving in on 1 Nov with nothing paid must
+  // not be shown as overdue since this month's due day. Their first due date is the move-in day.
+  if (moveInDate) {
+    const parsed = new Date(moveInDate);
+    if (!Number.isNaN(parsed.getTime())) {
+      const moveIn = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+      if (nextDueDate < moveIn) nextDueDate = moveIn;
+    }
+  }
   return nextDueDate;
+}
+
+/** The one place the portal names which period an outstanding balance is for. Every screen (home,
+ * checkout) uses this so they can never disagree. Open ledger rows name their own period; with no
+ * row yet, it is the month of the next due date (so someone moving in on 1 Nov reads November,
+ * not the current month). */
+export function portalOwedPeriodLabel(openLabels: string[], nextDue: Date | null, now: Date = new Date()): string {
+  if (openLabels.length === 0) return `${(nextDue ?? now).toLocaleDateString("en-GB", { month: "long", year: "numeric" })} rent`;
+  if (openLabels.length === 1) return openLabels[0];
+  return `${openLabels.length} unpaid periods`;
 }
 
 export type PortalLedgerGroup = { key: string; label: string; rows: PortalLedgerRow[] };
@@ -226,7 +266,9 @@ export function groupPortalLedgerByMonth(ledger: PortalLedgerRow[]): PortalLedge
 }
 
 function roomLabel(number: string | null) {
-  return number ? `Room ${number}` : "";
+  if (!number) return "";
+  // A plain room number ("3", "A2") reads as "Room 3"; free text ("Back house", "Room 2") stays as typed.
+  return /^[A-Za-z]?\d+[A-Za-z]?$/.test(number.trim()) ? `Room ${number}` : number;
 }
 
 /** Same defensive jsonb parsing as tenants.ts's toEmergencyContacts (not exported from there) —
@@ -276,7 +318,7 @@ function lateFeeConfigFromPropertyRow(row: {
 export async function getPortalProperty(
   propertySlug: string
 ): Promise<{ id: string; name: string; dueDay: number | null; logoUrl: string | null } | null> {
-  const { data, error } = await supabase.rpc("pay_portal_get_property", { p_property_slug: propertySlug });
+  const { data, error } = await supabase.rpc("pay_portal_get_property_v2", { p_property_slug: propertySlug });
   if (error) throw error;
   const row = data?.[0];
   if (!row) return null;
@@ -323,14 +365,21 @@ export async function getPortalTenant(propertySlug: string, tenantId: string): P
       p_tenant_id: tenantId,
       p_session_token: sessionToken,
     }),
-    supabase.rpc("pay_portal_get_property", { p_property_slug: propertySlug }),
+    supabase.rpc("pay_portal_get_property_v2", { p_property_slug: propertySlug }),
   ]);
   if (tenantResult.error) throw tenantResult.error;
   const row = tenantResult.data?.[0];
   if (!row) return null;
   const lateFeeConfig = propertyResult.data?.[0] ? lateFeeConfigFromPropertyRow(propertyResult.data[0]) : DEFAULT_LATE_FEE_CONFIG;
   const isPaidUp = row.status === "paid";
-  const penaltyAmount = isPaidUp ? 0 : calcLatePenalty(row.rent_amount, row.days_overdue ?? undefined, lateFeeConfig);
+  // If the ledger already holds a penalty line for this tenant (charged, or waived by the landlord),
+  // that line is the late fee. Adding a computed fee on top would count the same lateness twice.
+  const { data: hasLedgerPenalty } = await (supabase as unknown as { rpc: (fn: string, args: object) => Promise<{ data: unknown }> }).rpc("pay_portal_has_ledger_penalty", {
+    p_tenant_id: tenantId,
+    p_session_token: sessionToken,
+  });
+  const penaltyAmount =
+    isPaidUp || hasLedgerPenalty === true ? 0 : calcLatePenalty(row.rent_amount, row.days_overdue ?? undefined, lateFeeConfig);
   return {
     id: row.id,
     name: row.name,
@@ -344,6 +393,7 @@ export async function getPortalTenant(propertySlug: string, tenantId: string): P
     phone: row.phone ?? null,
     moveInDate: row.move_in_date ?? null,
     emergencyContacts: toEmergencyContacts(row.emergency_contacts),
+    propertyAddress: row.property_address ?? "",
   };
 }
 

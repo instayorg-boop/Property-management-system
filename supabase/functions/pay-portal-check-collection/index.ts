@@ -102,7 +102,7 @@ Deno.serve(async (req) => {
     });
   }
 
-  if (collectionRow.status === "successful" || collectionRow.status === "failed") {
+  if (collectionRow.status === "successful") {
     return new Response(
       JSON.stringify({ ok: true, status: collectionRow.status, failureReason: collectionRow.failure_reason }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -143,7 +143,7 @@ Deno.serve(async (req) => {
       updated_at: new Date().toISOString(),
     })
     .eq("id", collectionRow.id)
-    .in("status", ["pending", "pay-offline"])
+    .in("status", lencoStatus === "successful" ? ["pending", "pay-offline", "failed"] : ["pending", "pay-offline"])
     .select("id, tenant_id, property_id, amount, fee_amount, line_items")
     .maybeSingle();
 

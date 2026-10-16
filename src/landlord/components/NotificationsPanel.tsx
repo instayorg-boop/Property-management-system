@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { X, CurrencyCircleDollar, Wrench, Coins, WarningCircle, BellRinging } from "@phosphor-icons/react";
+import { X, CurrencyCircleDollar, Wrench, Coins, WarningCircle, BellRinging, ChatCircleText } from "@phosphor-icons/react";
 import { useNotifications, type NotificationCategory, type NotificationRow } from "../NotificationsContext";
 import { useTenants } from "../TenantsContext";
-import { resolveNotificationLink, CATEGORY_LINK } from "../linkResolver";
+import { resolveNotificationLink } from "../linkResolver";
 
 type FilterTab = "all" | "unread";
 
@@ -22,12 +22,15 @@ export const CATEGORY_STYLE: Record<NotificationCategory, { icon: typeof Currenc
   payout: { icon: Coins, tint: "bg-brand-soft text-brand", label: "Payout" },
   overdue: { icon: WarningCircle, tint: "bg-red-50 text-red-600", label: "Overdue rent" },
   system: { icon: BellRinging, tint: "bg-mist text-muted", label: "Update" },
+  reminders: { icon: ChatCircleText, tint: "bg-sky-50 text-sky-600", label: "Reminders" },
 };
 
 /** Falls back to "system" for a category string this build doesn't know about — a plain
  * `?? "system"` wouldn't, since an unrecognised category is a non-null string and would index
  * CATEGORY_STYLE to undefined. Exported alongside the two maps for the dashboard preview. */
 export function categoryOf(n: NotificationRow): NotificationCategory {
+  // The daily "Texts sent today" summary is stored as 'system' but shown as its own kind.
+  if (n.type === "sms_daily_summary") return "reminders";
   return (n.category as NotificationCategory) in CATEGORY_STYLE ? (n.category as NotificationCategory) : "system";
 }
 
@@ -222,7 +225,7 @@ export default function NotificationsPanel({ onClose }: { onClose: () => void })
                 type="button"
                 onClick={() => setTab(t)}
                 className={`flex-1 rounded-md py-1.5 text-sm font-medium transition-colors ${
-                  tab === t ? "bg-paper text-ink shadow-sm" : "text-muted hover:text-ink"
+                  tab === t ? "border border-line bg-paper text-ink shadow-sm" : "text-muted hover:text-ink"
                 }`}
               >
                 {t === "all" ? "All" : `Unread${unreadCount > 0 ? ` (${unreadCount})` : ""}`}

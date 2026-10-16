@@ -120,7 +120,7 @@ export default function BedRentRoll() {
                     </td>
                     <td className="px-6 py-4 text-muted">{currency(b.rent)}</td>
                     <td className="px-6 py-4">
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${bedStatusStyle[b.status]}`}>
+                      <span className={`rounded-md px-2 py-0.5 text-xs font-semibold ${bedStatusStyle[b.status]}`}>
                         {bedStatusLabel[b.status]}
                       </span>
                     </td>

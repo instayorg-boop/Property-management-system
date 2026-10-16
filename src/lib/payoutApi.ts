@@ -1,6 +1,7 @@
 import { supabase } from "./supabaseClient";
 import { edgeFunctionErrorMessage } from "./functionsError";
 import type { Tables } from "./database.types";
+import { logAuditEvent } from "./auditLog";
 
 export type Bank = Tables<"banks">;
 export type PayoutRecipient = Tables<"payout_recipients">;
@@ -46,11 +47,27 @@ export async function setDefaultPayoutRecipient(propertyId: string, recipientId:
   if (clearError) throw clearError;
   const { error: setError } = await supabase.from("payout_recipients").update({ is_default: true }).eq("id", recipientId);
   if (setError) throw setError;
+  void logAuditEvent({
+    propertyId,
+    action: "payout_recipient.added",
+    summary: "Default payout method changed",
+    targetType: "payout_recipient",
+    targetId: recipientId,
+  });
 }
 
-export async function deletePayoutRecipient(id: string): Promise<void> {
+export async function deletePayoutRecipient(id: string, propertyId?: string): Promise<void> {
   const { error } = await supabase.from("payout_recipients").delete().eq("id", id);
   if (error) throw error;
+  if (propertyId) {
+    void logAuditEvent({
+      propertyId,
+      action: "payout_recipient.added",
+      summary: "Payout method removed",
+      targetType: "payout_recipient",
+      targetId: id,
+    });
+  }
 }
 
 /** Step 1 of adding a mobile-money payout recipient — resolves the account holder's name via Lenco,
@@ -75,7 +92,7 @@ export async function createMobileMoneyRecipient(params: {
   phoneNumber: string;
   provider: "mtn" | "airtel" | "zamtel";
   accountName: string;
-  confirmationToken: string;
+  confirmationToken?: string;
 }): Promise<PayoutRecipient> {
   const { data, error } = await supabase.functions.invoke<{ ok?: boolean; recipient?: PayoutRecipient; error?: string }>(
     "create-mobile-money-recipient",
@@ -84,6 +101,13 @@ export async function createMobileMoneyRecipient(params: {
   if (error || !data?.recipient) {
     throw new Error(await edgeFunctionErrorMessage(error, "Failed to save that payout method."));
   }
+  void logAuditEvent({
+    propertyId: params.propertyId,
+    action: "payout_recipient.added",
+    summary: `Mobile money payout method added (${params.provider})`,
+    targetType: "payout_recipient",
+    targetId: data.recipient.id,
+  });
   return data.recipient;
 }
 
@@ -144,7 +168,7 @@ export async function createPayoutRecipient(params: {
   bankCode: string;
   accountName: string;
   propertyId: string;
-  confirmationToken: string;
+  confirmationToken?: string;
 }): Promise<PayoutRecipient> {
   const { data, error } = await supabase.functions.invoke<{ ok?: boolean; recipient?: PayoutRecipient; error?: string }>(
     "create-payout-recipient",
@@ -153,6 +177,13 @@ export async function createPayoutRecipient(params: {
   if (error || !data?.recipient) {
     throw new Error(await edgeFunctionErrorMessage(error, "Failed to save payout details."));
   }
+  void logAuditEvent({
+    propertyId: params.propertyId,
+    action: "payout_recipient.added",
+    summary: "Bank payout method added",
+    targetType: "payout_recipient",
+    targetId: data.recipient.id,
+  });
   return data.recipient;
 }
 
@@ -166,13 +197,14 @@ export async function createPayoutRecipient(params: {
 export async function getLencoBalance(propertyId: string): Promise<{ collected: number; paidOut: number; available: number }> {
   const [{ data: collectedRows, error: collectedError }, { data: paidRows, error: paidError }, { data: unclaimedRows, error: unclaimedError }] =
     await Promise.all([
-      supabase.from("collections").select("amount").eq("property_id", propertyId).eq("status", "successful"),
+      supabase.from("collections").select("amount").eq("property_id", propertyId).eq("status", "successful").or("lenco_collection_id.is.null,lenco_collection_id.not.like.DEV-%"),
       supabase.from("payouts").select("amount").eq("property_id", propertyId).in("status", ["successful", "processing"]),
       supabase
         .from("collections")
         .select("amount, fee_amount")
         .eq("property_id", propertyId)
         .eq("status", "successful")
+        .or("lenco_collection_id.is.null,lenco_collection_id.not.like.DEV-%")
         .is("payout_id", null),
     ]);
   if (collectedError) throw collectedError;
@@ -218,12 +250,21 @@ export async function sendPayout(
   if (error || !data?.ok || !data?.payoutId) {
     throw new Error(await edgeFunctionErrorMessage(error, "Failed to send payout."));
   }
-  return {
+  const result = {
     payoutId: data.payoutId,
     amount: data.amount ?? amount,
     feeAmount: data.feeAmount ?? 0,
     netAmount: data.netAmount ?? (data.amount ?? amount),
   };
+  void logAuditEvent({
+    propertyId,
+    action: "payout.requested",
+    summary: `Payout requested (K${result.amount}, net K${result.netAmount})`,
+    targetType: "payout",
+    targetId: result.payoutId,
+    metadata: { amount: result.amount, feeAmount: result.feeAmount, netAmount: result.netAmount },
+  });
+  return result;
 }
 
 export type PayoutStatus = "pending" | "processing" | "successful" | "failed";
@@ -284,7 +325,13 @@ export type CollectionStatus = "pending" | "pay-offline" | "successful" | "faile
 
 export type CollectionRecord = {
   id: string;
+  /** Rent received, without the processing fee the tenant paid on top. */
   amount: number;
+  /** What the tenant was charged in total (rent + processing fee). */
+  totalCharged: number;
+  feeAmount: number;
+  /** A simulated payment from the portal's dev mode: no real money moved. */
+  isTest: boolean;
   status: CollectionStatus;
   createdAt: string;
   operator: "mtn" | "airtel" | "zamtel";
@@ -303,7 +350,7 @@ export async function listCollections(
 ): Promise<CollectionRecord[]> {
   let query = supabase
     .from("collections")
-    .select("id, amount, status, created_at, operator, phone, failure_reason, tenants(name)")
+    .select("id, amount, fee_amount, lenco_collection_id, status, created_at, operator, phone, failure_reason, tenants(name)")
     .eq("property_id", propertyId)
     .order("created_at", { ascending: false });
   if (opts?.status?.length) query = query.in("status", opts.status);
@@ -316,7 +363,10 @@ export async function listCollections(
     const tenant = Array.isArray(row.tenants) ? row.tenants[0] : row.tenants;
     return {
       id: row.id,
-      amount: row.amount,
+      amount: Math.round((row.amount - (row.fee_amount ?? 0)) * 100) / 100,
+      totalCharged: row.amount,
+      feeAmount: row.fee_amount ?? 0,
+      isTest: (row.lenco_collection_id ?? "").startsWith("DEV-"),
       status: row.status as CollectionStatus,
       createdAt: row.created_at,
       operator: row.operator as "mtn" | "airtel" | "zamtel",

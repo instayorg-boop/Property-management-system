@@ -81,7 +81,7 @@ export default function MoveOutModal({
             onChange={(e) => setNote(e.target.value)}
             rows={2}
             placeholder={depositStatus === "Refunded" ? "Optional — e.g. no damage, full deposit returned." : "e.g. K200 deducted for cleaning."}
-            className="w-full resize-none rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+            className="w-full resize-none rounded-lg border border-transparent bg-mist px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand/30"
           />
         </div>
       </div>

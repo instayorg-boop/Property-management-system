@@ -28,7 +28,7 @@ export const featureDetails: FeatureDetail[] = [
     panelLabel: "Rooms - 92% occupied",
     gradient: "from-emerald-100 via-lime-50 to-emerald-50",
     title: "Know which rooms are open, without checking a file.",
-    desc: "Room status updates live, so nothing gets double-booked by mistake — whether you manage one block or a whole portfolio.",
+    desc: "Room status updates live, so nothing gets double-booked by mistake, whether you manage one block or a whole portfolio.",
     points: [
       "Live status per room and per property",
       "Move-ins and move-outs tracked automatically",
@@ -42,7 +42,7 @@ export const featureDetails: FeatureDetail[] = [
     panelLabel: "Tenant reminders",
     gradient: "from-rose-100 via-pink-50 to-orange-100",
     title: "Every tenant, one record, no chasing.",
-    desc: "Reminders go out on their own, and guardians get notified if a payment is missed — so nothing falls through the cracks.",
+    desc: "Reminders go out on their own, and guardians get notified if a payment is missed, so nothing falls through the cracks.",
     points: [
       "Add a tenant in minutes, with full lease history",
       "Deposits kept separate from rent, always reconciled",
@@ -56,7 +56,7 @@ export const featureDetails: FeatureDetail[] = [
     panelLabel: "Monthly report",
     gradient: "from-violet-100 via-purple-50 to-fuchsia-100",
     title: "Every report you need, ready to share.",
-    desc: "Collection rates, arrears, rent roll — branded and easy to hand to an owner, without building a spreadsheet by hand every month.",
+    desc: "Collection rates, arrears, rent roll: branded and easy to hand to an owner, without building a spreadsheet by hand every month.",
     points: [
       "Income and expenses, broken down per property",
       "Arrears sorted by how overdue they are",
@@ -70,7 +70,7 @@ export const featureDetails: FeatureDetail[] = [
     panelLabel: "Staff & payroll",
     gradient: "from-amber-100 via-yellow-50 to-orange-100",
     title: "Staff hours and pay, calculated for you.",
-    desc: "Clock staff in from a kiosk, and let payroll — including NAPSA contributions — calculate itself at the end of the month.",
+    desc: "Clock staff in from a kiosk, and let payroll, including NAPSA contributions, calculate itself at the end of the month.",
     points: [
       "Clock-in kiosk for caretakers and site staff",
       "NAPSA pension contributions calculated automatically",

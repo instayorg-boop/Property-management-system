@@ -1,4 +1,5 @@
 import PageShell from "../components/PageShell";
+import { SUPPORT_EMAIL } from "../lib/supportContact";
 
 const sections = [
   {
@@ -7,7 +8,7 @@ const sections = [
   },
   {
     title: "How we use it",
-    body: "To run the product — tracking rent, occupancy and reports — and to send the reminders and receipts you and your tenants rely on. We don't sell your data.",
+    body: "To run the product: tracking rent, occupancy and reports, and sending the reminders and receipts you and your tenants rely on. We don't sell your data.",
   },
   {
     title: "Who can see it",
@@ -15,7 +16,7 @@ const sections = [
   },
   {
     title: "Your rights",
-    body: "You can export or delete your account data at any time from settings, or by writing to hello@instay.app.",
+    body: `You can export or delete your account data at any time from settings, or by writing to ${SUPPORT_EMAIL}.`,
   },
 ];
 

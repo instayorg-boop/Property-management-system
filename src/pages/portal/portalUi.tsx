@@ -17,7 +17,8 @@
  */
 import type { ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft } from "@phosphor-icons/react";
+import { ArrowLeft, CaretDown, Check } from "@phosphor-icons/react";
+import * as RadixSelect from "@radix-ui/react-select";
 import Button from "../../landlord/components/Button";
 
 export function formatMoney(amount: number): string {
@@ -33,7 +34,7 @@ export function formatDate(iso: string | Date): string {
  * repeated as long class strings on every screen. Injected once by PortalFrame. */
 export const portalStyles = `
 .tenant-portal {
-  --p-bg: #F5F6F8;
+  --p-bg: #FFFFFF;
   --p-surface: #FFFFFF;
   --p-line: #E8EAEF;
   --p-line-strong: #D6DAE2;
@@ -118,6 +119,29 @@ export const portalStyles = `
 .tenant-portal a.p-row:hover, .tenant-portal button.p-row:hover { background: #FAFBFC; }
 .tenant-portal button.p-row { width: 100%; text-align: left; cursor: pointer; }
 
+/* "Report a problem" floating button: slides up from the bottom edge when shown, back down when
+   the action tiles it points at come into view. */
+.tenant-portal .p-fab {
+  transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1), opacity 200ms ease-out;
+}
+.tenant-portal .p-fab[data-shown="false"] {
+  transform: translate(-50%, calc(100% + 32px));
+  opacity: 0;
+  pointer-events: none;
+}
+.tenant-portal .p-fab[data-shown="true"] { transform: translate(-50%, 0); opacity: 1; }
+
+/* The tile the floating button just scrolled to: an accent border plus a ring that pulses outward
+   a few times, so the tenant's eye lands on what to tap. */
+.tenant-portal .p-tile-highlight {
+  border-color: var(--p-accent);
+  animation: p-tile-pulse 900ms ease-out 3;
+}
+@keyframes p-tile-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(30, 58, 138, 0.45); }
+  100% { box-shadow: 0 0 0 12px rgba(30, 58, 138, 0); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .tenant-portal *, .tenant-portal *::before, .tenant-portal *::after {
     animation-duration: 0.01ms !important;
@@ -199,7 +223,7 @@ export function Card({ children, className = "" }: { children: ReactNode; classN
 
 export function SectionLabel({ children }: { children: ReactNode }) {
   return (
-    <h2 className="mb-2 mt-6 px-1 text-[13px] font-semibold tracking-[-0.01em]" style={{ color: "var(--p-muted)" }}>
+    <h2 className="mb-2 mt-6 px-0.5 text-[10.5px] font-bold uppercase tracking-[.08em]" style={{ color: "var(--p-muted)" }}>
       {children}
     </h2>
   );
@@ -246,7 +270,7 @@ export function Pill({ tone = "neutral", children }: { tone?: ToneName; children
   const { fg, bg } = toneVars[tone];
   return (
     <span
-      className="inline-flex items-center rounded-full px-2.5 py-1 text-[12px] font-semibold"
+      className="inline-flex items-center whitespace-nowrap rounded-md px-2 py-0.5 text-xs font-semibold"
       style={{ color: fg, background: bg }}
     >
       {children}
@@ -256,9 +280,13 @@ export function Pill({ tone = "neutral", children }: { tone?: ToneName; children
 
 /** Big tappable square on the portal home — icon over a two-line label, comfortably past the 44px
  * touch target in both directions. */
-export function ActionTile({ to, icon, label }: { to: string; icon: ReactNode; label: string }) {
+export function ActionTile({ to, icon, label, highlight }: { to: string; icon: ReactNode; label: string; highlight?: boolean }) {
   return (
-    <Link to={to} className="p-card flex flex-1 flex-col gap-3 p-4 no-underline" style={{ color: "var(--p-ink)" }}>
+    <Link
+      to={to}
+      className={`p-card flex flex-1 flex-col gap-3 p-4 no-underline ${highlight ? "p-tile-highlight" : ""}`}
+      style={{ color: "var(--p-ink)" }}
+    >
       <span
         className="flex h-9 w-9 items-center justify-center rounded-full"
         style={{ background: "var(--p-accent-tint)", color: "var(--p-accent)" }}
@@ -270,6 +298,25 @@ export function ActionTile({ to, icon, label }: { to: string; icon: ReactNode; l
   );
 }
 
+/** Stat tile: small uppercase label, big figure, optional sub line. Two sit side by side on the home page. */
+export function StatTile({ label, value, sub, tone }: { label: string; value: ReactNode; sub?: ReactNode; tone?: string }) {
+  return (
+    <div className="p-card flex min-w-0 flex-col px-4 py-4">
+      <span className="mb-2 text-[10.5px] font-bold uppercase leading-none tracking-[.08em]" style={{ color: "var(--p-muted)" }}>
+        {label}
+      </span>
+      <span className="num truncate text-[22px] font-semibold leading-none" style={tone ? { color: tone } : undefined}>
+        {value}
+      </span>
+      {sub && (
+        <span className="mt-2 truncate text-[11px] font-semibold leading-none" style={{ color: "var(--p-muted)" }}>
+          {sub}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function Shimmer({ className = "" }: { className?: string }) {
   return <div className={`animate-pulse rounded-lg ${className}`} style={{ background: "#E9EBEF" }} />;
 }
@@ -278,12 +325,17 @@ export function Shimmer({ className = "" }: { className?: string }) {
  * it needs, a list with nothing in it yet. */
 export function PortalMessage({ title, body, action }: { title: string; body: string; action?: ReactNode }) {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center px-6 py-16 text-center">
-      <h2 className="display text-[18px] font-semibold">{title}</h2>
-      <p className="mt-2 max-w-[300px] text-[14px] leading-relaxed" style={{ color: "var(--p-muted)" }}>
-        {body}
-      </p>
-      {action && <div className="mt-5 w-full max-w-[240px]">{action}</div>}
+    <div className="flex flex-1 flex-col justify-center py-10">
+      <div
+        className="flex flex-col items-center gap-1 rounded-2xl border border-dashed p-10 text-center"
+        style={{ borderColor: "var(--p-line-strong)" }}
+      >
+        <strong className="text-[15px] font-bold">{title}</strong>
+        <span className="max-w-[300px] text-[13px] leading-relaxed" style={{ color: "var(--p-muted)" }}>
+          {body}
+        </span>
+        {action && <div className="mt-3 w-full max-w-[240px]">{action}</div>}
+      </div>
     </div>
   );
 }
@@ -304,5 +356,59 @@ export function PoweredByInstay() {
         </span>
       </Link>
     </div>
+  );
+}
+
+/** Custom dropdown for the portal. The native <select> opens the OS picker, which ignores the page's
+ * styling; this one matches the portal's inputs and cards. Colours are literal because the menu is
+ * portaled outside `.tenant-portal`, where the --p-* variables don't exist. */
+export function PortalSelect({
+  value,
+  onChange,
+  options,
+  ariaLabel,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+  ariaLabel: string;
+}) {
+  return (
+    <RadixSelect.Root value={value} onValueChange={onChange}>
+      <RadixSelect.Trigger
+        aria-label={ariaLabel}
+        className="flex min-h-[48px] w-full items-center justify-between gap-2 rounded-lg border bg-white px-3.5 text-left text-[15px] outline-none"
+        style={{ borderColor: "#D6DAE2", color: "#14181F" }}
+      >
+        <RadixSelect.Value />
+        <RadixSelect.Icon style={{ color: "#6B7483" }}>
+          <CaretDown size={14} weight="bold" />
+        </RadixSelect.Icon>
+      </RadixSelect.Trigger>
+      <RadixSelect.Portal>
+        <RadixSelect.Content
+          position="popper"
+          sideOffset={6}
+          className="z-[80] max-h-[50vh] w-[var(--radix-select-trigger-width)] overflow-hidden rounded-lg border bg-white shadow-lg"
+          style={{ borderColor: "#E8EAEF", fontFamily: "var(--font-sans)" }}
+        >
+          <RadixSelect.Viewport className="p-1">
+            {options.map((o) => (
+              <RadixSelect.Item
+                key={o.value}
+                value={o.value}
+                className="relative flex min-h-[44px] cursor-pointer select-none items-center rounded-md py-2 pl-9 pr-3 text-[14px] outline-none data-[highlighted]:bg-[#F1F2F5] data-[state=checked]:font-semibold"
+                style={{ color: "#14181F" }}
+              >
+                <RadixSelect.ItemIndicator className="absolute left-3 flex items-center" style={{ color: "#1E3A8A" }}>
+                  <Check size={14} weight="bold" />
+                </RadixSelect.ItemIndicator>
+                <RadixSelect.ItemText>{o.label}</RadixSelect.ItemText>
+              </RadixSelect.Item>
+            ))}
+          </RadixSelect.Viewport>
+        </RadixSelect.Content>
+      </RadixSelect.Portal>
+    </RadixSelect.Root>
   );
 }

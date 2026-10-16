@@ -246,6 +246,7 @@ export const PricingSection = ({
                 {/* CTA */}
                 <Button
                   variant={plan.isFeatured ? "primary" : "outline"}
+                  onClick={() => window.location.assign("/contact")}
              
                   className={cn(
                     "mt-7 w-full rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors",

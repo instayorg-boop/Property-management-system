@@ -25,6 +25,7 @@ export type PortalIdentity = {
   tenantId: string;
   propertyName: string;
   propertyLogoUrl: string | null;
+  propertyAddress: string;
   dueDay: number;
 };
 
@@ -55,6 +56,7 @@ async function loadCore(token: string) {
       tenantId: resolved.tenantId,
       propertyName: property?.name ?? "",
       propertyLogoUrl: property?.logoUrl ?? null,
+      propertyAddress: tenant?.propertyAddress ?? "",
       // 1st-of-month is the same fallback the landlord dashboard lands on for a property that has
       // never set one — not fabricated, just not undefined.
       dueDay: property?.dueDay ?? 1,
@@ -76,7 +78,7 @@ export function usePortal(token: string | undefined): PortalCore {
     identity,
     tenant,
     ledger,
-    nextDueDate: tenant && identity ? computePortalNextDueDate(tenant.status, ledger, identity.dueDay) : null,
+    nextDueDate: tenant && identity ? computePortalNextDueDate(tenant.status, ledger, identity.dueDay, new Date(), tenant.moveInDate) : null,
     loading,
     notFound: data === null && !loading,
     error,

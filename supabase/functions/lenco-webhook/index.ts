@@ -136,6 +136,39 @@ Deno.serve(async (req) => {
       if (releaseError) {
         console.error("[lenco-webhook] failed to release collections for failed payout", payoutRow.id, releaseError.message);
       }
+    } else if (!payoutRow) {
+      // No payout matched this transfer, it's most likely the IPM revenue sweep instead
+      // (sweep-company-revenue uses the same transfer endpoint, with its own row's id as the
+      // reference). Try resolving a company_revenue_sweeps row the same way.
+      const { data: sweepRow, error: sweepError } = await supabase
+        .from("company_revenue_sweeps")
+        .update({
+          status,
+          lenco_transaction_id: data.id,
+          failure_reason: data.reasonForFailure ?? null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq(matchColumn, matchValue)
+        .eq("status", "processing")
+        .select("id, collection_ids, payout_ids, subscription_payment_ids")
+        .maybeSingle();
+
+      if (sweepError) {
+        console.error("[lenco-webhook] failed to update company_revenue_sweeps row", sweepError.message);
+      } else if (status === "failed" && sweepRow) {
+        // The transfer never reached the company's bank account, clear swept_at on every row this
+        // sweep claimed so the next sweep run picks this revenue back up instead of it being
+        // permanently hidden from all future sweeps.
+        if (sweepRow.collection_ids?.length) {
+          await supabase.from("collections").update({ swept_at: null }).in("id", sweepRow.collection_ids);
+        }
+        if (sweepRow.payout_ids?.length) {
+          await supabase.from("payouts").update({ swept_at: null }).in("id", sweepRow.payout_ids);
+        }
+        if (sweepRow.subscription_payment_ids?.length) {
+          await supabase.from("subscription_payments").update({ swept_at: null }).in("id", sweepRow.subscription_payment_ids);
+        }
+      }
     }
   } else if (event.event === "collection.successful" || event.event === "collection.failed") {
     const { data } = event;
@@ -152,7 +185,7 @@ Deno.serve(async (req) => {
         updated_at: new Date().toISOString(),
       })
       .eq(matchColumn, matchValue)
-      .in("status", ["pending", "pay-offline"])
+      .in("status", success ? ["pending", "pay-offline", "failed"] : ["pending", "pay-offline"])
       .select("id, tenant_id, property_id, amount, fee_amount, line_items")
       .maybeSingle();
 

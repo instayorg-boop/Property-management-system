@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import SearchInput from "../components/SearchInput";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Warning as AlertTriangle,
@@ -13,7 +14,6 @@ import {
   Money as Banknote,
   CaretLeft,
   CaretRight,
-  MagnifyingGlass,
 } from "@phosphor-icons/react";
 import PageHeader from "../components/PageHeader";
 import SlideOver from "../components/SlideOver";
@@ -48,7 +48,7 @@ const payTypeMeta: Record<Employee["payType"], { label: string; style: string }>
 function PayTypeBadge({ payType }: { payType: Employee["payType"] }) {
   const meta = payTypeMeta[payType];
   return (
-    <span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${meta.style}`}>{meta.label}</span>
+    <span className={`whitespace-nowrap rounded-md px-2 py-0.5 text-xs font-semibold ${meta.style}`}>{meta.label}</span>
   );
 }
 
@@ -128,7 +128,7 @@ function EmployeeDrawer({
   onUpdateDaysWorked: (value: number) => void;
 }) {
   const inputCls =
-    "w-full rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-brand disabled:bg-mist disabled:text-muted";
+    "w-full rounded-lg border border-transparent bg-mist px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand/30 disabled:bg-mist disabled:text-muted";
 
   return (
     <SlideOver onClose={onClose} title={employee.name} description={employee.role}>
@@ -284,7 +284,7 @@ function FilingDrawer({ run, onClose, onSavePrns }: { run: PayrollRun; onClose: 
             value={prns.zra}
             onChange={(e) => setPrns((p) => ({ ...p, zra: e.target.value }))}
             placeholder="Paste PRN"
-            className="w-full rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-brand"
+            className="w-full rounded-lg border border-transparent bg-mist px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand/30"
           />
         </div>
         <div>
@@ -293,7 +293,7 @@ function FilingDrawer({ run, onClose, onSavePrns }: { run: PayrollRun; onClose: 
             value={prns.napsa}
             onChange={(e) => setPrns((p) => ({ ...p, napsa: e.target.value }))}
             placeholder="Paste PRN"
-            className="w-full rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-brand"
+            className="w-full rounded-lg border border-transparent bg-mist px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand/30"
           />
         </div>
         <div>
@@ -302,7 +302,7 @@ function FilingDrawer({ run, onClose, onSavePrns }: { run: PayrollRun; onClose: 
             value={prns.nhima}
             onChange={(e) => setPrns((p) => ({ ...p, nhima: e.target.value }))}
             placeholder="Paste PRN"
-            className="w-full rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-brand"
+            className="w-full rounded-lg border border-transparent bg-mist px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand/30"
           />
         </div>
       </div>
@@ -525,18 +525,7 @@ export default function StaffPayroll() {
               )}
             </div>
 
-            <div className="flex items-center gap-2 rounded-lg border border-line bg-paper px-3 py-2 w-fit">
-              <MagnifyingGlass size={16} weight="bold" className="text-muted" />
-              <input
-                value={query}
-                onChange={(e) => {
-                  setQuery(e.target.value);
-                  setPage(1);
-                }}
-                placeholder="Search by name or role"
-                className="w-56 bg-transparent text-sm outline-none placeholder:text-muted"
-              />
-            </div>
+            <SearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} placeholder="Search by name or role" className="w-64" />
 
             <div className="overflow-x-auto rounded-xl border border-line bg-paper">
               <table className="w-full table-fixed text-left text-sm">
@@ -547,13 +536,13 @@ export default function StaffPayroll() {
                   <col className="w-28" />
                   <col className="w-16" />
                 </colgroup>
-                <thead className="border-b border-line bg-paper text-[11px] text-muted uppercase">
+                <thead className="border-b border-line bg-paper text-[10.5px] text-muted uppercase">
                   <tr>
-                    <th className="px-6 py-4 font-medium tracking-wide">Employee</th>
-                    <th className="px-6 py-4 font-medium tracking-wide">Pay type</th>
-                    <th className="px-6 py-4 font-medium tracking-wide">Pay before deductions</th>
-                    <th className="px-6 py-4 font-medium tracking-wide">Pay after deductions</th>
-                    <th className="px-6 py-4 font-medium"></th>
+                    <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Employee</th>
+                    <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Pay type</th>
+                    <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Pay before deductions</th>
+                    <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Pay after deductions</th>
+                    <th className="px-4 pt-[11px] pb-2.5 font-bold"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line">
@@ -635,12 +624,12 @@ export default function StaffPayroll() {
                 <col className="w-32" />
                 <col className="w-28" />
               </colgroup>
-              <thead className="border-b border-line bg-paper text-[11px] text-muted uppercase">
+              <thead className="border-b border-line bg-paper text-[10.5px] text-muted uppercase">
                 <tr>
-                  <th className="px-6 py-4 font-medium tracking-wide">Period</th>
-                  <th className="px-6 py-4 font-medium tracking-wide">Employees paid</th>
-                  <th className="px-6 py-4 font-medium tracking-wide">Total cost</th>
-                  <th className="px-6 py-4 font-medium"></th>
+                  <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Period</th>
+                  <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Employees paid</th>
+                  <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Total cost</th>
+                  <th className="px-4 pt-[11px] pb-2.5 font-bold"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">

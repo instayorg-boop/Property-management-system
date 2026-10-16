@@ -70,7 +70,7 @@ export default function ReserveRoomModal({
             <select
               value={room}
               onChange={(e) => setRoom(e.target.value)}
-              className="w-full rounded-lg border border-line bg-paper px-3 py-2.5 text-sm outline-none focus:border-brand"
+              className="w-full rounded-lg border border-transparent bg-mist px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand/30"
             >
               {vacantRooms.map((r) => (
                 <option key={r.room} value={r.room}>
@@ -88,7 +88,7 @@ export default function ReserveRoomModal({
             value={feeAmount || ""}
             onChange={(e) => setFeeAmount(Math.max(0, Number(e.target.value) || 0))}
             placeholder="0"
-            className="w-full rounded-lg border border-line bg-paper px-3 py-2.5 text-sm outline-none focus:border-brand"
+            className="w-full rounded-lg border border-transparent bg-mist px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand/30"
           />
         </div>
         <div>

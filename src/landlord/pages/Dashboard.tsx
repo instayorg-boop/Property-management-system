@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { isResident } from "../../lib/tenants";
+import { useNavigate } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
 import LogPaymentModal from "../components/LogPaymentModal";
 import TenantSearchDrawer from "../components/TenantSearchDrawer";
@@ -9,10 +10,9 @@ import ExpenseFormDrawer from "../components/ExpenseFormDrawer";
 import { type UpcomingPayout } from "../components/PayoutDetailDrawer";
 import { Skeleton } from "../components/Skeleton";
 import { useTenants, useCollectedRent, formatCurrency, type Tenant } from "../TenantsContext";
-import { useNotifications } from "../NotificationsContext";
 import { useRoomsView } from "../RoomsContext";
 import { useSettings } from "../SettingsContext";
-import { getLencoBalance } from "../../lib/payoutApi";
+import { getLencoBalance, listCollections, type CollectionRecord } from "../../lib/payoutApi";
 import { supabase } from "../../lib/supabaseClient";
 import { calcTotalOwed } from "../invoiceUtils";
 import TodaysTasks from "../components/TodaysTasks";
@@ -24,19 +24,13 @@ import {
   Receipt as ReceiptIcon,
   UserPlus as UserPlusIcon,
   Plus as PlusIcon,
-  DoorOpen as DoorIcon,
   Coins,
-  Wallet as WalletIcon,
-  DotsThreeVertical,
-  CaretRightIcon,
-
 } from "@phosphor-icons/react";
-import SectionLabel from "../components/SectionLabel";
 import SetupChecklist from "../components/SetupChecklist";
 import Button from "../components/Button";
-import ActivityRow from "../components/ActivityRow";
+import NotificationsFeed from "../components/NotificationsFeed";
 import DashboardTabs from "../components/DashboardTabs";
-import { Bell } from "lucide-react";
+import MetricCard from "../components/MetricCard";
 
 type QuickAction = "log-payment" | "add-expense" | "add-tenant";
 
@@ -56,7 +50,7 @@ function Greeting({ onAction }: { propertyId: string | null; onAction: (action: 
   const [sheetOpen, setSheetOpen] = useState(false);
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 bg-white  px-4 pt-5 pb-6 sm:px-8">
+    <div className="flex flex-wrap items-center justify-between gap-4 px-4 pt-5 pb-6 sm:px-8">
       <div>
         <h1 className="font-display text-2xl font-semibold tracking-tighter text-ink">
           Good {part} 👋🏼
@@ -124,6 +118,16 @@ function Greeting({ onAction }: { propertyId: string | null; onAction: (action: 
   );
 }
 
+function timeAgo(iso: string) {
+  const ms = Date.now() - new Date(iso).getTime();
+  const minutes = Math.round(ms / 60000);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return `${days}d ago`;
+}
+
 type PaymentStep = "search" | "ledger" | "confirm";
 
 export default function Dashboard() {
@@ -138,6 +142,11 @@ export default function Dashboard() {
     () => ({ occupied: rooms.filter((r) => r.status === "occupied").length, total: rooms.length }),
     [rooms]
   );
+  const tenantCount = useMemo(() => {
+    const active = tenants.filter((t) => t.active);
+    const current = active.filter((t) => isResident(t)).length;
+    return { current, movingIn: active.length - current };
+  }, [tenants]);
 
   // What's actually sitting in Lenco, ready to withdraw — real mobile-money collections minus
   // whatever's already been paid out. Deliberately NOT gross-collected-minus-fee-minus-expenses
@@ -189,6 +198,27 @@ export default function Dashboard() {
     };
   }, [propertyId]);
 
+  // The last few rent payments that actually landed via mobile money (not cash logged by the
+  // landlord): gives the Online payments card real content instead of sitting mostly empty next
+  // to the Needs-your-attention card.
+  const [recentCollections, setRecentCollections] = useState<CollectionRecord[]>([]);
+  const [collectionsReady, setCollectionsReady] = useState(false);
+  useEffect(() => {
+    if (!propertyId) return;
+    let cancelled = false;
+    listCollections(propertyId, { limit: 5, status: ["successful"] })
+      .then((rows) => {
+        if (!cancelled) {
+          setRecentCollections(rows);
+          setCollectionsReady(true);
+        }
+      })
+      .catch((e) => console.error("Failed to load recent online payments", e));
+    return () => {
+      cancelled = true;
+    };
+  }, [propertyId]);
+
   const payout = useMemo<UpcomingPayout | null>(() => {
     if (!lencoAvailable || lencoAvailable <= 0) return null;
     const now = new Date();
@@ -208,12 +238,8 @@ export default function Dashboard() {
   const [movingOutTenant, setMovingOutTenant] = useState<Tenant | null>(null);
   const [addingExpense, setAddingExpense] = useState(false);
 
-  const { notifications, isReady: notificationsReady, markRead: markNotificationRead } = useNotifications();
-  const recentActivity = useMemo(() => notifications.slice(0, 7), [notifications]);
-
-
   const outstanding = useMemo(() => {
-    const behind = tenants.filter((t) => t.active && (t.status === "overdue" || t.status === "unpaid" || t.status === "partial"));
+    const behind = tenants.filter((t) => isResident(t) && (t.status === "overdue" || t.status === "unpaid" || t.status === "partial"));
     const total = behind.reduce((sum, t) => sum + calcTotalOwed(t), 0);
     return { total, count: behind.length };
   }, [tenants]);
@@ -229,250 +255,179 @@ export default function Dashboard() {
       <DashboardTabs />
       <Greeting propertyId={propertyId} onAction={handleAction} />
 
-      {/* Left and right columns are two independent stacks within one grid row, so each side's
-          own content determines its own height — no column is ever stretched or gapped to match
-          the other's height. */}
-      <div className="grid grid-cols-1 items-start gap-4 px-4 sm:px-8 pb-10 lg:grid-cols-3">
-        {/* Left / main column */}
-        <div className="space-y-4 lg:col-span-2">
-          {/* Overview snapshot — first three stats as plain tiles */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            {!dataReady ? (
-              <div className="rounded-lg border border-line bg-paper p-4">
-                <Skeleton className="h-3 w-24" />
-                <Skeleton className="mt-2.5 h-6 w-28" />
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => navigate("/rent")}
-                className="rounded-lg border border-line bg-paper p-4 text-left transition-colors hover:border-ink/20 hover:bg-mist/40"
-              >
-                <p className="text-sm text-muted">Total collected</p>
-                <p className="font-display mt-1.5 text-2xl font-semibold tracking-tight text-emerald-600">
-                  K{totalCollected.toLocaleString()}
-                </p>
-              </button>
-            )}
-            {!dataReady ? (
-              <div className="rounded-lg border border-line bg-paper p-4">
-                <Skeleton className="h-3 w-28" />
-                <Skeleton className="mt-2.5 h-6 w-28" />
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => navigate("/rent")}
-                className="rounded-lg border border-line bg-paper p-4 text-left transition-colors hover:border-ink/20 hover:bg-mist/40"
-              >
-                <p className="text-sm text-muted">Outstanding balance</p>
-                <p className={`font-display mt-1.5 text-2xl font-semibold tracking-tight ${outstanding.total > 0 ? "text-red-700" : "text-emerald-600"}`}>
-                  K{outstanding.total.toLocaleString()}
-                </p>
-              </button>
-            )}
-            {!dataReady ? (
-              <div className="rounded-lg border border-line bg-paper p-4">
-                <Skeleton className="h-3 w-20" />
-                <Skeleton className="mt-2.5 h-6 w-20" />
-              </div>
-            ) : roomsOccupied.total > 0 ? (
-              <button
-                type="button"
-                onClick={() => navigate("/rooms")}
-                className="rounded-lg border border-line bg-paper p-4 text-left transition-colors hover:border-ink/20 hover:bg-mist/40"
-              >
-                <p className="text-sm text-muted">Rooms occupied</p>
-                <p className="font-display mt-1.5 text-2xl font-semibold tracking-tight text-ink">
-                  {roomsOccupied.occupied} / {roomsOccupied.total}
-                </p>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => navigate("/rooms")}
-                className="group rounded-lg border border-line bg-paper p-4 text-left transition-colors hover:border-ink/20 hover:bg-mist/40"
-              >
-                <p className="text-sm text-muted">Rooms occupied</p>
-                <div className="mt-2.5 flex items-center gap-2.5">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-mist text-muted">
-                    <DoorIcon size={14} weight="duotone" />
-                  </span>
-                  <div>
-                    <p className="text-sm font-medium text-ink">No rooms yet</p>
-                    <p className="flex items-center gap-1 text-[11px] text-muted">
-                      Add a room to get started
-                      <ArrowIcon size={10} weight="bold" className="opacity-0 transition-opacity group-hover:opacity-100" />
-                    </p>
-                  </div>
-                </div>
-              </button>
-            )}
-          </div>
+      {/* Setup checklist is a full-width banner while onboarding is incomplete, not a
+          permanent block inside either column: it shouldn't be the reason one side of the
+          page reads longer than the other. */}
+      {dataReady && (
+        <div className="px-4 sm:px-8">
+          <SetupChecklist />
+        </div>
+      )}
 
-          {dataReady && <SetupChecklist />}
+      {/* Four tiles, always the same four, so the layout is predictable every visit instead of
+          swapping "Rooms occupied" for "Tenants" depending on whether rooms are set up. */}
+      <div className="grid grid-cols-2 gap-3 px-4 sm:grid-cols-4 sm:px-8">
+        {!dataReady ? (
+          <>
+            <div className="rounded-lg border border-line bg-paper p-4">
+              <Skeleton className="h-3 w-24" />
+              <Skeleton className="mt-2.5 h-6 w-28" />
+            </div>
+            <div className="rounded-lg border border-line bg-paper p-4">
+              <Skeleton className="h-3 w-28" />
+              <Skeleton className="mt-2.5 h-6 w-28" />
+            </div>
+            <div className="rounded-lg border border-line bg-paper p-4">
+              <Skeleton className="h-3 w-20" />
+              <Skeleton className="mt-2.5 h-6 w-20" />
+            </div>
+            <div className="rounded-lg border border-line bg-paper p-4">
+              <Skeleton className="h-3 w-20" />
+              <Skeleton className="mt-2.5 h-6 w-20" />
+            </div>
+          </>
+        ) : (
+          <>
+            <MetricCard flat label="Total collected" value={`K${totalCollected.toLocaleString()}`} tone="success" to="/rent" />
+            <MetricCard
+              flat
+              label="Outstanding balance"
+              value={`K${outstanding.total.toLocaleString()}`}
+              tone={outstanding.total > 0 ? "danger" : "success"}
+              to="/rent"
+            />
+            <MetricCard
+              flat
+              label="Rooms occupied"
+              value={roomsOccupied.total > 0 ? `${roomsOccupied.occupied} / ${roomsOccupied.total}` : "Not set up"}
+              to="/rooms"
+            />
+            <MetricCard
+              flat
+              label="Tenants"
+              value={tenantCount.current}
+              caption={tenantCount.movingIn > 0 ? `+${tenantCount.movingIn} moving in` : undefined}
+              to="/tenants"
+            />
+          </>
+        )}
+      </div>
 
-          {/* Today's tasks. The list is decided by the database (detect_* + sync_tasks); Gemini
-              only rewords titles, so nothing here is a model's opinion about what matters. This
-              replaces the old dashboard-tasks card, which asked an LLM to invent the whole list
-              fresh on every dashboard load. */}
+      {/* Two equal-weight cards per row, so no side of the page reads as the "main" column and
+          no card towers over the one next to it, the way the old 2/3-plus-1/3 columns did. */}
+      <div className="mt-4 grid grid-cols-1 gap-4 px-4 sm:px-8 pb-10 lg:grid-cols-2">
+        {/* Today's tasks, in the same card treatment as its neighbors (the component itself is
+            cardless so it can also sit on the dedicated /tasks page without a double border). */}
+        <div className="rounded-lg border border-line bg-paper p-4">
+          {/* The list is decided by the database (detect_* + sync_tasks); Gemini only rewords
+              titles, so nothing here is a model's opinion about what matters. This replaces the
+              old dashboard-tasks card, which asked an LLM to invent the whole list fresh on every
+              dashboard load. */}
           <TodaysTasks propertyId={propertyId} />
-
-          {/* Recent activity */}
-          <div className="border border-gray-200 p-4 rounded-lg">
-            {/* Header */}
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-2.5">
-                <p className="text-xl font-semibold font-display tracking-tight text-ink">
-                  Recent activity
-                </p>
-
-                {recentActivity.length > 0 && (
-                  <span className="rounded-md bg-mist px-1.5 py-0.5 text-[10px] font-medium text-muted">
-                    {recentActivity.length}
-                  </span>
-                )}
-              </div>
-
-              <Link
-                to="/notifications"
-                className="
-        flex
-        items-center
-        gap-1
-        text-sm
-        font-medium
-        text-muted
-        transition-colors
-        hover:text-ink
-      "
-              >
-                View all activity
-                <CaretRightIcon size={12} />
-              </Link>
-            </div>
-
-            {/* Activity feed */}
-            <div className="mt-3">
-              {!notificationsReady ? (
-                <div className="divide-y divide-line/70">
-                  {Array.from({ length: 3 }).map((_, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center gap-4 py-4"
-                    >
-                      <Skeleton className="h-2.5 w-10 shrink-0" />
-
-                      <div className="min-w-0 flex-1">
-                        <Skeleton className="h-3.5 w-3/4" />
-                        <Skeleton className="mt-2 h-2.5 w-1/3" />
-                      </div>
-
-                      <Skeleton className="h-6 w-6 rounded-md" />
-                    </div>
-                  ))}
-                </div>
-              ) : recentActivity.length === 0 ? (
-                <div
-                  className="
-          flex
-          flex-col
-          items-center
-          justify-center
-          border-y
-          border-line/70
-          py-12
-          text-center
-        "
-                >
-                  <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-full bg-mist">
-                    <Bell size={17} className="text-muted" />
-                  </div>
-
-                  <p className="text-[13px] font-medium text-ink">
-                    No recent activity
-                  </p>
-
-                  <p className="mt-1 text-[11px] text-muted">
-                    Updates from your property will appear here.
-                  </p>
-                </div>
-              ) : (
-                <div className="divide-y divide-line/70">
-                  {recentActivity.map((n) => (
-                    <ActivityRow key={n.id} notification={n} tenants={tenants} onMarkRead={markNotificationRead} />
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
         </div>
 
-        {/* Right column */}
-        <div className="space-y-4">
+        {/* Online payments balance — a wallet-card treatment (icon + title header, a distinct
+            shaded balance panel, one full-width primary action) rather than a plain stat tile,
+            since this is the one number on the page that's actually sitting in a payment
+            gateway, ready to be moved, not just a reporting figure. */}
+        <div className="rounded-lg border border-line bg-paper p-4">
+          <p className="text-xl font-semibold font-display tracking-tight text-ink">Online payments</p>
 
-          {/* Online payments balance — a wallet-card treatment (icon + title header, a distinct
-              shaded balance panel, one full-width primary action) rather than a plain stat tile,
-              since this is the one number on the page that's actually sitting in a payment
-              gateway, ready to be moved, not just a reporting figure. */}
-          <div className="rounded-lg border border-line bg-paper p-4">
-          
+          {!dataReady ? (
+            <div className="mt-4 space-y-2 rounded-md bg-mist p-5">
+              <Skeleton className="mx-auto h-3 w-24" />
+              <Skeleton className="mx-auto h-8 w-32" />
+              <Skeleton className="mx-auto h-3 w-28" />
+              <Skeleton className="mt-3 h-10 w-full rounded-full" />
+            </div>
+          ) : payout ? (
+            <div className="mt-4 rounded-md bg-mist p-5 text-center">
+              <p className="text-xs font-medium text-muted">Your balance</p>
 
-                <p className="text-xl text-center text-blue-800 font-semibold font-display tracking-tight ">Online payments</p>
-            
-
-            {!dataReady ? (
-              <div className="mt-4 space-y-2 rounded-xl bg-mist p-5">
-                <Skeleton className="mx-auto h-3 w-24" />
-                <Skeleton className="mx-auto h-8 w-32" />
-                <Skeleton className="mx-auto h-3 w-28" />
-                <Skeleton className="mt-3 h-10 w-full rounded-full" />
-              </div>
-            ) : payout ? (
-              <div className="mt-4 rounded-xl bg-mist p-5 text-center">
-                <p className="text-xs font-medium text-muted">Your balance</p>
-
-                <div className="mt-2 flex items-center justify-center gap-2">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand text-paper">
-                    <Coins size={12} weight="fill" />
-                  </span>
-                  <p className="font-display text-[28px] leading-none font-bold tracking-tight text-ink">
-                    {payout.amount}
-                  </p>
-                </div>
-
-                <p className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-emerald-600">
-                  <CheckCircleIcon size={11} weight="fill" />
-                  {payout.status}
-                </p>
-
-                <Button
-                  variant="primary"
-                  onClick={() => navigate("/online-payments")}
-                  className="mt-5 flex w-full items-center justify-center gap-1.5"
-                >
-                  Transfer to bank
-                  <ArrowIcon size={14} weight="bold" />
-                </Button>
-              </div>
-            ) : (
-              <div className="mt-4 flex flex-col items-center justify-center gap-2 rounded-xl bg-mist p-6 text-center">
-                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-paper text-muted">
-                  <Coins size={22} weight="duotone" />
+              <div className="mt-2 flex items-center justify-center gap-2">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand text-paper">
+                  <Coins size={12} weight="fill" />
                 </span>
-                <p className="text-sm font-semibold text-ink">Nothing to transfer yet</p>
-                <p className="max-w-[220px] text-xs text-muted">
-                  Rent collected automatically will show up here.
+                <p className="font-display text-[28px] leading-none font-bold tracking-tight text-ink">
+                  {payout.amount}
                 </p>
+              </div>
+
+              <p className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-emerald-600">
+                <CheckCircleIcon size={11} weight="fill" />
+                {payout.status}
+              </p>
+
+              <Button
+                variant="primary"
+                onClick={() => navigate("/online-payments")}
+                className="mt-5 flex w-full items-center justify-center gap-1.5"
+              >
+                Transfer to bank
+                <ArrowIcon size={14} weight="bold" />
+              </Button>
+            </div>
+          ) : (
+            <div className="mt-4 flex flex-col items-center justify-center gap-2 rounded-md bg-mist p-6 text-center">
+              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-paper text-muted">
+                <Coins size={22} weight="duotone" />
+              </span>
+              <p className="text-sm font-semibold text-ink">Nothing to transfer yet</p>
+              <p className="max-w-[220px] text-xs text-muted">
+                Rent collected automatically will show up here.
+              </p>
+            </div>
+          )}
+
+          {/* Recent transactions: the last few rent payments that landed via mobile money,
+              separate from the balance above since a payment can land, then already be
+              transferred out, and both are worth seeing. */}
+          <div className="mt-5 border-t border-line/70 pt-4">
+            <p className="text-xs font-semibold text-ink/70">Recent transactions</p>
+
+            {!collectionsReady ? (
+              <div className="mt-2.5 divide-y divide-line/70">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="flex items-center justify-between gap-3 py-2.5">
+                    <div className="min-w-0 flex-1">
+                      <Skeleton className="h-3.5 w-2/3" />
+                      <Skeleton className="mt-1.5 h-2.5 w-1/3" />
+                    </div>
+                    <Skeleton className="h-3.5 w-14" />
+                  </div>
+                ))}
+              </div>
+            ) : recentCollections.length === 0 ? (
+              <p className="py-6 text-center text-xs text-muted">No online payments yet.</p>
+            ) : (
+              <div className="mt-1 divide-y divide-line/70">
+                {recentCollections.map((c) => (
+                  <div key={c.id} className="flex items-center justify-between gap-3 py-2.5">
+                    <div className="min-w-0">
+                      <p className="truncate text-[13px] font-medium text-ink">{c.tenantName ?? c.phone}</p>
+                      <p className="text-[11px] text-muted">
+                        {timeAgo(c.createdAt)} · {c.operator.toUpperCase()}
+                      </p>
+                    </div>
+                    <p className="shrink-0 text-[13px] font-semibold text-emerald-600">+K{c.amount.toLocaleString()}</p>
+                  </div>
+                ))}
               </div>
             )}
           </div>
-
-          {/* Expenses this month — a donut broken down by category, replacing the old
-              maintenance-inbox preview (maintenance requests already have their own dashboard
-              entry point via Recent activity / the sidebar). */}
-          <ExpensesBreakdownCard />
         </div>
+
+        {/* Recent activity, now the exact same component as the bell dropdown (header, day
+            grouping, bundled rows, footer) inside a plain card shell instead of a floating
+            panel, so this and the dropdown can never drift into two different designs. */}
+        <div className="overflow-hidden rounded-lg border border-line bg-paper">
+          <NotificationsFeed maxBundles={5} />
+        </div>
+
+        {/* Expenses this month — a donut broken down by category, replacing the old
+            maintenance-inbox preview (maintenance requests already have their own dashboard
+            entry point via Recent activity / the sidebar). */}
+        <ExpensesBreakdownCard />
       </div>
 
       <AnimatePresence>
@@ -481,7 +436,7 @@ export default function Dashboard() {
             onClose={() => setPaymentStep(null)}
             onPick={(t) => {
               setPayingTenant(t);
-              setPaymentStep("ledger");
+              setPaymentStep("confirm");
             }}
           />
         )}
@@ -500,11 +455,15 @@ export default function Dashboard() {
         {paymentStep === "confirm" && payingTenant && (
           <LogPaymentModal
             tenantName={payingTenant.name}
-            room={`${payingTenant.room} · ${payingTenant.roomType}`}
+            room={[payingTenant.room, payingTenant.roomType].filter(Boolean).join(" · ") || "No unit"}
             outstanding={calcTotalOwed(payingTenant) || payingTenant.rentAmount}
             rentAmount={payingTenant.rentAmount}
             ledger={payingTenant.ledger}
-            onClose={() => setPaymentStep("ledger")}
+            moveInDate={payingTenant.moveInDate}
+            onClose={() => {
+              setPaymentStep(null);
+              setPayingTenant(null);
+            }}
             onConfirm={(payments) => {
               logPayments(
                 payingTenant.id,

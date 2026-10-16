@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { usePayoutSummary } from "./usePayoutSummary";
 import {
   sendPayout,
@@ -16,13 +16,35 @@ export function recipientLabel(r: PayoutRecipient): string {
   return `${r.account_name ?? "Bank"} •••• ${(r.account_number ?? "").slice(-4)}`;
 }
 
+/** Identity of a payout destination: same bank account, or same mobile money number on the same
+ * network (last 9 digits, so 0977..., 260977... and +260977... match). */
+export function recipientKey(r: PayoutRecipient): string {
+  const id =
+    r.type === "bank"
+      ? `${r.bank_code ?? ""}|${r.account_number ?? ""}`
+      : `${r.provider ?? ""}|${(r.phone_number ?? "").replace(/\D/g, "").slice(-9)}`;
+  return `${r.type}|${id}`;
+}
+
+/** One entry per real destination. Default wins if any copy is the default, otherwise the oldest. */
+export function dedupeRecipients(list: PayoutRecipient[]): PayoutRecipient[] {
+  const map = new Map<string, PayoutRecipient>();
+  for (const r of list) {
+    const k = recipientKey(r);
+    const existing = map.get(k);
+    if (!existing || (r.is_default && !existing.is_default)) map.set(k, r);
+  }
+  return [...map.values()];
+}
+
 /** The full "withdraw money" state machine — idle -> confirm (pick a recipient) -> email-OTP
  * (request/verify-withdrawal-otp) -> sending -> success/error, polling checkPayoutStatus once the
  * transfer is underway. Shared between Settings' inline "Available to withdraw" block and the
  * dedicated Payouts page so the two surfaces can't drift on what is, deliberately, the actual
  * money-movement authorization path — see request/verify-withdrawal-otp's file comments. Each
  * caller owns its own presentation; this hook owns nothing about layout. */
-export function useWithdrawFlow(recipients: PayoutRecipient[]) {
+export function useWithdrawFlow(rawRecipients: PayoutRecipient[]) {
+  const recipients = useMemo(() => dedupeRecipients(rawRecipients), [rawRecipients]);
   const { payout, lastPayout } = usePayoutSummary();
   const [step, setStep] = useState<WithdrawStep>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -31,6 +53,7 @@ export function useWithdrawFlow(recipients: PayoutRecipient[]) {
   const [devCode, setDevCode] = useState<string | null>(null);
   const [otpCode, setOtpCode] = useState("");
   const [result, setResult] = useState<SendPayoutResult | null>(null);
+  const [stillProcessing, setStillProcessing] = useState(false);
   const pollTimer = useRef<number | null>(null);
 
   useEffect(
@@ -62,7 +85,8 @@ export function useWithdrawFlow(recipients: PayoutRecipient[]) {
         if (attempt >= 20) {
           // Still processing after ~60s — Lenco/the webhook will settle it eventually; don't leave
           // the panel spinning forever, just stop polling and let whichever surface it's on pick it
-          // up later.
+          // up later. It is NOT confirmed sent, so flag it as still processing.
+          setStillProcessing(true);
           setStep("success");
           return;
         }
@@ -93,13 +117,19 @@ export function useWithdrawFlow(recipients: PayoutRecipient[]) {
     if (!payout?.propertyId || !payout.rawAmount || otpCode.trim().length !== 6 || !selectedRecipient) return;
     setStep("sending");
     setError(null);
+    setStillProcessing(false);
     try {
       const { confirmationToken } = await verifyWithdrawalOtp(payout.propertyId, otpCode.trim());
       const sent = await sendPayout(payout.propertyId, payout.rawAmount, confirmationToken, selectedRecipient.id);
       setResult(sent);
       poll(sent.payoutId, 0);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to send the transfer.");
+      const raw = err instanceof Error ? err.message : "";
+      setError(
+        !raw || raw === "Failed to send payout."
+          ? "We could not confirm whether the transfer went through. Do not retry yet. Check your payout history in a few minutes."
+          : raw
+      );
       setStep("error");
     }
   };
@@ -109,6 +139,7 @@ export function useWithdrawFlow(recipients: PayoutRecipient[]) {
     setError(null);
     setOtpCode("");
     setResult(null);
+    setStillProcessing(false);
   };
 
   return {
@@ -130,5 +161,7 @@ export function useWithdrawFlow(recipients: PayoutRecipient[]) {
     /** The actual transfer outcome once `submit` resolves — amount/feeAmount/netAmount, itemized
      * for display; never assume it matches what was requested (see sendPayout's comment). */
     result,
+    /** True when polling gave up while the transfer was still processing; it is not confirmed sent. */
+    stillProcessing,
   };
 }

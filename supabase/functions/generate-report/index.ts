@@ -376,15 +376,51 @@ function ensureRoom(ctx: Ctx, y: number, rowH: number, onNewPage: () => number):
 // deno-lint-ignore no-explicit-any
 type SupabaseClient = any;
 
+/** "2026" for a whole calendar year, "October 2026" for a whole month, otherwise the date range. */
+function periodLabelFor(dateFrom: string, dateTo: string): string {
+  const [fy, fm, fd] = dateFrom.split("-").map(Number);
+  const [ty, tm, td] = dateTo.split("-").map(Number);
+  if (fy === ty && fm === 1 && fd === 1 && tm === 12 && td === 31) return String(fy);
+  const lastDay = new Date(ty, tm, 0).getDate();
+  if (fy === ty && fm === tm && fd === 1 && td === lastDay) return monthYearLabel(dateFrom);
+  return `${formatDMY(dateFrom)} to ${formatDMY(dateTo)}`;
+}
+
+/** Rent actually received in the period, read from the tenants' ledgers (manual and online
+ * payments both land there), plus expenses grouped by category with repeat items rolled up, and a
+ * month-by-month breakdown. The old version summed only online collections, so cash and manually
+ * logged rent showed as K0. */
 async function fetchIncomeVsExpenses(supabase: SupabaseClient, propertyId: string, dateFrom: string, dateTo: string) {
-  const { data: collections } = await supabase
-    .from("collections")
-    .select("amount")
-    .eq("property_id", propertyId)
-    .eq("status", "successful")
-    .gte("created_at", `${dateFrom}T00:00:00Z`)
-    .lte("created_at", `${dateTo}T23:59:59Z`);
-  const rentCollected = (collections ?? []).reduce((sum: number, c: { amount: number }) => sum + c.amount, 0);
+  const { data: ledger } = await supabase
+    .from("ledger_entries")
+    .select("amount, paid_amount, status, source, event_type, origin, affects_balance, voided_at, created_at, tenants!inner(property_id)")
+    .eq("tenants.property_id", propertyId)
+    .gte("created_at", `${dateFrom}T00:00:00+02:00`)
+    .lte("created_at", `${dateTo}T23:59:59+02:00`)
+    .limit(20000);
+
+  type LedgerRow = {
+    amount: number; paid_amount: number | null; status: string | null; source: string | null; event_type: string | null;
+    origin: string | null; affects_balance: boolean | null; voided_at: string | null; created_at: string;
+  };
+  const monthKey = (iso: string) => {
+    const d = new Date(new Date(iso).getTime() + 2 * 3600 * 1000); // Lusaka
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+  };
+  const rentByMonth = new Map<string, number>();
+  for (const r of (ledger ?? []) as LedgerRow[]) {
+    if (r.voided_at || r.affects_balance === false) continue;
+    let received = 0;
+    if (r.event_type === "payment") {
+      if (r.origin === "penalty_waiver" || r.origin === "import" || Number(r.amount) >= 0) continue;
+      received = -Number(r.amount);
+    } else if (r.event_type == null && (r.source === "manual" || r.source === "lenco")) {
+      if (r.status === "paid") received = Number(r.paid_amount ?? r.amount);
+      else if (r.status === "partial") received = Number(r.paid_amount ?? 0);
+    }
+    if (received > 0) rentByMonth.set(monthKey(r.created_at), (rentByMonth.get(monthKey(r.created_at)) ?? 0) + received);
+  }
+  const rentCollected = Array.from(rentByMonth.values()).reduce((a, b) => a + b, 0);
 
   const { data: expenses } = await supabase
     .from("expenses")
@@ -397,17 +433,42 @@ async function fetchIncomeVsExpenses(supabase: SupabaseClient, propertyId: strin
   type ExpenseRow = { name: string; amount: number; date: string; category_id: string | null; expense_categories: { name: string } | null };
   const rows = (expenses ?? []) as ExpenseRow[];
 
-  const groups = new Map<string, { category: string; items: { name: string; amount: number }[] }>();
+  // Same-named expenses within a category are rolled into one line ("ZESCO electricity, 12 payments").
+  const groups = new Map<string, { category: string; items: Map<string, { name: string; amount: number; count: number }> }>();
+  const expByMonth = new Map<string, number>();
   for (const e of rows) {
     const categoryName = e.expense_categories?.name ?? "Uncategorised";
     const key = e.category_id ?? "uncategorised";
-    if (!groups.has(key)) groups.set(key, { category: categoryName, items: [] });
-    groups.get(key)!.items.push({ name: e.name, amount: e.amount });
+    if (!groups.has(key)) groups.set(key, { category: categoryName, items: new Map() });
+    const items = groups.get(key)!.items;
+    const itemKey = e.name.trim().toLowerCase();
+    const it = items.get(itemKey) ?? { name: e.name.trim(), amount: 0, count: 0 };
+    it.amount += Number(e.amount);
+    it.count += 1;
+    items.set(itemKey, it);
+    const mk = e.date.slice(0, 7);
+    expByMonth.set(mk, (expByMonth.get(mk) ?? 0) + Number(e.amount));
+  }
+  const groupList = Array.from(groups.values())
+    .map((g) => ({ category: g.category, items: Array.from(g.items.values()).sort((a, b) => b.amount - a.amount) }))
+    .sort((a, b) => b.items.reduce((s, i) => s + i.amount, 0) - a.items.reduce((s, i) => s + i.amount, 0));
+  const totalExpenses = rows.reduce((sum, e) => sum + Number(e.amount), 0);
+
+  // Every month in the range, up to the current month.
+  const nowKey = monthKey(new Date().toISOString());
+  const months: { month: string; label: string; rent: number; expenses: number; net: number }[] = [];
+  let [y, m] = dateFrom.slice(0, 7).split("-").map(Number);
+  const endKey = dateTo.slice(0, 7) < nowKey ? dateTo.slice(0, 7) : nowKey;
+  while (`${y}-${String(m).padStart(2, "0")}` <= endKey) {
+    const k = `${y}-${String(m).padStart(2, "0")}`;
+    const rent = rentByMonth.get(k) ?? 0;
+    const exp = expByMonth.get(k) ?? 0;
+    months.push({ month: k, label: new Date(y, m - 1, 1).toLocaleDateString("en-GB", { month: "short", year: "numeric" }), rent, expenses: exp, net: rent - exp });
+    m += 1;
+    if (m > 12) { m = 1; y += 1; }
   }
 
-  const totalExpenses = rows.reduce((sum, e) => sum + e.amount, 0);
-
-  return { rentCollected, groups: Array.from(groups.values()), totalExpenses, net: rentCollected - totalExpenses };
+  return { rentCollected, groups: groupList, totalExpenses, net: rentCollected - totalExpenses, months, periodLabel: periodLabelFor(dateFrom, dateTo) };
 }
 
 async function fetchOccupancy(supabase: SupabaseClient, propertyId: string) {
@@ -417,14 +478,15 @@ async function fetchOccupancy(supabase: SupabaseClient, propertyId: string) {
     .eq("property_id", propertyId);
   const { data: tenants } = await supabase
     .from("tenants")
-    .select("id, room_type_id")
+    .select("id, room_type_id, move_in_date")
     .eq("property_id", propertyId)
     .eq("active", true);
 
   type RoomRow = { id: string; room_type_id: string | null; room_types: { name: string; capacity: number } | null };
-  type TenantRow = { room_type_id: string | null };
+  type TenantRow = { room_type_id: string | null; move_in_date: string | null };
   const roomRows = (rooms ?? []) as RoomRow[];
-  const tenantRows = (tenants ?? []) as TenantRow[];
+  // Someone who hasn't moved in yet isn't occupying a bed today.
+  const tenantRows = ((tenants ?? []) as TenantRow[]).filter((t) => hasMovedIn(t.move_in_date));
 
   const byType = new Map<string, { name: string; rooms: number; capacityPerRoom: number }>();
   for (const r of roomRows) {
@@ -456,10 +518,19 @@ async function fetchOccupancy(supabase: SupabaseClient, propertyId: string) {
   return { rows: rowsOut, totalRooms, totalBeds, totalOccupied, vacant, occupancyPct };
 }
 
+/** A tenant whose move-in date is still in the future owes nothing that is due yet. */
+function hasMovedIn(moveIn: string | null | undefined): boolean {
+  if (!moveIn) return true;
+  const d = new Date(moveIn.replace("Sept", "Sep"));
+  if (Number.isNaN(d.getTime())) return true;
+  const now = new Date();
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()) <= new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
 async function fetchOverdueRent(supabase: SupabaseClient, propertyId: string) {
   const { data: tenants } = await supabase
     .from("tenants")
-    .select("id, name, owed_amount, days_overdue, guardian_name, guardian_phone, room_id, rooms!tenants_room_id_fkey(number)")
+    .select("id, name, owed_amount, days_overdue, guardian_name, guardian_phone, emergency_contacts, unit_label, move_in_date, room_id, rooms!tenants_room_id_fkey(number)")
     .eq("property_id", propertyId)
     .eq("active", true)
     .gt("owed_amount", 0);
@@ -470,15 +541,25 @@ async function fetchOverdueRent(supabase: SupabaseClient, propertyId: string) {
     days_overdue: number | null;
     guardian_name: string | null;
     guardian_phone: string | null;
+    move_in_date: string | null;
+    unit_label: string | null;
+    emergency_contacts: { name?: string; relation?: string; phones?: string[] }[] | null;
     rooms: { number: string } | null;
   };
+  // The guardian lives in emergency_contacts; the old guardian_* columns are never filled in.
+  const contactOf = (t: Row): string | null => {
+    const c = (t.emergency_contacts ?? []).find((x) => x?.relation === "Guardian") ?? (t.emergency_contacts ?? [])[0];
+    if (c && (c.name || c.phones?.[0])) return [c.name, c.phones?.[0]].filter(Boolean).join(", ");
+    return t.guardian_name || t.guardian_phone ? [t.guardian_name, t.guardian_phone].filter(Boolean).join(", ") : null;
+  };
   const rows = ((tenants ?? []) as Row[])
+    .filter((t) => hasMovedIn(t.move_in_date))
     .map((t) => ({
       tenant: t.name,
-      room: t.rooms?.number ?? "Not assigned",
+      room: t.rooms?.number ?? t.unit_label ?? "Not assigned",
       daysOverdue: t.days_overdue ?? 0,
       owed: t.owed_amount,
-      emergencyContact: t.guardian_name || t.guardian_phone ? [t.guardian_name, t.guardian_phone].filter(Boolean).join(", ") : null,
+      emergencyContact: contactOf(t),
     }))
     .sort((a, b) => b.daysOverdue - a.daysOverdue || b.owed - a.owed);
 
@@ -572,7 +653,6 @@ function buildIncomeVsExpensesPdf(
 ) {
   const { doc } = ctx;
   const createdOn = formatDMY(new Date().toISOString().slice(0, 10));
-  const monthLabel = monthYearLabel(header.dateFrom);
   let y = drawHeader(ctx, {
     logoDataUrl: header.logoDataUrl,
     logoFormat: header.logoFormat,
@@ -580,25 +660,25 @@ function buildIncomeVsExpensesPdf(
     propertyLocation: header.propertyLocation,
     reportType: "income_vs_expenses",
     createdOn,
-    periodLine: `Time Period: ${monthLabel} (${formatDMY(header.dateFrom)} to ${formatDMY(header.dateTo)})`,
+    periodLine: `Time Period: ${data.periodLabel} (${formatDMY(header.dateFrom)} to ${formatDMY(header.dateTo)})`,
     audience: REPORT_AUDIENCE.income_vs_expenses,
   });
 
+  // Summary cards
   y += 20;
-  const columns: TableColumn[] = [
-    { label: "Item", width: 0.44 },
-    { label: "Category", width: 0.32 },
-    { label: "Amount [sum]", width: 0.24, align: "right" },
-  ];
-  const tableX = MARGIN_X;
-  y = drawTableHeader(ctx, tableX, y, columns, CONTENT_W);
+  const gap = 12;
+  const cardW = (CONTENT_W - gap * 2) / 3;
+  drawCard(ctx, { x: MARGIN_X, y, w: cardW, h: 70, label: "Rent collected", value: formatKwacha(data.rentCollected), bg: COLOR.incomeBg, text: COLOR.incomeText });
+  drawCard(ctx, { x: MARGIN_X + cardW + gap, y, w: cardW, h: 70, label: "Expenses", value: formatKwacha(data.totalExpenses), bg: COLOR.expenseBg, text: COLOR.expenseText });
+  drawCard(ctx, { x: MARGIN_X + (cardW + gap) * 2, y, w: cardW, h: 70, label: "Net income", value: formatKwacha(data.net), bg: COLOR.netBg, text: COLOR.white });
+  y += 70;
 
   const rowH = 24;
-  const drawRow = (
-    item: string,
-    category: string,
-    amount: string,
-    style: { bg?: [number, number, number]; text?: [number, number, number]; bold?: boolean } = {}
+  const tableX = MARGIN_X;
+  const drawCells = (
+    columns: TableColumn[],
+    cells: string[],
+    style: { bg?: [number, number, number]; text?: [number, number, number]; bold?: boolean; muted?: number[] } = {},
   ) => {
     y = ensureRoom(ctx, y, rowH, () => drawTableHeader(ctx, tableX, MARGIN_TOP, columns, CONTENT_W));
     if (style.bg) {
@@ -608,52 +688,66 @@ function buildIncomeVsExpensesPdf(
     doc.setDrawColor(...COLOR.border);
     doc.setLineWidth(0.5);
     doc.rect(tableX, y, CONTENT_W, rowH, "S");
-    const textColor = style.text ?? COLOR.ink;
-    setFont(ctx, style.bold ? "bold" : "normal", 13, textColor);
-    const itemW = CONTENT_W * columns[0].width;
-    const catW = CONTENT_W * columns[1].width;
-    // Simplification: rows are a fixed height, so a name too long for one line is clipped to its
-    // first line rather than growing the row to wrap onto a second — true wrapping needs
-    // variable row heights, which the merged-category-cell math above isn't built for yet.
-    doc.text(doc.splitTextToSize(item, itemW - 20)[0] ?? item, tableX + 10, y + 16);
-    if (category) doc.text(category, tableX + itemW + 10, y + 16);
-    doc.text(amount, tableX + CONTENT_W - 10, y + 16, { align: "right" });
+    let cx = tableX;
+    columns.forEach((col, ci) => {
+      const w = CONTENT_W * col.width;
+      const color = style.muted?.includes(ci) ? COLOR.grey : (style.text ?? COLOR.ink);
+      setFont(ctx, style.bold ? "bold" : "normal", 13, color);
+      const text = doc.splitTextToSize(cells[ci] ?? "", w - 20)[0] ?? "";
+      if (col.align === "right") doc.text(text, cx + w - 10, y + 16, { align: "right" });
+      else doc.text(text, cx + 10, y + 16);
+      cx += w;
+    });
     y += rowH;
   };
+  const sectionTitle = (title: string) => {
+    y = ensureRoom(ctx, y, 60, () => MARGIN_TOP);
+    y += 28;
+    setFont(ctx, "bold", 15, COLOR.ink);
+    doc.text(title, MARGIN_X, y);
+    y += 10;
+  };
 
-  drawRow("Rent collected", "Income", formatKwacha(data.rentCollected), { bg: COLOR.incomeBg, text: COLOR.incomeText, bold: true });
+  // Month by month (only when the period spans more than one month)
+  if (data.months.length > 1) {
+    sectionTitle("Month by month");
+    const mcols: TableColumn[] = [
+      { label: "Month", width: 0.28 },
+      { label: "Rent collected", width: 0.24, align: "right" },
+      { label: "Expenses", width: 0.24, align: "right" },
+      { label: "Net", width: 0.24, align: "right" },
+    ];
+    y = drawTableHeader(ctx, tableX, y, mcols, CONTENT_W);
+    for (const mo of data.months) {
+      drawCells(mcols, [mo.label, formatKwacha(mo.rent), formatKwacha(mo.expenses), formatKwacha(mo.net)]);
+    }
+    drawCells(mcols, ["Total", formatKwacha(data.rentCollected), formatKwacha(data.totalExpenses), formatKwacha(data.net)], { bg: COLOR.headerBandBg, bold: true });
+  }
 
-  const itemW = CONTENT_W * columns[0].width;
-  const catW = CONTENT_W * columns[1].width;
+  // Breakdown
+  sectionTitle("Breakdown");
+  const columns: TableColumn[] = [
+    { label: "Item", width: 0.5 },
+    { label: "Category", width: 0.26 },
+    { label: "Amount", width: 0.24, align: "right" },
+  ];
+  y = drawTableHeader(ctx, tableX, y, columns, CONTENT_W);
+  drawCells(columns, ["Rent collected", "Income", formatKwacha(data.rentCollected)], { bg: COLOR.incomeBg, text: COLOR.incomeText, bold: true });
 
   for (const group of data.groups) {
-    // The category name is drawn once per group, as a single label overlaid across the full
-    // height of its rows (a stand-in for a true merged/rowSpan cell, which jsPDF has no concept
-    // of) — drawn AFTER the group's rows so its border sits on top of each row's own border,
-    // reading as one continuous cell rather than one per row. Known simplification: this assumes
-    // a category's rows don't straddle a page break — fine for a typical month's expense list,
-    // but a category with enough line items to overflow a page would draw its merged cell wrong.
-    const groupStartY = y;
-    for (const item of group.items) {
-      drawRow(item.name, "", formatKwacha(item.amount));
-    }
+    group.items.forEach((item, idx) => {
+      const name = item.count > 1 ? `${item.name} (${item.count} payments)` : item.name;
+      drawCells(columns, [name, idx === 0 ? group.category : "", formatKwacha(item.amount)], { muted: [1] });
+    });
     const subtotal = group.items.reduce((s, i) => s + i.amount, 0);
-    drawRow("Subtotal", "", formatKwacha(subtotal), { bg: COLOR.headerBandBg, bold: true });
-    const groupEndY = y;
-
-    doc.setDrawColor(...COLOR.border);
-    doc.setLineWidth(0.5);
-    doc.rect(tableX + itemW, groupStartY, catW, groupEndY - groupStartY, "S");
-    setFont(ctx, "normal", 13, COLOR.ink);
-    doc.text(group.category, tableX + itemW + 10, groupStartY + (groupEndY - groupStartY) / 2 + 4);
+    drawCells(columns, [`${group.category} subtotal`, "", formatKwacha(subtotal)], { bg: COLOR.headerBandBg, bold: true });
   }
-
   if (data.groups.length === 0) {
-    drawRow("No expenses logged in this period.", "", formatKwacha(0));
+    drawCells(columns, ["No expenses logged in this period.", "", formatKwacha(0)]);
   }
 
-  drawRow("Total expenses", "Expenses", formatKwacha(data.totalExpenses), { bg: COLOR.expenseBg, text: COLOR.expenseText, bold: true });
-  drawRow(`Net for ${monthLabel}`, "Net income", formatKwacha(data.net), { bg: COLOR.netBg, text: COLOR.white, bold: true });
+  drawCells(columns, ["Total expenses", "Expenses", formatKwacha(data.totalExpenses)], { bg: COLOR.expenseBg, text: COLOR.expenseText, bold: true });
+  drawCells(columns, [`Net for ${data.periodLabel}`, "Net income", formatKwacha(data.net)], { bg: COLOR.netBg, text: COLOR.white, bold: true });
 }
 
 function buildOccupancyPdf(
@@ -986,17 +1080,16 @@ function buildPaymentsReceivedPdf(
 // CSV builders
 // ---------------------------------------------------------------------------------------------
 
-function buildIncomeVsExpensesCsv(data: Awaited<ReturnType<typeof fetchIncomeVsExpenses>>, dateFrom: string): string {
-  const month = monthYearLabel(dateFrom);
-  const rows: (string | number)[][] = [[month, "Income", "Income", "Rent collected", data.rentCollected]];
+function buildIncomeVsExpensesCsv(data: Awaited<ReturnType<typeof fetchIncomeVsExpenses>>, _dateFrom: string): string {
+  const rows: (string | number)[][] = [];
+  for (const mo of data.months) rows.push(["Month", mo.label, "", "Rent collected", mo.rent], ["Month", mo.label, "", "Expenses", mo.expenses], ["Month", mo.label, "", "Net", mo.net]);
+  rows.push(["Income", data.periodLabel, "Income", "Rent collected", data.rentCollected]);
   for (const group of data.groups) {
-    for (const item of group.items) {
-      rows.push([month, "Expense", group.category, item.name, item.amount]);
-    }
+    for (const item of group.items) rows.push(["Expense", data.periodLabel, group.category, item.count > 1 ? `${item.name} (${item.count} payments)` : item.name, item.amount]);
   }
-  rows.push([month, "Total", "Expenses", "Total expenses", data.totalExpenses]);
-  rows.push([month, "Total", "Net income", `Net for ${month}`, data.net]);
-  return toCsv(["Month", "Type", "Category", "Item", "Amount_ZMW"], rows);
+  rows.push(["Total", data.periodLabel, "Expenses", "Total expenses", data.totalExpenses]);
+  rows.push(["Total", data.periodLabel, "Net income", `Net for ${data.periodLabel}`, data.net]);
+  return toCsv(["Section", "Period", "Category", "Item", "Amount_ZMW"], rows);
 }
 
 function buildOccupancyCsv(data: Awaited<ReturnType<typeof fetchOccupancy>>): string {

@@ -79,7 +79,7 @@ function RecentPayouts({ propertyId }: { propertyId: string }) {
                     <p className="text-sm font-medium text-ink">{formatCurrency(row.amount)}</p>
                     <p className="text-xs text-muted">{formatPayoutDate(row.createdAt)}</p>
                   </div>
-                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${payoutStatusStyle[row.status]}`}>
+                  <span className={`rounded-md px-2 py-0.5 text-xs font-semibold ${payoutStatusStyle[row.status]}`}>
                     {payoutStatusLabel[row.status]}
                   </span>
                 </div>
@@ -210,7 +210,11 @@ export default function PayoutDetailDrawer({
       setPolling(true);
       pollStatus(payoutId, 0);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to send the transfer.";
+      const raw = err instanceof Error ? err.message : "";
+      const message =
+        !raw || raw === "Failed to send payout."
+          ? "We could not confirm whether the transfer went through. Do not retry yet. Check your payout history in a few minutes."
+          : raw;
       setSendError(message);
       showToast(message, "error");
     } finally {
@@ -260,7 +264,7 @@ export default function PayoutDetailDrawer({
                 <p className="text-xs text-muted">
                   We emailed a 6-digit code to {maskedEmail}. It expires in 5 minutes.
                 </p>
-                {devCode && (
+                {import.meta.env.DEV && devCode && (
                   <p className="text-xs text-amber-600">
                     Dev mode - email isn't connected yet, your code is <span className="font-mono font-semibold">{devCode}</span>.
                   </p>
@@ -323,7 +327,7 @@ export default function PayoutDetailDrawer({
             <p className="font-display text-2xl font-semibold tracking-tight text-ink">{payout.amount}</p>
           </div>
           <span
-            className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${
+            className={`shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold ${
               lencoConnected ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"
             }`}
           >

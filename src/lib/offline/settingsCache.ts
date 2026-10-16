@@ -12,7 +12,16 @@
 const KEY = "instay:cachedSettings";
 
 export type CachedSettingsBootstrap = {
-  property: { id: string; name: string; address: string; propertyType: string; slug: string; logoUrl: string | null };
+  property: {
+    id: string;
+    name: string;
+    address: string;
+    lat?: number | null;
+    lng?: number | null;
+    propertyType: string;
+    slug: string;
+    logoUrl: string | null;
+  };
   settingsRow: unknown;
   properties: string[];
 };
@@ -24,6 +33,13 @@ export function readSettingsCache(): CachedSettingsBootstrap | null {
   } catch {
     return null;
   }
+}
+
+/** Patch the cached property after a save, so the next load doesn't briefly show the old value. */
+export function patchCachedProperty(patch: Partial<CachedSettingsBootstrap["property"]>): void {
+  const cached = readSettingsCache();
+  if (!cached) return;
+  writeSettingsCache({ ...cached, property: { ...cached.property, ...patch } });
 }
 
 export function writeSettingsCache(data: CachedSettingsBootstrap): void {

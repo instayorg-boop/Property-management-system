@@ -141,7 +141,7 @@ export default function PortalMaintenance() {
                 type="button"
                 onClick={() => setLocation(opt)}
                 disabled={submitting}
-                className="rounded-full px-2.5 py-1 text-[12px] font-medium"
+                className="rounded-md px-2 py-0.5 text-xs font-semibold"
                 style={{
                   background: location === opt ? "var(--p-accent-tint)" : "#F1F2F5",
                   color: location === opt ? "var(--p-accent)" : "var(--p-ink-soft)",

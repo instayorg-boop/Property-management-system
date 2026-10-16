@@ -2,7 +2,7 @@ import { supabase } from "./supabaseClient";
 import type { Tables } from "./database.types";
 
 export type NotificationRow = Tables<"notifications">;
-export type NotificationCategory = "payment" | "maintenance" | "payout" | "overdue" | "system";
+export type NotificationCategory = "payment" | "maintenance" | "payout" | "overdue" | "system" | "reminders";
 
 const PAGE_SIZE = 50;
 
@@ -11,6 +11,9 @@ export async function listNotifications(propertyId: string): Promise<Notificatio
     .from("notifications")
     .select("*")
     .eq("property_id", propertyId)
+    // Per-payment rows (one per collection) stay in the table for the SMS/in-app digest jobs to
+    // read, but are hidden here, the weekly digest row is the only payment notification shown.
+    .eq("visible_in_feed", true)
     .order("created_at", { ascending: false })
     .limit(PAGE_SIZE);
   if (error) throw error;

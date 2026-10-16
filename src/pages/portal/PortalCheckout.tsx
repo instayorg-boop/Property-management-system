@@ -5,6 +5,7 @@ import {
   getCollectionStatus,
   generatePortalReceipt,
   groupPortalLedger,
+  portalOwedPeriodLabel,
 } from "../../lib/payPortal";
 import { onlineFeeRateForRent } from "../../lib/pricing";
 import { MOBILE_MONEY_LOGO } from "../../lib/mobileMoneyProviders";
@@ -47,7 +48,7 @@ const MAX_POLLS = 20; // ~60s before we stop waiting and tell the tenant to chec
 export default function PortalCheckout() {
   const { token } = useParams();
   const navigate = useNavigate();
-  const { tenant, ledger, identity, loading, notFound } = usePortal(token);
+  const { tenant, ledger, identity, loading, notFound, nextDueDate } = usePortal(token);
 
   const [amountInput, setAmountInput] = useState<string | null>(null);
   const [editingAmount, setEditingAmount] = useState(false);
@@ -103,12 +104,16 @@ export default function PortalCheckout() {
   const baseRent = Math.max(amount - tenant.penaltyAmount, 0);
 
   const openRows = groupPortalLedger(ledger).filter((row) => row.status !== "paid");
-  const payingFor =
-    openRows.length === 0
-      ? `${new Date().toLocaleDateString("en-GB", { month: "long", year: "numeric" })} rent`
-      : openRows.length === 1
-        ? openRows[0].label
-        : `${openRows.length} unpaid periods`;
+  // Itemised, per period, from the same ledger rows the home screen shows — so the figure being
+  // charged can always be traced back to specific months. Anything the ledger rows do not explain
+  // is shown as its own line rather than being folded silently into "Rent".
+  const rentBalance = Math.max(balanceOwed - tenant.penaltyAmount, 0);
+  const periodLines = openRows
+    .map((row) => ({ label: row.label, amount: Math.round((row.amount - (row.paidAmount ?? 0)) * 100) / 100 }))
+    .filter((line) => line.amount > 0);
+  const explained = periodLines.reduce((sum, line) => sum + line.amount, 0);
+  const unexplained = Math.round((rentBalance - explained) * 100) / 100;
+  const payingFor = portalOwedPeriodLabel(openRows.map((r) => r.label), nextDueDate);
 
   const amountValid = amount > 0 && amount <= balanceOwed;
   const phoneValid = phone.replace(/\D/g, "").length >= 9;
@@ -198,7 +203,9 @@ export default function PortalCheckout() {
         navigate(`/p/${token}/failed`, {
           state: {
             reason:
-              err instanceof Error ? err.message : "Something went wrong starting the payment. No amount was charged.",
+              err instanceof Error && err.message && err.message !== "Failed to start the payment."
+                ? err.message
+                : "We could not confirm whether this payment started. Do not pay again yet. If you approved a prompt on your phone, it will show in your payment history within a few minutes.",
           },
         });
       });
@@ -225,8 +232,30 @@ export default function PortalCheckout() {
         <p className="px-0 pb-1 pt-3 text-[13px] font-semibold" style={{ color: "var(--p-muted)" }}>
           Cost breakdown
         </p>
-        <MoneyRow label="Rent" amount={baseRent} />
-        {tenant.penaltyAmount > 0 && <MoneyRow label="Late fee" amount={tenant.penaltyAmount} />}
+        {isPartial ? (
+          <>
+            <MoneyRow label="Rent (part payment)" amount={baseRent} />
+            <MoneyRow label="Balance left after this payment" amount={Math.max(balanceOwed - amount, 0)} />
+          </>
+        ) : (
+          <>
+            {periodLines.map((line) => (
+              <MoneyRow key={line.label} label={line.label} amount={line.amount} />
+            ))}
+            {Math.abs(unexplained) >= 1 && (
+              <MoneyRow
+                label={periodLines.length === 0 ? portalOwedPeriodLabel([], nextDueDate) : "Other balance on your account"}
+                amount={unexplained}
+              />
+            )}
+          </>
+        )}
+        {tenant.penaltyAmount > 0 && (
+          <MoneyRow
+            label={tenant.daysOverdue ? `Late fee (${tenant.daysOverdue} days overdue)` : "Late fee"}
+            amount={tenant.penaltyAmount}
+          />
+        )}
         <MoneyRow label="Transaction fee" amount={fee} />
         <MoneyRow label="Total" amount={total} strong />
       </Card>

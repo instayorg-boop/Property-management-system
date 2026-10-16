@@ -96,18 +96,22 @@ export function ExpensesProvider({ children }: { children: ReactNode }) {
 
   const updateExpense = (id: string, patch: Partial<Omit<Expense, "id">>) => {
     setExpenses((prev) => prev.map((e) => (e.id === id ? { ...e, ...patch } : e)));
-    void updateExpenseRow(id, patch).catch((err) => {
-      console.error("Failed to update expense", err);
-      showToast("Couldn't save that change — please try again.", "error");
-    });
+    void updateExpenseRow(id, patch)
+      .then(() => showToast("Expense updated", "success"))
+      .catch((err) => {
+        console.error("Failed to update expense", err);
+        showToast("Couldn't save that change — please try again.", "error");
+      });
   };
 
   const deleteExpense = (id: string) => {
     setExpenses((prev) => prev.filter((e) => e.id !== id));
-    void deleteExpenseRow(id).catch((err) => {
-      console.error("Failed to delete expense", err);
-      showToast("Couldn't delete that expense — please try again.", "error");
-    });
+    void deleteExpenseRow(id)
+      .then(() => showToast("Expense deleted", "success"))
+      .catch((err) => {
+        console.error("Failed to delete expense", err);
+        showToast("Couldn't delete that expense — please try again.", "error");
+      });
   };
 
   const addCategory = (name: string) => {
@@ -123,18 +127,22 @@ export function ExpensesProvider({ children }: { children: ReactNode }) {
 
   const renameCategory = (id: string, name: string) => {
     setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, name } : c)));
-    void updateCategoryRow(id, { name }).catch((err) => {
-      console.error("Failed to rename category", err);
-      showToast("Couldn't rename that category — please try again.", "error");
-    });
+    void updateCategoryRow(id, { name })
+      .then(() => showToast("Category renamed", "success"))
+      .catch((err) => {
+        console.error("Failed to rename category", err);
+        showToast("Couldn't rename that category — please try again.", "error");
+      });
   };
 
   const setCategoryActive = (id: string, active: boolean) => {
     setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, active } : c)));
-    void updateCategoryRow(id, { active }).catch((err) => {
-      console.error("Failed to update category", err);
-      showToast("Couldn't save that change — please try again.", "error");
-    });
+    void updateCategoryRow(id, { active })
+      .then(() => showToast(active ? "Category enabled" : "Category disabled", "success"))
+      .catch((err) => {
+        console.error("Failed to update category", err);
+        showToast("Couldn't save that change — please try again.", "error");
+      });
   };
 
   // Only ever invoked for a category with zero expenses against it — the modal that calls this

@@ -10,28 +10,10 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
+    PostgrestVersion: "14.17"
   }
   public: {
     Tables: {
-      banks: {
-        Row: {
-          code: string
-          logo_url: string | null
-          name: string
-        }
-        Insert: {
-          code: string
-          logo_url?: string | null
-          name: string
-        }
-        Update: {
-          code?: string
-          logo_url?: string | null
-          name?: string
-        }
-        Relationships: []
-      }
       assistant_conversations: {
         Row: {
           created_at: string
@@ -66,7 +48,7 @@ export type Database = {
       }
       assistant_messages: {
         Row: {
-          content: string
+          content: string | null
           conversation_id: string
           created_at: string
           id: string
@@ -76,7 +58,7 @@ export type Database = {
           tool_result: Json | null
         }
         Insert: {
-          content: string
+          content?: string | null
           conversation_id: string
           created_at?: string
           id?: string
@@ -86,7 +68,7 @@ export type Database = {
           tool_result?: Json | null
         }
         Update: {
-          content?: string
+          content?: string | null
           conversation_id?: string
           created_at?: string
           id?: string
@@ -105,42 +87,21 @@ export type Database = {
           },
         ]
       }
-      statutory_rates: {
+      banks: {
         Row: {
-          created_at: string
-          effective_date: string
-          id: string
-          napsa_monthly_cap: number
-          napsa_rate: number
-          nhima_employee_rate: number
-          nhima_employer_rate: number
-          notes: string | null
-          paye_bands: Json
-          sdl_rate: number
+          code: string
+          logo_url: string | null
+          name: string
         }
         Insert: {
-          created_at?: string
-          effective_date: string
-          id?: string
-          napsa_monthly_cap: number
-          napsa_rate: number
-          nhima_employee_rate: number
-          nhima_employer_rate: number
-          notes?: string | null
-          paye_bands: Json
-          sdl_rate: number
+          code: string
+          logo_url?: string | null
+          name: string
         }
         Update: {
-          created_at?: string
-          effective_date?: string
-          id?: string
-          napsa_monthly_cap?: number
-          napsa_rate?: number
-          nhima_employee_rate?: number
-          nhima_employer_rate?: number
-          notes?: string | null
-          paye_bands?: Json
-          sdl_rate?: number
+          code?: string
+          logo_url?: string | null
+          name?: string
         }
         Relationships: []
       }
@@ -200,15 +161,12 @@ export type Database = {
           fee_amount: number | null
           id: string
           lenco_collection_id: string | null
-          operator: string
-          // payout_id/line_items/owed_before hand-added, same reason as the Functions block above —
-          // confirmed live via introspection (pay_portal_claim_payout_collections sets payout_id).
-          payout_id: string | null
           line_items: Json | null
+          operator: string
           owed_before: number | null
+          payout_id: string | null
           phone: string
           property_id: string
-          rent_portion: number | null
           status: string
           tenant_id: string
           updated_at: string
@@ -220,13 +178,12 @@ export type Database = {
           fee_amount?: number | null
           id?: string
           lenco_collection_id?: string | null
-          operator: string
-          payout_id?: string | null
           line_items?: Json | null
+          operator: string
           owed_before?: number | null
+          payout_id?: string | null
           phone: string
           property_id: string
-          rent_portion?: number | null
           status?: string
           tenant_id: string
           updated_at?: string
@@ -238,18 +195,24 @@ export type Database = {
           fee_amount?: number | null
           id?: string
           lenco_collection_id?: string | null
-          operator?: string
-          payout_id?: string | null
           line_items?: Json | null
+          operator?: string
           owed_before?: number | null
+          payout_id?: string | null
           phone?: string
           property_id?: string
-          rent_portion?: number | null
           status?: string
           tenant_id?: string
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "collections_payout_id_fkey"
+            columns: ["payout_id"]
+            isOneToOne: false
+            referencedRelation: "payouts"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "collections_property_id_fkey"
             columns: ["property_id"]
@@ -265,10 +228,10 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "collections_payout_id_fkey"
-            columns: ["payout_id"]
+            foreignKeyName: "collections_tenant_id_fkey"
+            columns: ["tenant_id"]
             isOneToOne: false
-            referencedRelation: "payouts"
+            referencedRelation: "v_assistant_tenants"
             referencedColumns: ["id"]
           },
         ]
@@ -469,6 +432,42 @@ export type Database = {
           },
         ]
       }
+      fee_config: {
+        Row: {
+          allocation_rule: string
+          grace_period_days: number
+          landlord_fee_pct: number
+          landlord_id: string
+          manual_approval_threshold: number | null
+          penalty_cap_enabled: boolean
+          penalty_cap_pct: number
+          tenant_fee_pct: number
+          updated_at: string
+        }
+        Insert: {
+          allocation_rule?: string
+          grace_period_days?: number
+          landlord_fee_pct?: number
+          landlord_id: string
+          manual_approval_threshold?: number | null
+          penalty_cap_enabled?: boolean
+          penalty_cap_pct?: number
+          tenant_fee_pct?: number
+          updated_at?: string
+        }
+        Update: {
+          allocation_rule?: string
+          grace_period_days?: number
+          landlord_fee_pct?: number
+          landlord_id?: string
+          manual_approval_threshold?: number | null
+          penalty_cap_enabled?: boolean
+          penalty_cap_pct?: number
+          tenant_fee_pct?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       institutions: {
         Row: {
           created_at: string
@@ -524,6 +523,13 @@ export type Database = {
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_tenants_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "v_assistant_tenants"
             referencedColumns: ["id"]
           },
         ]
@@ -591,6 +597,13 @@ export type Database = {
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoices_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "v_assistant_tenants"
             referencedColumns: ["id"]
           },
         ]
@@ -664,6 +677,20 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "ledger_entries_charge_id_fkey"
+            columns: ["charge_id"]
+            isOneToOne: false
+            referencedRelation: "ledger_entries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ledger_entries_charge_id_fkey"
+            columns: ["charge_id"]
+            isOneToOne: false
+            referencedRelation: "v_assistant_ledger"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "ledger_entries_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
@@ -671,36 +698,274 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "ledger_entries_charge_id_fkey"
-            columns: ["charge_id"]
+            foreignKeyName: "ledger_entries_tenant_id_fkey"
+            columns: ["tenant_id"]
             isOneToOne: false
-            referencedRelation: "ledger_entries"
+            referencedRelation: "v_assistant_tenants"
             referencedColumns: ["id"]
           },
         ]
       }
-      property_balances: {
+      ledger_entries_legacy_archive: {
         Row: {
-          property_id: string
-          available_balance: number
-          updated_at: string
+          archived_at: string
+          id: string
+          landlord_id: string
+          raw: Json
+          tenant_id: string
         }
         Insert: {
-          property_id: string
-          available_balance?: number
-          updated_at?: string
+          archived_at?: string
+          id: string
+          landlord_id: string
+          raw: Json
+          tenant_id: string
         }
         Update: {
-          property_id?: string
-          available_balance?: number
-          updated_at?: string
+          archived_at?: string
+          id?: string
+          landlord_id?: string
+          raw?: Json
+          tenant_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "property_balances_property_id_fkey"
+            foreignKeyName: "ledger_entries_legacy_archive_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ledger_entries_legacy_archive_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "v_assistant_tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ledger_entries_v2: {
+        Row: {
+          account: Database["public"]["Enums"]["ledger_account"]
+          actor_id: string | null
+          amount: number
+          approved_at: string | null
+          approved_by: string | null
+          billing_period: string | null
+          created_at: string
+          currency: string
+          description: string
+          direction: number
+          effective_date: string
+          entry_type: Database["public"]["Enums"]["ledger_entry_type"]
+          fee_rate: number | null
+          id: string
+          idempotency_key: string | null
+          landlord_id: string
+          lease_id: string | null
+          legacy_raw: Json | null
+          property_id: string
+          reason: string | null
+          reference_id: string | null
+          reference_table: string | null
+          signed_amount: number | null
+          source: Database["public"]["Enums"]["ledger_source"]
+          status: Database["public"]["Enums"]["ledger_entry_status"]
+          tenant_id: string | null
+          unit_id: string | null
+        }
+        Insert: {
+          account: Database["public"]["Enums"]["ledger_account"]
+          actor_id?: string | null
+          amount: number
+          approved_at?: string | null
+          approved_by?: string | null
+          billing_period?: string | null
+          created_at?: string
+          currency?: string
+          description: string
+          direction: number
+          effective_date: string
+          entry_type: Database["public"]["Enums"]["ledger_entry_type"]
+          fee_rate?: number | null
+          id?: string
+          idempotency_key?: string | null
+          landlord_id: string
+          lease_id?: string | null
+          legacy_raw?: Json | null
+          property_id: string
+          reason?: string | null
+          reference_id?: string | null
+          reference_table?: string | null
+          signed_amount?: number | null
+          source: Database["public"]["Enums"]["ledger_source"]
+          status?: Database["public"]["Enums"]["ledger_entry_status"]
+          tenant_id?: string | null
+          unit_id?: string | null
+        }
+        Update: {
+          account?: Database["public"]["Enums"]["ledger_account"]
+          actor_id?: string | null
+          amount?: number
+          approved_at?: string | null
+          approved_by?: string | null
+          billing_period?: string | null
+          created_at?: string
+          currency?: string
+          description?: string
+          direction?: number
+          effective_date?: string
+          entry_type?: Database["public"]["Enums"]["ledger_entry_type"]
+          fee_rate?: number | null
+          id?: string
+          idempotency_key?: string | null
+          landlord_id?: string
+          lease_id?: string | null
+          legacy_raw?: Json | null
+          property_id?: string
+          reason?: string | null
+          reference_id?: string | null
+          reference_table?: string | null
+          signed_amount?: number | null
+          source?: Database["public"]["Enums"]["ledger_source"]
+          status?: Database["public"]["Enums"]["ledger_entry_status"]
+          tenant_id?: string | null
+          unit_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ledger_entries_v2_property_id_fkey"
             columns: ["property_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ledger_entries_v2_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ledger_entries_v2_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "v_assistant_tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ledger_entries_v2_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "rooms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ledger_entries_v2_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "v_assistant_rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ledger_entry_type_rules: {
+        Row: {
+          account: Database["public"]["Enums"]["ledger_account"]
+          description_template: string
+          direction: number
+          entry_type: Database["public"]["Enums"]["ledger_entry_type"]
+        }
+        Insert: {
+          account: Database["public"]["Enums"]["ledger_account"]
+          description_template: string
+          direction: number
+          entry_type: Database["public"]["Enums"]["ledger_entry_type"]
+        }
+        Update: {
+          account?: Database["public"]["Enums"]["ledger_account"]
+          description_template?: string
+          direction?: number
+          entry_type?: Database["public"]["Enums"]["ledger_entry_type"]
+        }
+        Relationships: []
+      }
+      ledger_feature_flags: {
+        Row: {
+          allow_dev_simulate_payments: boolean
+          cutover_completed_at: string | null
+          enabled_at: string | null
+          landlord_id: string
+          ledger_v2_enabled: boolean
+          notes: string | null
+        }
+        Insert: {
+          allow_dev_simulate_payments?: boolean
+          cutover_completed_at?: string | null
+          enabled_at?: string | null
+          landlord_id: string
+          ledger_v2_enabled?: boolean
+          notes?: string | null
+        }
+        Update: {
+          allow_dev_simulate_payments?: boolean
+          cutover_completed_at?: string | null
+          enabled_at?: string | null
+          landlord_id?: string
+          ledger_v2_enabled?: boolean
+          notes?: string | null
+        }
+        Relationships: []
+      }
+      ledger_v2_date_exceptions: {
+        Row: {
+          billing_period: string
+          detected_at: string
+          field: string
+          id: string
+          landlord_id: string
+          property_id: string
+          raw_value: string | null
+          resolved_at: string | null
+          tenant_id: string
+        }
+        Insert: {
+          billing_period: string
+          detected_at?: string
+          field: string
+          id?: string
+          landlord_id: string
+          property_id: string
+          raw_value?: string | null
+          resolved_at?: string | null
+          tenant_id: string
+        }
+        Update: {
+          billing_period?: string
+          detected_at?: string
+          field?: string
+          id?: string
+          landlord_id?: string
+          property_id?: string
+          raw_value?: string | null
+          resolved_at?: string | null
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ledger_v2_date_exceptions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ledger_v2_date_exceptions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "v_assistant_tenants"
             referencedColumns: ["id"]
           },
         ]
@@ -721,6 +986,7 @@ export type Database = {
           tenant: string | null
           tenant_id: string | null
           unread: boolean
+          updated_at: string
         }
         Insert: {
           created_at?: string
@@ -737,6 +1003,7 @@ export type Database = {
           tenant?: string | null
           tenant_id?: string | null
           unread?: boolean
+          updated_at?: string
         }
         Update: {
           created_at?: string
@@ -753,6 +1020,7 @@ export type Database = {
           tenant?: string | null
           tenant_id?: string | null
           unread?: boolean
+          updated_at?: string
         }
         Relationships: [
           {
@@ -769,86 +1037,11 @@ export type Database = {
             referencedRelation: "tenants"
             referencedColumns: ["id"]
           },
-        ]
-      }
-      notifications: {
-        Row: {
-          body: string
-          category: string
-          created_at: string
-          entity_id: string | null
-          entity_type: string | null
-          id: string
-          metadata: Json
-          property_id: string
-          read_at: string | null
-          title: string
-          type: string
-        }
-        Insert: {
-          body: string
-          category: string
-          created_at?: string
-          entity_id?: string | null
-          entity_type?: string | null
-          id?: string
-          metadata?: Json
-          property_id: string
-          read_at?: string | null
-          title: string
-          type: string
-        }
-        Update: {
-          body?: string
-          category?: string
-          created_at?: string
-          entity_id?: string | null
-          entity_type?: string | null
-          id?: string
-          metadata?: Json
-          property_id?: string
-          read_at?: string | null
-          title?: string
-          type?: string
-        }
-        Relationships: [
           {
-            foreignKeyName: "notifications_property_id_fkey"
-            columns: ["property_id"]
-            isOneToOne: false
-            referencedRelation: "properties"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      reminder_log: {
-        Row: {
-          billing_period_id: string
-          id: string
-          reminder_type: string
-          sent_at: string
-          tenant_id: string
-        }
-        Insert: {
-          billing_period_id: string
-          id?: string
-          reminder_type: string
-          sent_at?: string
-          tenant_id: string
-        }
-        Update: {
-          billing_period_id?: string
-          id?: string
-          reminder_type?: string
-          sent_at?: string
-          tenant_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "reminder_log_tenant_id_fkey"
+            foreignKeyName: "maintenance_reports_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
-            referencedRelation: "tenants"
+            referencedRelation: "v_assistant_tenants"
             referencedColumns: ["id"]
           },
         ]
@@ -894,114 +1087,52 @@ export type Database = {
           },
         ]
       }
-      sms_send_log: {
+      notifications: {
         Row: {
+          body: string
           category: string
+          created_at: string
+          entity_id: string | null
+          entity_type: string | null
           id: string
-          message: string
+          metadata: Json
           property_id: string
-          recipient_phone: string
-          sent_at: string
-          status: string
+          read_at: string | null
+          title: string
+          type: string
+          visible_in_feed: boolean
         }
         Insert: {
+          body: string
           category: string
+          created_at?: string
+          entity_id?: string | null
+          entity_type?: string | null
           id?: string
-          message: string
+          metadata?: Json
           property_id: string
-          recipient_phone: string
-          sent_at?: string
-          status: string
+          read_at?: string | null
+          title: string
+          type: string
+          visible_in_feed?: boolean
         }
         Update: {
+          body?: string
           category?: string
+          created_at?: string
+          entity_id?: string | null
+          entity_type?: string | null
           id?: string
-          message?: string
+          metadata?: Json
           property_id?: string
-          recipient_phone?: string
-          sent_at?: string
-          status?: string
+          read_at?: string | null
+          title?: string
+          type?: string
+          visible_in_feed?: boolean
         }
         Relationships: [
           {
-            foreignKeyName: "sms_send_log_property_id_fkey"
-            columns: ["property_id"]
-            isOneToOne: false
-            referencedRelation: "properties"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      pending_instant_sms: {
-        Row: {
-          created_at: string
-          id: string
-          notification_id: string | null
-          payload: Json
-          property_id: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          notification_id?: string | null
-          payload: Json
-          property_id: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          notification_id?: string | null
-          payload?: Json
-          property_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "pending_instant_sms_notification_id_fkey"
-            columns: ["notification_id"]
-            isOneToOne: false
-            referencedRelation: "notifications"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "pending_instant_sms_property_id_fkey"
-            columns: ["property_id"]
-            isOneToOne: false
-            referencedRelation: "properties"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      payroll_runs: {
-        Row: {
-          created_at: string
-          employees_snapshot: Json
-          id: string
-          period: string
-          prns: Json
-          property_id: string
-          totals: Json
-        }
-        Insert: {
-          created_at?: string
-          employees_snapshot?: Json
-          id?: string
-          period: string
-          prns?: Json
-          property_id: string
-          totals?: Json
-        }
-        Update: {
-          created_at?: string
-          employees_snapshot?: Json
-          id?: string
-          period?: string
-          prns?: Json
-          property_id?: string
-          totals?: Json
-        }
-        Relationships: [
-          {
-            foreignKeyName: "payroll_runs_property_id_fkey"
+            foreignKeyName: "notifications_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
             referencedRelation: "properties"
@@ -1059,6 +1190,53 @@ export type Database = {
           },
           {
             foreignKeyName: "payout_recipients_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payout_withdrawal_otp_codes: {
+        Row: {
+          attempt_count: number
+          code_hash: string
+          confirmation_expires_at: string | null
+          confirmation_token_hash: string | null
+          consumed_at: string | null
+          created_at: string
+          expires_at: string
+          id: string
+          property_id: string
+          purpose: string
+        }
+        Insert: {
+          attempt_count?: number
+          code_hash: string
+          confirmation_expires_at?: string | null
+          confirmation_token_hash?: string | null
+          consumed_at?: string | null
+          created_at?: string
+          expires_at: string
+          id?: string
+          property_id: string
+          purpose?: string
+        }
+        Update: {
+          attempt_count?: number
+          code_hash?: string
+          confirmation_expires_at?: string | null
+          confirmation_token_hash?: string | null
+          consumed_at?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          property_id?: string
+          purpose?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payout_withdrawal_otp_codes_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
             referencedRelation: "properties"
@@ -1129,9 +1307,227 @@ export type Database = {
           },
         ]
       }
+      payroll_runs: {
+        Row: {
+          created_at: string
+          employees_snapshot: Json
+          id: string
+          period: string
+          prns: Json
+          property_id: string
+          totals: Json
+        }
+        Insert: {
+          created_at?: string
+          employees_snapshot?: Json
+          id?: string
+          period: string
+          prns?: Json
+          property_id: string
+          totals?: Json
+        }
+        Update: {
+          created_at?: string
+          employees_snapshot?: Json
+          id?: string
+          period?: string
+          prns?: Json
+          property_id?: string
+          totals?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payroll_runs_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pending_instant_sms: {
+        Row: {
+          created_at: string
+          id: string
+          notification_id: string | null
+          payload: Json
+          property_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          notification_id?: string | null
+          payload: Json
+          property_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          notification_id?: string | null
+          payload?: Json
+          property_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pending_instant_sms_notification_id_fkey"
+            columns: ["notification_id"]
+            isOneToOne: false
+            referencedRelation: "notifications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pending_instant_sms_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      plan_upgrade_requests: {
+        Row: {
+          created_at: string
+          id: string
+          note: string | null
+          property_id: string
+          requested_tier: string
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          note?: string | null
+          property_id: string
+          requested_tier: string
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          note?: string | null
+          property_id?: string
+          requested_tier?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "plan_upgrade_requests_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portal_otp_codes: {
+        Row: {
+          attempt_count: number
+          code_hash: string
+          consumed_at: string | null
+          created_at: string
+          expires_at: string
+          id: string
+          property_id: string
+          tenant_id: string
+        }
+        Insert: {
+          attempt_count?: number
+          code_hash: string
+          consumed_at?: string | null
+          created_at?: string
+          expires_at: string
+          id?: string
+          property_id: string
+          tenant_id: string
+        }
+        Update: {
+          attempt_count?: number
+          code_hash?: string
+          consumed_at?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          property_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_otp_codes_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portal_otp_codes_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portal_otp_codes_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "v_assistant_tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portal_sessions: {
+        Row: {
+          created_at: string
+          expires_at: string
+          id: string
+          property_id: string
+          tenant_id: string
+          token_hash: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at: string
+          id?: string
+          property_id: string
+          tenant_id: string
+          token_hash: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          property_id?: string
+          tenant_id?: string
+          token_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_sessions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portal_sessions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portal_sessions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "v_assistant_tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       properties: {
         Row: {
           address: string | null
+          address_lat: number | null
+          address_lng: number | null
           created_at: string
           id: string
           logo_url: string | null
@@ -1143,6 +1539,8 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          address_lat?: number | null
+          address_lng?: number | null
           created_at?: string
           id?: string
           logo_url?: string | null
@@ -1154,6 +1552,8 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          address_lat?: number | null
+          address_lng?: number | null
           created_at?: string
           id?: string
           logo_url?: string | null
@@ -1164,6 +1564,144 @@ export type Database = {
           slug?: string | null
         }
         Relationships: []
+      }
+      property_balances: {
+        Row: {
+          available_balance: number
+          property_id: string
+          updated_at: string
+        }
+        Insert: {
+          available_balance?: number
+          property_id: string
+          updated_at?: string
+        }
+        Update: {
+          available_balance?: number
+          property_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "property_balances_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: true
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      property_managers: {
+        Row: {
+          created_at: string
+          id: string
+          manager_user_id: string
+          property_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          manager_user_id: string
+          property_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          manager_user_id?: string
+          property_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "property_managers_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reminder_log: {
+        Row: {
+          billing_period_id: string
+          id: string
+          reminder_type: string
+          sent_at: string
+          tenant_id: string
+        }
+        Insert: {
+          billing_period_id: string
+          id?: string
+          reminder_type: string
+          sent_at?: string
+          tenant_id: string
+        }
+        Update: {
+          billing_period_id?: string
+          id?: string
+          reminder_type?: string
+          sent_at?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reminder_log_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reminder_log_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "v_assistant_tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      report_history: {
+        Row: {
+          created_at: string
+          date_from: string
+          date_to: string
+          file_name: string
+          file_path: string
+          format: string
+          id: string
+          property_id: string
+          report_type: string
+        }
+        Insert: {
+          created_at?: string
+          date_from: string
+          date_to: string
+          file_name: string
+          file_path: string
+          format: string
+          id?: string
+          property_id: string
+          report_type: string
+        }
+        Update: {
+          created_at?: string
+          date_from?: string
+          date_to?: string
+          file_name?: string
+          file_path?: string
+          format?: string
+          id?: string
+          property_id?: string
+          report_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "report_history_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       room_types: {
         Row: {
@@ -1215,6 +1753,7 @@ export type Database = {
           property_id: string
           reserved_for_tenant_id: string | null
           room_type_id: string
+          updated_at: string
         }
         Insert: {
           created_at?: string
@@ -1224,6 +1763,7 @@ export type Database = {
           property_id: string
           reserved_for_tenant_id?: string | null
           room_type_id: string
+          updated_at?: string
         }
         Update: {
           created_at?: string
@@ -1233,6 +1773,7 @@ export type Database = {
           property_id?: string
           reserved_for_tenant_id?: string | null
           room_type_id?: string
+          updated_at?: string
         }
         Relationships: [
           {
@@ -1243,17 +1784,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "rooms_room_type_id_fkey"
-            columns: ["room_type_id"]
+            foreignKeyName: "rooms_reserved_for_tenant_id_fkey"
+            columns: ["reserved_for_tenant_id"]
             isOneToOne: false
-            referencedRelation: "room_types"
+            referencedRelation: "tenants"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "rooms_reserved_for_tenant_id_fkey"
             columns: ["reserved_for_tenant_id"]
             isOneToOne: false
-            referencedRelation: "tenants"
+            referencedRelation: "v_assistant_tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rooms_room_type_id_fkey"
+            columns: ["room_type_id"]
+            isOneToOne: false
+            referencedRelation: "room_types"
             referencedColumns: ["id"]
           },
         ]
@@ -1263,6 +1811,8 @@ export type Database = {
           account_email: string | null
           account_holder_name: string | null
           account_number: string | null
+          autopilot_config: Json
+          autopilot_enabled: boolean
           bank_name: string | null
           billing_period: string
           collection_target_pct: number
@@ -1288,16 +1838,20 @@ export type Database = {
           napsa_insurable_earnings_ceiling: number
           notification_phone: string | null
           notification_prefs: Json
+          onboarding: Json
           onboarding_completed: boolean
           payment_methods: Json
           payment_sms_mode: string
-          payout_day: string | null
+          payout_day: string
           pre_due_reminders_enabled: boolean
           property_id: string
           reminder_lead_days: number
           send_onboarding_sms: boolean
           send_payment_receipt_sms: boolean
           sms_notification_prefs: Json
+          subscription_autopay: boolean
+          subscription_autopay_operator: string | null
+          subscription_autopay_phone: string | null
           subscription_plan: string | null
           subscription_renews_at: string | null
           task_collections_target_enabled: boolean
@@ -1309,6 +1863,8 @@ export type Database = {
           account_email?: string | null
           account_holder_name?: string | null
           account_number?: string | null
+          autopilot_config?: Json
+          autopilot_enabled?: boolean
           bank_name?: string | null
           billing_period?: string
           collection_target_pct?: number
@@ -1334,16 +1890,20 @@ export type Database = {
           napsa_insurable_earnings_ceiling?: number
           notification_phone?: string | null
           notification_prefs?: Json
+          onboarding?: Json
           onboarding_completed?: boolean
           payment_methods?: Json
           payment_sms_mode?: string
-          payout_day?: string | null
+          payout_day?: string
           pre_due_reminders_enabled?: boolean
           property_id: string
           reminder_lead_days?: number
           send_onboarding_sms?: boolean
           send_payment_receipt_sms?: boolean
           sms_notification_prefs?: Json
+          subscription_autopay?: boolean
+          subscription_autopay_operator?: string | null
+          subscription_autopay_phone?: string | null
           subscription_plan?: string | null
           subscription_renews_at?: string | null
           task_collections_target_enabled?: boolean
@@ -1355,6 +1915,8 @@ export type Database = {
           account_email?: string | null
           account_holder_name?: string | null
           account_number?: string | null
+          autopilot_config?: Json
+          autopilot_enabled?: boolean
           bank_name?: string | null
           billing_period?: string
           collection_target_pct?: number
@@ -1380,16 +1942,20 @@ export type Database = {
           napsa_insurable_earnings_ceiling?: number
           notification_phone?: string | null
           notification_prefs?: Json
+          onboarding?: Json
           onboarding_completed?: boolean
           payment_methods?: Json
           payment_sms_mode?: string
-          payout_day?: string | null
+          payout_day?: string
           pre_due_reminders_enabled?: boolean
           property_id?: string
           reminder_lead_days?: number
           send_onboarding_sms?: boolean
           send_payment_receipt_sms?: boolean
           sms_notification_prefs?: Json
+          subscription_autopay?: boolean
+          subscription_autopay_operator?: string | null
+          subscription_autopay_phone?: string | null
           subscription_plan?: string | null
           subscription_renews_at?: string | null
           task_collections_target_enabled?: boolean
@@ -1407,202 +1973,226 @@ export type Database = {
           },
         ]
       }
-      tenant_documents: {
+      sms_daily_counters: {
         Row: {
-          content_type: string | null
-          created_at: string
-          file_path: string
-          id: string
-          name: string
+          count: number
+          day: string
           property_id: string
-          size_bytes: number | null
-          tenant_id: string
         }
         Insert: {
-          content_type?: string | null
-          created_at?: string
-          file_path: string
-          id?: string
-          name: string
+          count?: number
+          day: string
           property_id: string
-          size_bytes?: number | null
-          tenant_id: string
         }
         Update: {
-          content_type?: string | null
-          created_at?: string
-          file_path?: string
-          id?: string
-          name?: string
+          count?: number
+          day?: string
           property_id?: string
-          size_bytes?: number | null
-          tenant_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "tenant_documents_property_id_fkey"
+            foreignKeyName: "sms_daily_counters_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sms_send_log: {
+        Row: {
+          category: string
+          id: string
+          message: string
+          property_id: string
+          recipient_phone: string
+          recipient_role: string | null
+          sent_at: string
+          status: string
+          tenant_id: string | null
+        }
+        Insert: {
+          category: string
+          id?: string
+          message: string
+          property_id: string
+          recipient_phone: string
+          recipient_role?: string | null
+          sent_at?: string
+          status: string
+          tenant_id?: string | null
+        }
+        Update: {
+          category?: string
+          id?: string
+          message?: string
+          property_id?: string
+          recipient_phone?: string
+          recipient_role?: string | null
+          sent_at?: string
+          status?: string
+          tenant_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sms_send_log_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
             referencedRelation: "properties"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "tenant_documents_tenant_id_fkey"
+            foreignKeyName: "sms_send_log_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "sms_send_log_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "v_assistant_tenants"
+            referencedColumns: ["id"]
+          },
         ]
       }
-      tenants: {
+      subscription_invoices: {
         Row: {
-          active: boolean
+          amount: number
           created_at: string
-          days_overdue: number | null
-          deposit_amount: number
-          deposit_date: string | null
-          deposit_method: string | null
-          deposit_resolution_note: string | null
-          deposit_status: string
-          due_day: number | null
-          emergency_contacts: Json
-          grace_period_days: number | null
-          guardian_name: string | null
-          guardian_phone: string | null
+          due_date: string
           id: string
-          institution_id: string | null
-          move_in_date: string | null
-          move_out_date: string | null
-          name: string
-          notes: string | null
-          on_time_count: number
-          onboarding_sms_sent_at: string | null
-          owed_amount: number
-          phone: string | null
-          phones: string[]
-          photo_url: string | null
-          portal_token: string
+          paid_at: string | null
+          payment_method: string | null
+          period: string
           property_id: string
-          rent_amount: number
-          reservation_fee_amount: number | null
-          reservation_fee_collected: boolean
-          reservation_fee_date: string | null
-          reservation_fee_method: string | null
-          room_id: string | null
-          room_type_id: string | null
+          reminder_sent: boolean
           status: string
-          total_months_count: number
         }
         Insert: {
-          active?: boolean
+          amount: number
           created_at?: string
-          days_overdue?: number | null
-          deposit_amount?: number
-          deposit_date?: string | null
-          deposit_method?: string | null
-          deposit_resolution_note?: string | null
-          deposit_status?: string
-          due_day?: number | null
-          emergency_contacts?: Json
-          grace_period_days?: number | null
-          guardian_name?: string | null
-          guardian_phone?: string | null
+          due_date: string
           id?: string
-          institution_id?: string | null
-          move_in_date?: string | null
-          move_out_date?: string | null
-          name: string
-          notes?: string | null
-          on_time_count?: number
-          onboarding_sms_sent_at?: string | null
-          owed_amount?: number
-          phone?: string | null
-          phones?: string[]
-          photo_url?: string | null
-          portal_token?: string
+          paid_at?: string | null
+          payment_method?: string | null
+          period: string
           property_id: string
-          rent_amount?: number
-          reservation_fee_amount?: number | null
-          reservation_fee_collected?: boolean
-          reservation_fee_date?: string | null
-          reservation_fee_method?: string | null
-          room_id?: string | null
-          room_type_id?: string | null
+          reminder_sent?: boolean
           status?: string
-          total_months_count?: number
         }
         Update: {
-          active?: boolean
+          amount?: number
           created_at?: string
-          days_overdue?: number | null
-          deposit_amount?: number
-          deposit_date?: string | null
-          deposit_method?: string | null
-          deposit_resolution_note?: string | null
-          deposit_status?: string
-          due_day?: number | null
-          emergency_contacts?: Json
-          grace_period_days?: number | null
-          guardian_name?: string | null
-          guardian_phone?: string | null
+          due_date?: string
           id?: string
-          institution_id?: string | null
-          move_in_date?: string | null
-          move_out_date?: string | null
-          name?: string
-          notes?: string | null
-          on_time_count?: number
-          onboarding_sms_sent_at?: string | null
-          owed_amount?: number
-          phone?: string | null
-          phones?: string[]
-          photo_url?: string | null
-          portal_token?: string
+          paid_at?: string | null
+          payment_method?: string | null
+          period?: string
           property_id?: string
-          rent_amount?: number
-          reservation_fee_amount?: number | null
-          reservation_fee_collected?: boolean
-          reservation_fee_date?: string | null
-          reservation_fee_method?: string | null
-          room_id?: string | null
-          room_type_id?: string | null
+          reminder_sent?: boolean
           status?: string
-          total_months_count?: number
         }
         Relationships: [
           {
-            foreignKeyName: "tenants_institution_id_fkey"
-            columns: ["institution_id"]
-            isOneToOne: false
-            referencedRelation: "institutions"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "tenants_property_id_fkey"
+            foreignKeyName: "subscription_invoices_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
             referencedRelation: "properties"
             referencedColumns: ["id"]
           },
+        ]
+      }
+      subscription_payments: {
+        Row: {
+          amount: number
+          created_at: string
+          failure_reason: string | null
+          id: string
+          invoice_id: string
+          lenco_collection_id: string | null
+          operator: string | null
+          phone: string | null
+          property_id: string
+          status: string
+          triggered_by: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          failure_reason?: string | null
+          id?: string
+          invoice_id: string
+          lenco_collection_id?: string | null
+          operator?: string | null
+          phone?: string | null
+          property_id: string
+          status?: string
+          triggered_by?: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          failure_reason?: string | null
+          id?: string
+          invoice_id?: string
+          lenco_collection_id?: string | null
+          operator?: string | null
+          phone?: string | null
+          property_id?: string
+          status?: string
+          triggered_by?: string
+          updated_at?: string
+        }
+        Relationships: [
           {
-            foreignKeyName: "tenants_room_id_fkey"
-            columns: ["room_id"]
+            foreignKeyName: "subscription_payments_invoice_id_fkey"
+            columns: ["invoice_id"]
             isOneToOne: false
-            referencedRelation: "rooms"
+            referencedRelation: "subscription_invoices"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "tenants_room_type_id_fkey"
-            columns: ["room_type_id"]
+            foreignKeyName: "subscription_payments_property_id_fkey"
+            columns: ["property_id"]
             isOneToOne: false
-            referencedRelation: "room_types"
+            referencedRelation: "properties"
             referencedColumns: ["id"]
           },
         ]
       }
-      // Today's Tasks (see supabase/migrations/2026100300*_todays_tasks_*.sql and
-      // 20261005000000_manual_tasks.sql). Hand-added for the same reason the RPCs below are.
+      task_briefings: {
+        Row: {
+          created_at: string
+          date: string
+          property_id: string
+          text: string
+        }
+        Insert: {
+          created_at?: string
+          date: string
+          property_id: string
+          text: string
+        }
+        Update: {
+          created_at?: string
+          date?: string
+          property_id?: string
+          text?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_briefings_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tasks: {
         Row: {
           action_target_id: string | null
@@ -1674,44 +2264,729 @@ export type Database = {
           },
         ]
       }
-      // Backs the /reports "generate a document" flow (20261006000000_report_generation.sql).
-      report_history: {
+      tenant_documents: {
         Row: {
+          content_type: string | null
           created_at: string
-          date_from: string
-          date_to: string
-          file_name: string
           file_path: string
-          format: string
           id: string
+          name: string
           property_id: string
-          report_type: string
+          size_bytes: number | null
+          tenant_id: string
         }
         Insert: {
+          content_type?: string | null
           created_at?: string
-          date_from: string
-          date_to: string
-          file_name: string
           file_path: string
-          format: string
           id?: string
+          name: string
           property_id: string
-          report_type: string
+          size_bytes?: number | null
+          tenant_id: string
         }
         Update: {
+          content_type?: string | null
           created_at?: string
-          date_from?: string
-          date_to?: string
-          file_name?: string
           file_path?: string
-          format?: string
           id?: string
+          name?: string
           property_id?: string
-          report_type?: string
+          size_bytes?: number | null
+          tenant_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "report_history_property_id_fkey"
+            foreignKeyName: "tenant_documents_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tenant_documents_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tenant_documents_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "v_assistant_tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tenants: {
+        Row: {
+          active: boolean
+          autopilot_pause_note: string | null
+          autopilot_paused_until: string | null
+          created_at: string
+          days_overdue: number | null
+          deposit_amount: number
+          deposit_date: string | null
+          deposit_method: string | null
+          deposit_resolution_note: string | null
+          deposit_status: string
+          due_day: number | null
+          emergency_contacts: Json
+          gender: string | null
+          grace_period_days: number | null
+          guardian_name: string | null
+          guardian_phone: string | null
+          id: string
+          import_batch_id: string | null
+          import_batch_label: string | null
+          institution_id: string | null
+          move_in_date: string | null
+          move_out_date: string | null
+          name: string
+          notes: string | null
+          on_time_count: number
+          onboarding_sms_sent_at: string | null
+          owed_amount: number
+          phone: string | null
+          phones: string[]
+          photo_url: string | null
+          portal_token: string
+          property_id: string
+          rent_amount: number
+          reservation_fee_amount: number | null
+          reservation_fee_collected: boolean
+          reservation_fee_date: string | null
+          reservation_fee_method: string | null
+          room_id: string | null
+          room_type_id: string | null
+          status: string
+          total_months_count: number
+          unit_label: string | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          autopilot_pause_note?: string | null
+          autopilot_paused_until?: string | null
+          created_at?: string
+          days_overdue?: number | null
+          deposit_amount?: number
+          deposit_date?: string | null
+          deposit_method?: string | null
+          deposit_resolution_note?: string | null
+          deposit_status?: string
+          due_day?: number | null
+          emergency_contacts?: Json
+          gender?: string | null
+          grace_period_days?: number | null
+          guardian_name?: string | null
+          guardian_phone?: string | null
+          id?: string
+          import_batch_id?: string | null
+          import_batch_label?: string | null
+          institution_id?: string | null
+          move_in_date?: string | null
+          move_out_date?: string | null
+          name: string
+          notes?: string | null
+          on_time_count?: number
+          onboarding_sms_sent_at?: string | null
+          owed_amount?: number
+          phone?: string | null
+          phones?: string[]
+          photo_url?: string | null
+          portal_token?: string
+          property_id: string
+          rent_amount?: number
+          reservation_fee_amount?: number | null
+          reservation_fee_collected?: boolean
+          reservation_fee_date?: string | null
+          reservation_fee_method?: string | null
+          room_id?: string | null
+          room_type_id?: string | null
+          status?: string
+          total_months_count?: number
+          unit_label?: string | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          autopilot_pause_note?: string | null
+          autopilot_paused_until?: string | null
+          created_at?: string
+          days_overdue?: number | null
+          deposit_amount?: number
+          deposit_date?: string | null
+          deposit_method?: string | null
+          deposit_resolution_note?: string | null
+          deposit_status?: string
+          due_day?: number | null
+          emergency_contacts?: Json
+          gender?: string | null
+          grace_period_days?: number | null
+          guardian_name?: string | null
+          guardian_phone?: string | null
+          id?: string
+          import_batch_id?: string | null
+          import_batch_label?: string | null
+          institution_id?: string | null
+          move_in_date?: string | null
+          move_out_date?: string | null
+          name?: string
+          notes?: string | null
+          on_time_count?: number
+          onboarding_sms_sent_at?: string | null
+          owed_amount?: number
+          phone?: string | null
+          phones?: string[]
+          photo_url?: string | null
+          portal_token?: string
+          property_id?: string
+          rent_amount?: number
+          reservation_fee_amount?: number | null
+          reservation_fee_collected?: boolean
+          reservation_fee_date?: string | null
+          reservation_fee_method?: string | null
+          room_id?: string | null
+          room_type_id?: string | null
+          status?: string
+          total_months_count?: number
+          unit_label?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenants_institution_id_fkey"
+            columns: ["institution_id"]
+            isOneToOne: false
+            referencedRelation: "institutions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tenants_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tenants_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "rooms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tenants_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "v_assistant_rooms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tenants_room_type_id_fkey"
+            columns: ["room_type_id"]
+            isOneToOne: false
+            referencedRelation: "room_types"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      audit_log: {
+        Row: {
+          id: string
+          property_id: string
+          actor_id: string | null
+          actor_label: string
+          action: string
+          summary: string
+          target_type: string | null
+          target_id: string | null
+          metadata: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          property_id: string
+          actor_id?: string | null
+          actor_label: string
+          action: string
+          summary: string
+          target_type?: string | null
+          target_id?: string | null
+          metadata?: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          property_id?: string
+          actor_id?: string | null
+          actor_label?: string
+          action?: string
+          summary?: string
+          target_type?: string | null
+          target_id?: string | null
+          metadata?: Json
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_log_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      help_groups: {
+        Row: {
+          id: string
+          slug: string
+          title: string
+          description: string
+          icon: string | null
+          sort_order: number
+        }
+        Insert: {
+          id?: string
+          slug: string
+          title: string
+          description?: string
+          icon?: string | null
+          sort_order?: number
+        }
+        Update: {
+          id?: string
+          slug?: string
+          title?: string
+          description?: string
+          icon?: string | null
+          sort_order?: number
+        }
+        Relationships: []
+      }
+      help_articles: {
+        Row: {
+          id: string
+          group_id: string
+          slug: string
+          title: string
+          summary: string
+          sort_order: number
+        }
+        Insert: {
+          id?: string
+          group_id: string
+          slug: string
+          title: string
+          summary?: string
+          sort_order?: number
+        }
+        Update: {
+          id?: string
+          group_id?: string
+          slug?: string
+          title?: string
+          summary?: string
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "help_articles_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "help_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      help_blocks: {
+        Row: {
+          id: string
+          article_id: string
+          heading: string
+          body: string
+          video_url: string | null
+          image_url: string | null
+          sort_order: number
+        }
+        Insert: {
+          id?: string
+          article_id: string
+          heading: string
+          body?: string
+          video_url?: string | null
+          image_url?: string | null
+          sort_order?: number
+        }
+        Update: {
+          id?: string
+          article_id?: string
+          heading?: string
+          body?: string
+          video_url?: string | null
+          image_url?: string | null
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "help_blocks_article_id_fkey"
+            columns: ["article_id"]
+            isOneToOne: false
+            referencedRelation: "help_articles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+    }
+    Views: {
+      arrears_aging_view: {
+        Row: {
+          bucket_0_7: number | null
+          bucket_31_60: number | null
+          bucket_60_plus: number | null
+          bucket_8_30: number | null
+          landlord_id: string | null
+          property_id: string | null
+          tenant_id: string | null
+          total_overdue: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ledger_entries_v2_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ledger_entries_v2_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ledger_entries_v2_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "v_assistant_tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payout_ledger_view: {
+        Row: {
+          actor_id: string | null
+          amount: number | null
+          created_at: string | null
+          description: string | null
+          effective_date: string | null
+          id: string | null
+          landlord_id: string | null
+          property_id: string | null
+          reason: string | null
+          reference_id: string | null
+          reference_table: string | null
+          signed_amount: number | null
+          source: Database["public"]["Enums"]["ledger_source"] | null
+          status: Database["public"]["Enums"]["ledger_entry_status"] | null
+        }
+        Insert: {
+          actor_id?: string | null
+          amount?: number | null
+          created_at?: string | null
+          description?: string | null
+          effective_date?: string | null
+          id?: string | null
+          landlord_id?: string | null
+          property_id?: string | null
+          reason?: string | null
+          reference_id?: string | null
+          reference_table?: string | null
+          signed_amount?: number | null
+          source?: Database["public"]["Enums"]["ledger_source"] | null
+          status?: Database["public"]["Enums"]["ledger_entry_status"] | null
+        }
+        Update: {
+          actor_id?: string | null
+          amount?: number | null
+          created_at?: string | null
+          description?: string | null
+          effective_date?: string | null
+          id?: string | null
+          landlord_id?: string | null
+          property_id?: string | null
+          reason?: string | null
+          reference_id?: string | null
+          reference_table?: string | null
+          signed_amount?: number | null
+          source?: Database["public"]["Enums"]["ledger_source"] | null
+          status?: Database["public"]["Enums"]["ledger_entry_status"] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ledger_entries_v2_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      period_status_view: {
+        Row: {
+          billing_period: string | null
+          landlord_id: string | null
+          period_balance: number | null
+          period_status: string | null
+          tenant_id: string | null
+          total_charged: number | null
+          total_paid_or_credited: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ledger_entries_v2_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ledger_entries_v2_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "v_assistant_tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tenant_balance_view: {
+        Row: {
+          account: Database["public"]["Enums"]["ledger_account"] | null
+          balance: number | null
+          last_activity_date: string | null
+          tenant_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ledger_entries_v2_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ledger_entries_v2_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "v_assistant_tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tenant_ledger_view: {
+        Row: {
+          account: Database["public"]["Enums"]["ledger_account"] | null
+          actor_id: string | null
+          amount: number | null
+          billing_period: string | null
+          created_at: string | null
+          currency: string | null
+          description: string | null
+          direction: number | null
+          effective_date: string | null
+          entry_type: Database["public"]["Enums"]["ledger_entry_type"] | null
+          fee_rate: number | null
+          id: string | null
+          landlord_id: string | null
+          lease_id: string | null
+          property_id: string | null
+          reason: string | null
+          reference_id: string | null
+          reference_table: string | null
+          running_balance: number | null
+          signed_amount: number | null
+          source: Database["public"]["Enums"]["ledger_source"] | null
+          status: Database["public"]["Enums"]["ledger_entry_status"] | null
+          tenant_id: string | null
+          unit_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ledger_entries_v2_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ledger_entries_v2_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ledger_entries_v2_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "v_assistant_tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ledger_entries_v2_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "rooms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ledger_entries_v2_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "v_assistant_rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      v_assistant_expenses: {
+        Row: {
+          amount: number | null
+          category_name: string | null
+          date: string | null
+          id: string | null
+          name: string | null
+          property_id: string | null
+          source: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expenses_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      v_assistant_ledger: {
+        Row: {
+          affects_balance: boolean | null
+          amount: number | null
+          created_at: string | null
+          id: string | null
+          label: string | null
+          method: string | null
+          paid_amount: number | null
+          property_id: string | null
+          source: string | null
+          status: string | null
+          tenant_id: string | null
+          tenant_name: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ledger_entries_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ledger_entries_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "v_assistant_tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tenants_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      v_assistant_maintenance: {
+        Row: {
+          description: string | null
+          id: string | null
+          location: string | null
+          property_id: string | null
+          status: string | null
+          submitted_at: string | null
+          tenant: string | null
+        }
+        Insert: {
+          description?: string | null
+          id?: string | null
+          location?: string | null
+          property_id?: string | null
+          status?: string | null
+          submitted_at?: string | null
+          tenant?: string | null
+        }
+        Update: {
+          description?: string | null
+          id?: string | null
+          location?: string | null
+          property_id?: string | null
+          status?: string | null
+          submitted_at?: string | null
+          tenant?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "maintenance_reports_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      v_assistant_rooms: {
+        Row: {
+          id: string | null
+          number: string | null
+          occupant_name: string | null
+          occupant_status: string | null
+          property_id: string | null
+          room_type: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rooms_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      v_assistant_tenants: {
+        Row: {
+          active: boolean | null
+          days_overdue: number | null
+          deposit_amount: number | null
+          deposit_status: string | null
+          emergency_contacts: Json | null
+          id: string | null
+          name: string | null
+          phone: string | null
+          phones: string[] | null
+          property_id: string | null
+          room: string | null
+          status: string | null
+          true_owed_amount: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenants_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
             referencedRelation: "properties"
@@ -1720,25 +2995,143 @@ export type Database = {
         ]
       }
     }
-    Views: {
-      [_ in never]: never
-    }
     Functions: {
-      // Today's Tasks (see supabase/migrations/2026100300*_todays_tasks_*.sql). Hand-added rather
-      // than regenerated: a full `supabase gen types` run rewrites this whole file on one line and
-      // drags in unrelated drift. The three below are the only task functions a client may call —
-      // every detect_* and sync_tasks has EXECUTE revoked from `authenticated` on purpose.
-      get_today_tasks: {
-        Args: { p_property_id: string }
-        Returns: Json
+      allocate_payment: {
+        Args: {
+          p_actor_id?: string
+          p_amount: number
+          p_description?: string
+          p_effective_date?: string
+          p_event_id: string
+          p_reason?: string
+          p_reference_id?: string
+          p_reference_table?: string
+          p_source: Database["public"]["Enums"]["ledger_source"]
+          p_tenant_id: string
+        }
+        Returns: {
+          applied_to_charges: number
+          credited: number
+          new_balance: number
+        }[]
       }
-      get_all_open_tasks: {
-        Args: { p_property_id: string }
-        Returns: Json
+      amount_due_now: { Args: { p_tenant_id: string }; Returns: number }
+      assistant_explain_tenant_balance: {
+        Args: { p_tenant_id: string }
+        Returns: {
+          affects_balance: boolean
+          days_overdue: number
+          entry_amount: number
+          entry_created_at: string
+          entry_label: string
+          entry_paid_amount: number
+          entry_period: string
+          entry_status: string
+          name: string
+          owed_amount: number
+          tenant_id: string
+        }[]
       }
-      set_task_status: {
-        Args: { p_task_id: string; p_status: string; p_snooze_days?: number }
-        Returns: Json
+      assistant_find_tenant: {
+        Args: { p_property_id: string; p_query: string }
+        Returns: {
+          deposit_amount: number
+          deposit_status: string
+          emergency_contacts: Json
+          name: string
+          phone: string
+          phones: string[]
+          room: string
+          status: string
+          tenant_id: string
+        }[]
+      }
+      assistant_get_billing_settings: {
+        Args: { p_property_id: string; p_tenant_id?: string }
+        Returns: {
+          billing_period: string
+          due_day: number
+          grace_period_days: number
+        }[]
+      }
+      assistant_get_charges: {
+        Args: { p_property_id: string; p_tenant_query?: string }
+        Returns: {
+          amount: number
+          created_at: string
+          label: string
+          tenant_name: string
+        }[]
+      }
+      assistant_get_collections_summary: {
+        Args: { p_property_id: string; p_period: string }
+        Returns: {
+          total_collected: number
+          total_fees: number
+          successful_count: number
+          failed_count: number
+        }[]
+      }
+      assistant_get_current_statutory_rates: {
+        Args: { p_as_of?: string }
+        Returns: {
+          effective_date: string
+          napsa_rate: number
+          napsa_monthly_cap: number
+          nhima_employee_rate: number
+          nhima_employer_rate: number
+          sdl_rate: number
+          paye_bands: Json
+          notes: string | null
+        }[]
+      }
+      assistant_get_collected_rent: {
+        Args: { p_property_id: string }
+        Returns: {
+          paid_tenant_count: number
+          partial_tenant_count: number
+          total_collected: number
+          unpaid_tenant_count: number
+        }[]
+      }
+      assistant_get_collected_rent_by_method: {
+        Args: { p_property_id: string }
+        Returns: {
+          method: string
+          tenant_count: number
+          total: number
+        }[]
+      }
+      assistant_get_expenses_summary: {
+        Args: { p_period: string; p_property_id: string }
+        Returns: {
+          category_name: string
+          item_count: number
+          total: number
+        }[]
+      }
+      assistant_get_invoices: {
+        Args: { p_property_id: string; p_status?: string }
+        Returns: {
+          amount: number
+          due_at: string
+          institution_name: string
+          invoice_id: string
+          period: string
+          status: string
+          tenant_name: string
+        }[]
+      }
+      assistant_get_maintenance_requests: {
+        Args: { p_property_id: string; p_status?: string }
+        Returns: {
+          description: string
+          location: string
+          request_id: string
+          status: string
+          submitted_at: string
+          tenant_name: string
+        }[]
       }
       assistant_get_overdue_tenants: {
         Args: { p_property_id: string }
@@ -1746,17 +3139,65 @@ export type Database = {
           days_overdue: number
           name: string
           owed_amount: number
-          phone: string | null
+          phone: string
           tenant_id: string
         }[]
       }
-      assistant_get_collections_summary: {
-        Args: { p_period: string; p_property_id: string }
+      assistant_get_paid_tenants: {
+        Args: { p_property_id: string }
         Returns: {
-          failed_count: number
-          successful_count: number
-          total_collected: number
-          total_fees: number
+          emergency_contacts: Json
+          name: string
+          phone: string
+          phones: string[]
+          room: string
+          tenant_id: string
+        }[]
+      }
+      assistant_get_partial_tenants: {
+        Args: { p_property_id: string }
+        Returns: {
+          last_paid_amount: number
+          name: string
+          owed_amount: number
+          phone: string
+          tenant_id: string
+        }[]
+      }
+      assistant_get_payments: {
+        Args: { p_date?: string; p_method?: string; p_property_id: string }
+        Returns: {
+          amount: number
+          created_at: string
+          method: string
+          source: string
+          tenant_name: string
+        }[]
+      }
+      assistant_get_payouts_summary: {
+        Args: { p_property_id: string }
+        Returns: {
+          available_balance: number
+          recent_payouts: Json
+        }[]
+      }
+      assistant_get_room_occupant: {
+        Args: { p_property_id: string; p_room_query: string }
+        Returns: {
+          owed_amount: number
+          room_number: string
+          room_type: string
+          tenant_name: string
+          tenant_status: string
+        }[]
+      }
+      assistant_get_room_types_summary: {
+        Args: { p_property_id: string }
+        Returns: {
+          occupied_rooms: number
+          room_type: string
+          total_rooms: number
+          vacant_rooms: number
         }[]
       }
       assistant_get_vacancy_summary: {
@@ -1767,32 +3208,186 @@ export type Database = {
           vacant_rooms: number
         }[]
       }
-      assistant_explain_tenant_balance: {
+      assistant_query: {
+        Args: {
+          p_filters?: Json
+          p_limit?: number
+          p_property_id: string
+          p_view: string
+        }
+        Returns: Json
+      }
+      calculate_tenant_balance: {
         Args: { p_tenant_id: string }
         Returns: {
-          days_overdue: number
-          entry_amount: number
-          entry_created_at: string
-          entry_label: string
-          entry_paid_amount: number | null
-          entry_period: string | null
-          entry_status: string | null
-          name: string
-          owed_amount: number
-          tenant_id: string
+          balance: number
+          total_adjustments: number
+          total_charges: number
+          total_payments: number
+          total_penalties: number
         }[]
       }
-      assistant_get_current_statutory_rates: {
-        Args: { p_as_of?: string }
+      charge_has_active_linked_events: {
+        Args: { p_charge_id: string }
+        Returns: boolean
+      }
+      detect_collections_below_target: {
+        Args: { p_property_id: string }
         Returns: {
-          effective_date: string
-          napsa_monthly_cap: number
-          napsa_rate: number
-          nhima_employee_rate: number
-          nhima_employer_rate: number
-          notes: string | null
-          paye_bands: Json
-          sdl_rate: number
+          action_target_id: string
+          action_type: string
+          facts: Json
+          fallback_title: string
+          key: string
+          score: number
+          type: string
+        }[]
+      }
+      detect_overdue_rent: {
+        Args: { p_property_id: string }
+        Returns: {
+          action_target_id: string
+          action_type: string
+          facts: Json
+          fallback_title: string
+          key: string
+          score: number
+          type: string
+        }[]
+      }
+      detect_stale_maintenance: {
+        Args: { p_property_id: string }
+        Returns: {
+          action_target_id: string
+          action_type: string
+          facts: Json
+          fallback_title: string
+          key: string
+          score: number
+          type: string
+        }[]
+      }
+      fee_config_for_landlord: {
+        Args: { p_landlord_id: string }
+        Returns: {
+          allocation_rule: string
+          grace_period_days: number
+          landlord_fee_pct: number
+          landlord_id: string
+          manual_approval_threshold: number | null
+          penalty_cap_enabled: boolean
+          penalty_cap_pct: number
+          tenant_fee_pct: number
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "fee_config"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      generate_portal_token: { Args: never; Returns: string }
+      get_all_open_tasks: { Args: { p_property_id: string }; Returns: Json }
+      get_today_tasks: { Args: { p_property_id: string }; Returns: Json }
+      import_tenant_opening_balance: {
+        Args: { p_owing: number; p_tenant_id: string }
+        Returns: undefined
+      }
+      increment_sms_daily_counter: {
+        Args: { p_day: string; p_property_id: string }
+        Returns: number
+      }
+      ledger_entry_is_prepaid_hold: {
+        Args: {
+          p_billing_period_id: string
+          p_charge_id: string
+          p_event_type: string
+        }
+        Returns: boolean
+      }
+      ledger_period_from_label: { Args: { p_label: string }; Returns: string }
+      ledger_v2_available_cash: {
+        Args: { p_property_id: string }
+        Returns: number
+      }
+      ledger_v2_caller_role: {
+        Args: { p_property_id: string }
+        Returns: string
+      }
+      ledger_v2_charge_remaining: {
+        Args: { p_charge_id: string }
+        Returns: number
+      }
+      ledger_v2_reclaim_stuck_payouts: {
+        Args: { p_max_age_minutes?: number }
+        Returns: {
+          reclaimed_entry_id: string
+          reversal_entry_id: string
+        }[]
+      }
+      ledger_v2_requires_approval: {
+        Args: {
+          p_amount: number
+          p_caller_role: string
+          p_fee_config: Database["public"]["Tables"]["fee_config"]["Row"]
+        }
+        Returns: boolean
+      }
+      ledger_v2_run_daily_penalty_accrual: {
+        Args: never
+        Returns: {
+          entries_posted: number
+          error: string
+          tenant_id: string
+          total_amount: number
+        }[]
+      }
+      ledger_v2_safe_date: { Args: { p_text: string }; Returns: string }
+      ledger_v2_tenant_balance: {
+        Args: {
+          p_account: Database["public"]["Enums"]["ledger_account"]
+          p_tenant_id: string
+        }
+        Returns: number
+      }
+      ledger_v2_tenant_context: {
+        Args: { p_tenant_id: string }
+        Returns: {
+          caller_role: string
+          landlord_id: string
+          property_id: string
+        }[]
+      }
+      ledger_v2_verify: {
+        Args: { p_landlord_id: string }
+        Returns: {
+          check_name: string
+          failing_count: number
+        }[]
+      }
+      lusaka_current_period: { Args: never; Returns: string }
+      pay_portal_claim_payout_collections: {
+        Args: {
+          p_max_amount?: number
+          p_payout_id: string
+          p_property_id: string
+        }
+        Returns: number
+      }
+      pay_portal_get_balance_v2: {
+        Args: { p_session_token: string; p_tenant_id: string }
+        Returns: number
+      }
+      pay_portal_get_collection_status: {
+        Args: {
+          p_collection_id: string
+          p_session_token: string
+          p_tenant_id: string
+        }
+        Returns: {
+          failure_reason: string
+          status: string
         }[]
       }
       pay_portal_get_ledger: {
@@ -1801,29 +3396,6 @@ export type Database = {
           amount: number
           label: string
           paid_amount: number
-          status: string
-        }[]
-      }
-      pay_portal_get_property_balance: {
-        Args: { p_property_id: string }
-        Returns: number
-      }
-      pay_portal_increment_property_balance: {
-        Args: { p_amount: number; p_property_id: string }
-        Returns: undefined
-      }
-      pay_portal_claim_payout_collections: {
-        Args: { p_max_amount?: number; p_payout_id: string; p_property_id: string }
-        Returns: number
-      }
-      pay_portal_release_payout_collections: {
-        Args: { p_payout_id: string }
-        Returns: undefined
-      }
-      pay_portal_get_collection_status: {
-        Args: { p_collection_id: string; p_session_token: string; p_tenant_id: string }
-        Returns: {
-          failure_reason: string
           status: string
         }[]
       }
@@ -1837,19 +3409,56 @@ export type Database = {
           status: string
         }[]
       }
+      pay_portal_get_maintenance_v1: {
+        Args: { p_session_token: string; p_tenant_id: string }
+        Returns: {
+          description: string
+          id: string
+          location: string
+          photo_urls: string[]
+          status: string
+          submitted_at: string
+        }[]
+      }
       pay_portal_get_property: {
         Args: { p_property_slug: string }
         Returns: {
-          daily_penalty_rate: number | null
           due_day: number
           id: string
-          late_fee_cap_amount: number | null
+          logo_url: string
+          name: string
+        }[]
+      }
+      pay_portal_get_property_balance: {
+        Args: { p_property_id: string }
+        Returns: number
+      }
+      pay_portal_get_property_v2: {
+        Args: { p_property_slug: string }
+        Returns: {
+          daily_penalty_rate: number
+          due_day: number
+          grace_period_days: number
+          id: string
+          late_fee_cap_amount: number
           late_fee_cap_enabled: boolean
           late_fee_enabled: boolean
           late_fee_mode: string
           late_fee_percent: number
-          logo_url: string | null
+          logo_url: string
           name: string
+        }[]
+      }
+      pay_portal_get_statement_v2: {
+        Args: { p_session_token: string; p_tenant_id: string }
+        Returns: {
+          amount: number
+          description: string
+          direction: number
+          effective_date: string
+          entry_type: string
+          running_balance: number
+          status: string
         }[]
       }
       pay_portal_get_tenant: {
@@ -1866,38 +3475,47 @@ export type Database = {
         }[]
       }
       pay_portal_get_tenant_v2: {
-        Args: { p_property_slug: string; p_session_token: string; p_tenant_id: string }
+        Args: {
+          p_property_slug: string
+          p_session_token: string
+          p_tenant_id: string
+        }
         Returns: {
           days_overdue: number
           emergency_contacts: Json
           id: string
+          landlord_name: string
           move_in_date: string
           name: string
           owed_amount: number
           phone: string
+          property_address: string
+          property_name: string
           rent_amount: number
           room: string
           room_type: string
           status: string
         }[]
       }
-      pay_portal_get_maintenance_v1: {
+      pay_portal_has_ledger_penalty: {
         Args: { p_session_token: string; p_tenant_id: string }
-        Returns: {
-          description: string
-          id: string
-          location: string
-          photo_urls: string[]
-          status: string
-          submitted_at: string
-        }[]
+        Returns: boolean
       }
-      /** Session-gated (pay_portal_verify_session). Phase 1 fix (20260916000000): deducts
-       * p_amount from the tenant's real current balance and sets status paid/partial accordingly,
-       * clamped at 0 — no longer unconditionally zeroes owed_amount. The v1 function (no session
-       * check at all) was dropped in the same migration after confirming zero callers. */
+      pay_portal_increment_property_balance: {
+        Args: { p_amount: number; p_property_id: string }
+        Returns: undefined
+      }
       pay_portal_log_payment_v2: {
-        Args: { p_amount: number; p_label: string; p_session_token: string; p_tenant_id: string }
+        Args: {
+          p_amount: number
+          p_label: string
+          p_session_token: string
+          p_tenant_id: string
+        }
+        Returns: undefined
+      }
+      pay_portal_release_payout_collections: {
+        Args: { p_payout_id: string }
         Returns: undefined
       }
       pay_portal_search_tenants: {
@@ -1932,6 +3550,7 @@ export type Database = {
           p_location: string
           p_photo_urls?: string[]
           p_property_slug: string
+          p_session_token: string
           p_tenant_id: string
         }
         Returns: undefined
@@ -1940,24 +3559,192 @@ export type Database = {
         Args: { p_session_token: string; p_tenant_id: string }
         Returns: boolean
       }
+      post_charge: {
+        Args: {
+          p_amount: number
+          p_billing_period?: string
+          p_description: string
+          p_effective_date?: string
+          p_reason: string
+          p_tenant_id: string
+        }
+        Returns: {
+          entry_id: string
+          new_balance: number
+          status: Database["public"]["Enums"]["ledger_entry_status"]
+        }[]
+      }
+      post_credit: {
+        Args: {
+          p_amount: number
+          p_description?: string
+          p_reason: string
+          p_tenant_id: string
+        }
+        Returns: {
+          entry_id: string
+          new_balance: number
+          status: Database["public"]["Enums"]["ledger_entry_status"]
+        }[]
+      }
+      post_daily_sms_summary: { Args: never; Returns: undefined }
+      post_deposit_action: {
+        Args: {
+          p_amount: number
+          p_description?: string
+          p_entry_type: Database["public"]["Enums"]["ledger_entry_type"]
+          p_reason: string
+          p_tenant_id: string
+        }
+        Returns: {
+          entry_id: string
+          new_deposit_balance: number
+          status: Database["public"]["Enums"]["ledger_entry_status"]
+        }[]
+      }
+      post_payment: {
+        Args: {
+          p_effective_date?: string
+          p_event_id: string
+          p_reference_id?: string
+          p_reference_table?: string
+          p_rent_amount: number
+          p_source?: Database["public"]["Enums"]["ledger_source"]
+          p_tenant_id: string
+        }
+        Returns: {
+          already_processed: boolean
+          applied_to_charges: number
+          credited: number
+          new_balance: number
+        }[]
+      }
+      post_payout: {
+        Args: {
+          p_amount: number
+          p_payout_id: string
+          p_property_id: string
+          p_reason?: string
+        }
+        Returns: {
+          available_before: number
+          entry_id: string
+        }[]
+      }
+      post_penalty_accrual: {
+        Args: { p_as_of_date?: string; p_tenant_id: string }
+        Returns: {
+          entries_posted: number
+          total_amount: number
+        }[]
+      }
+      post_rent_charges: {
+        Args: { p_billing_period: string; p_tenant_id: string }
+        Returns: {
+          already_posted: boolean
+          amount: number
+          entry_id: string
+        }[]
+      }
+      record_offline_payment: {
+        Args: {
+          p_amount: number
+          p_description?: string
+          p_reason: string
+          p_tenant_id: string
+        }
+        Returns: {
+          applied_to_charges: number
+          credited: number
+          new_balance: number
+        }[]
+      }
+      reverse_entry: {
+        Args: { p_entry_id: string; p_reason: string }
+        Returns: {
+          entry_id: string
+          new_balance: number
+        }[]
+      }
+      set_task_status: {
+        Args: { p_snooze_days?: number; p_status: string; p_task_id: string }
+        Returns: Json
+      }
+      sms_phone_key: { Args: { p: string }; Returns: string }
+      search_help_articles: {
+        Args: { q: string }
+        Returns: {
+          article_id: string
+          group_slug: string
+          group_title: string
+          article_slug: string
+          title: string
+          summary: string
+          rank: number
+          snippet: string
+        }[]
+      }
+      sync_all_tasks: { Args: never; Returns: number }
+      sync_tasks: { Args: { p_property_id: string }; Returns: number }
       sync_tenant_balance_if_new_model: {
         Args: { p_tenant_id: string }
         Returns: {
-          tenant_id: string
+          balance: number
+          days_overdue: number
+          skip_reason: string
+          status: string
           synchronized: boolean
-          skip_reason: string | null
-          balance: number | null
-          status: string | null
-          days_overdue: number | null
+          tenant_id: string
         }[]
       }
+      task_kwacha: { Args: { amount: number }; Returns: string }
+      task_priority: { Args: { p_score: number }; Returns: string }
+      tenant_has_moved_in: { Args: { p_move_in: string }; Returns: boolean }
       void_ledger_entry: {
         Args: { p_id: string; p_reason: string }
-        Returns: { entry_id: string; voided: boolean; refusal_reason: string | null }[]
+        Returns: {
+          entry_id: string
+          refusal_reason: string
+          voided: boolean
+        }[]
+      }
+      waive_charge: {
+        Args: { p_amount?: number; p_charge_id: string; p_reason: string }
+        Returns: {
+          entry_id: string
+          new_balance: number
+          status: Database["public"]["Enums"]["ledger_entry_status"]
+        }[]
       }
     }
     Enums: {
-      [_ in never]: never
+      ledger_account: "RENT" | "DEPOSIT" | "FEES" | "PAYOUT"
+      ledger_entry_status: "POSTED" | "PENDING_APPROVAL" | "REJECTED"
+      ledger_entry_type:
+        | "RENT_CHARGE"
+        | "PENALTY_CHARGE"
+        | "ADDED_CHARGE"
+        | "PAYMENT"
+        | "WAIVER"
+        | "CREDIT"
+        | "REFUND"
+        | "REVERSAL"
+        | "DEPOSIT_RECEIVED"
+        | "DEPOSIT_DEDUCTION"
+        | "DEPOSIT_REFUND"
+        | "DEPOSIT_FORFEIT"
+        | "TENANT_FEE"
+        | "PLATFORM_FEE"
+        | "LENCO_COST"
+        | "PAYOUT"
+        | "OPENING_BALANCE"
+      ledger_source:
+        | "AUTO_SCHEDULER"
+        | "AUTO_WEBHOOK"
+        | "AUTO_PENALTY"
+        | "MANUAL"
+        | "MIGRATION"
+        | "SYSTEM"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -2084,6 +3871,36 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      ledger_account: ["RENT", "DEPOSIT", "FEES", "PAYOUT"],
+      ledger_entry_status: ["POSTED", "PENDING_APPROVAL", "REJECTED"],
+      ledger_entry_type: [
+        "RENT_CHARGE",
+        "PENALTY_CHARGE",
+        "ADDED_CHARGE",
+        "PAYMENT",
+        "WAIVER",
+        "CREDIT",
+        "REFUND",
+        "REVERSAL",
+        "DEPOSIT_RECEIVED",
+        "DEPOSIT_DEDUCTION",
+        "DEPOSIT_REFUND",
+        "DEPOSIT_FORFEIT",
+        "TENANT_FEE",
+        "PLATFORM_FEE",
+        "LENCO_COST",
+        "PAYOUT",
+        "OPENING_BALANCE",
+      ],
+      ledger_source: [
+        "AUTO_SCHEDULER",
+        "AUTO_WEBHOOK",
+        "AUTO_PENALTY",
+        "MANUAL",
+        "MIGRATION",
+        "SYSTEM",
+      ],
+    },
   },
 } as const

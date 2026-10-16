@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 
@@ -6,7 +6,6 @@ import PageHeader from "../components/PageHeader";
 import Modal from "../components/Modal";
 import ExpenseFormDrawer from "../components/ExpenseFormDrawer";
 import Lightbox from "../components/Lightbox";
-import Pagination, { DEFAULT_PAGE_SIZE } from "../components/Pagination";
 
 import {
   useExpenses,
@@ -16,10 +15,8 @@ import {
 
 import {
   Paperclip,
-  MagnifyingGlass,
   GearSix,
   DownloadSimple,
-  Receipt,
   Plus,
   Tag,
   PencilSimple,
@@ -29,26 +26,19 @@ import {
   Sparkle,
   Check,
   X as XIcon,
-  Funnel,
-  TrendUp,
-  TrendDown,
+  CaretLeft,
+  CaretRight,
+  Receipt,
 } from "@phosphor-icons/react";
 
 import { Skeleton, SkeletonRow } from "../components/Skeleton";
 import Button from "../components/Button";
-import MonthSwitcher from "../components/MonthSwitcher";
+import Select from "../components/Select";
+import SearchInput from "../components/SearchInput";
+import Pagination, { DEFAULT_PAGE_SIZE } from "../components/Pagination";
+import { TableCard, TableCardHeader, DataTable, DataTableHead, DataTableBody, Th, Td } from "../components/DataTable";
 import { useToast } from "../ToastContext";
 
-import { Progress } from "@/components/ui/progress";
-import {
-  TableCard,
-  TableCardHeader,
-  DataTable,
-  DataTableHead,
-  DataTableBody,
-  Th,
-  Td,
-} from "../components/DataTable";
 
 import Expensephoto from "../../assets/Expenses Empty State Ui.png";
 
@@ -106,6 +96,10 @@ function categoryColorIndex(
     : 0;
 }
 
+function categoryBadgeStyle(categories: Category[], categoryId: string): string {
+  return CATEGORY_BADGE_COLORS[categoryColorIndex(categories, categoryId)];
+}
+
 function categoryDotStyle(
   categories: Category[],
   categoryId: string
@@ -138,47 +132,6 @@ function isInMonth(iso: string, label: string) {
   return monthLabel(new Date(iso)) === label;
 }
 
-function downloadCsv(
-  filename: string,
-  rows: Expense[],
-  categoryName: (id: string) => string
-) {
-  const header = [
-    "Name",
-    "Description",
-    "Category",
-    "Date",
-    "Amount",
-  ];
-
-  const lines = rows.map((e) =>
-    [
-      e.name,
-      e.description ?? "",
-      categoryName(e.categoryId),
-      e.date,
-      e.amount,
-    ]
-      .map((v) => `"${String(v).replace(/"/g, '""')}"`)
-      .join(",")
-  );
-
-  const csv = [header.join(","), ...lines].join("\n");
-
-  const blob = new Blob([csv], {
-    type: "text/csv;charset=utf-8;",
-  });
-
-  const url = URL.createObjectURL(blob);
-
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-
-  URL.revokeObjectURL(url);
-}
-
 /* -------------------------------------------------------------------------- */
 /* Small icons                                                                */
 /* -------------------------------------------------------------------------- */
@@ -188,15 +141,6 @@ function PaperclipIcon() {
     <Paperclip
       size={14}
       weight="duotone"
-    />
-  );
-}
-
-function SearchIcon() {
-  return (
-    <MagnifyingGlass
-      size={18}
-      weight="regular"
     />
   );
 }
@@ -347,7 +291,8 @@ function CategoriesEmptyState({
 
 function CategoryRow({
   category,
-  dotClassName,
+  badgeClassName,
+  count,
   inUse,
   isRenaming,
   renameValue,
@@ -359,7 +304,8 @@ function CategoryRow({
   onRequestDelete,
 }: {
   category: Category;
-  dotClassName: string;
+  badgeClassName: string;
+  count: number;
   inUse: boolean;
   isRenaming: boolean;
   renameValue: string;
@@ -370,99 +316,63 @@ function CategoryRow({
   onToggleActive: () => void;
   onRequestDelete: () => void;
 }) {
+  const iconBtn =
+    "flex h-8 w-8 items-center justify-center rounded-lg border border-line text-muted transition-colors hover:bg-mist hover:text-ink";
   return (
-    <div className="flex items-center gap-2.5 rounded-lg border border-line bg-paper px-3.5 py-2.5">
-      <span
-        className={`h-2.5 w-2.5 shrink-0 rounded-full ${
-          category.active ? dotClassName : "bg-muted"
-        }`}
-      />
+    <div className="flex items-center gap-3 px-4 py-3">
+      <div className="min-w-0 flex-1">
+        {isRenaming ? (
+          <input
+            autoFocus
+            value={renameValue}
+            onChange={(e) => onRenameValueChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && renameValue.trim()) onCommitRename();
+              if (e.key === "Escape") onCancelRename();
+            }}
+            onBlur={() => (renameValue.trim() ? onCommitRename() : onCancelRename())}
+            className="w-full rounded-lg border border-line bg-paper px-2.5 py-1.5 text-sm outline-none focus:border-brand"
+          />
+        ) : (
+          <div className="flex items-center gap-2.5">
+            <span
+              className={`inline-flex max-w-full items-center truncate rounded-md px-2 py-0.5 text-xs font-semibold whitespace-nowrap ${
+                category.active ? badgeClassName : "bg-mist text-muted"
+              }`}
+            >
+              {category.name}
+            </span>
+            <span className="shrink-0 text-xs text-muted">
+              {count === 0 ? "Not used yet" : `${count} expense${count === 1 ? "" : "s"}`}
+            </span>
+          </div>
+        )}
+      </div>
 
-      {isRenaming ? (
-        <input
-          autoFocus
-          value={renameValue}
-          onChange={(e) =>
-            onRenameValueChange(e.target.value)
-          }
-          onKeyDown={(e) => {
-            if (
-              e.key === "Enter" &&
-              renameValue.trim()
-            ) {
-              onCommitRename();
-            }
-
-            if (e.key === "Escape") {
-              onCancelRename();
-            }
-          }}
-          onBlur={() =>
-            renameValue.trim()
-              ? onCommitRename()
-              : onCancelRename()
-          }
-          className="min-w-0 flex-1 rounded border border-line bg-paper px-1.5 py-0.5 text-sm outline-none focus:border-brand"
-        />
-      ) : (
-        <span
-          className={`min-w-0 flex-1 truncate text-sm font-medium ${
-            category.active
-              ? "text-ink"
-              : "text-muted"
-          }`}
-        >
-          {category.name}
-        </span>
-      )}
-
-      <div className="flex shrink-0 items-center gap-0.5">
-        <button
-          type="button"
-          onClick={onStartRename}
-          aria-label={`Rename ${category.name}`}
-          className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition active:scale-90 hover:bg-mist hover:text-ink"
-        >
-          <PencilSimple size={13} />
+      <div className="flex shrink-0 items-center gap-1.5">
+        <button type="button" onClick={onStartRename} aria-label={`Rename ${category.name}`} title="Rename" className={iconBtn}>
+          <PencilSimple size={16} />
         </button>
 
-        {category.active && (
-          <button
-            type="button"
-            onClick={onToggleActive}
-            aria-label={`Archive ${category.name}`}
-            title="Archive — hides it from new expenses, keeps past ones"
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition active:scale-90 hover:bg-mist hover:text-ink"
-          >
-            <Archive size={13} />
-          </button>
-        )}
-
-        {!category.active && (
-          <button
-            type="button"
-            onClick={onToggleActive}
-            aria-label={`Restore ${category.name}`}
-            title="Restore to active categories"
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition active:scale-90 hover:bg-mist hover:text-ink"
-          >
-            <ArrowCounterClockwise size={13} />
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={onToggleActive}
+          aria-label={`${category.active ? "Archive" : "Restore"} ${category.name}`}
+          title={category.active ? "Archive: hides it from new expenses, keeps past ones" : "Restore to active categories"}
+          className={iconBtn}
+        >
+          {category.active ? <Archive size={16} /> : <ArrowCounterClockwise size={16} />}
+        </button>
 
         <button
           type="button"
           onClick={onRequestDelete}
           disabled={inUse}
           aria-label={`Delete ${category.name}`}
-          title={
-            inUse
-              ? "Used on existing expenses — archive it instead"
-              : "Delete permanently"
-          }
-          className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition active:scale-90 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted"
+          title={inUse ? "Used on existing expenses, archive it instead" : "Delete permanently"}
+          className="flex h-8 w-8 items-center justify-center rounded-lg border border-line text-muted transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-line disabled:hover:bg-transparent disabled:hover:text-muted"
         >
-          <Trash size={13} />
+          <Trash size={16} />
         </button>
       </div>
     </div>
@@ -572,10 +482,8 @@ function ManageCategoriesModal({
 
   const rowProps = (c: Category) => ({
     category: c,
-    dotClassName: categoryDotStyle(
-      categories,
-      c.id
-    ),
+    badgeClassName: categoryBadgeStyle(categories, c.id),
+    count: usageCount.get(c.id) ?? 0,
     inUse:
       (usageCount.get(c.id) ?? 0) > 0,
     isRenaming: renamingId === c.id,
@@ -606,8 +514,19 @@ function ManageCategoriesModal({
     <Modal
       onClose={onClose}
       title="Categories"
-      description="Delete a category you don't use, or archive one with expense history to keep it out of new ones."
-      maxWidth="max-w-xl"
+      description="How your expenses are grouped."
+      maxWidth="max-w-md"
+      footer={
+        categories.length > 0 ? (
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs text-muted">Archive keeps past expenses and hides it from new ones.</p>
+            <Button variant="primary" className="shrink-0 gap-1.5" onClick={() => setAdding(true)}>
+              <Plus size={14} weight="bold" />
+              Add category
+            </Button>
+          </div>
+        ) : undefined
+      }
     >
       {categories.length === 0 ? (
         <CategoriesEmptyState
@@ -616,32 +535,7 @@ function ManageCategoriesModal({
         />
       ) : (
         <>
-          <div className="flex items-center gap-2">
-            <div className="flex flex-1 items-center gap-2 rounded-lg border border-line bg-mist px-3 py-2">
-              <SearchIcon />
-
-              <input
-                value={query}
-                onChange={(e) =>
-                  setQuery(e.target.value)
-                }
-                placeholder="Search categories"
-                className="w-full bg-transparent text-sm outline-none placeholder:text-muted"
-              />
-            </div>
-
-            <Button
-              variant="primary"
-              className="shrink-0 gap-1.5"
-              onClick={() => setAdding(true)}
-            >
-              <Plus
-                size={14}
-                weight="bold"
-              />
-              Add category
-            </Button>
-          </div>
+          <SearchInput value={query} onChange={setQuery} placeholder="Search categories" className="w-full" />
 
           {adding && (
             <div className="mt-3 flex items-center gap-2 rounded-lg border border-brand/30 bg-brand-soft/40 p-2.5">
@@ -662,7 +556,7 @@ function ManageCategoriesModal({
                   }
                 }}
                 placeholder="e.g. Landscaping"
-                className="flex-1 rounded-lg border border-line bg-paper px-3 py-2 text-sm outline-none focus:border-brand"
+                className="flex-1 rounded-lg border border-transparent bg-mist px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand/30"
               />
 
               <Button
@@ -693,28 +587,23 @@ function ManageCategoriesModal({
               No categories match "{query}".
             </p>
           ) : (
-            <div className="mt-4 max-h-[26rem] space-y-5 overflow-y-auto pr-0.5">
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {activeCategories.map((c) => (
-                  <CategoryRow
-                    key={c.id}
-                    {...rowProps(c)}
-                  />
-                ))}
-              </div>
+            <div className="mt-4 h-[320px] space-y-5 overflow-y-auto pr-0.5">
+              {activeCategories.length > 0 && (
+                <div className="divide-y divide-line rounded-lg border border-line">
+                  {activeCategories.map((c) => (
+                    <CategoryRow key={c.id} {...rowProps(c)} />
+                  ))}
+                </div>
+              )}
 
               {archivedCategories.length > 0 && (
                 <div>
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+                  <p className="mb-2 text-[10.5px] font-bold uppercase tracking-[0.08em] text-muted">
                     Archived ({archivedCategories.length})
                   </p>
-
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <div className="divide-y divide-line rounded-lg border border-line">
                     {archivedCategories.map((c) => (
-                      <CategoryRow
-                        key={c.id}
-                        {...rowProps(c)}
-                      />
+                      <CategoryRow key={c.id} {...rowProps(c)} />
                     ))}
                   </div>
                 </div>
@@ -777,247 +666,6 @@ function ManageCategoriesModal({
 }
 
 /* -------------------------------------------------------------------------- */
-/* Category filter                                                            */
-/* -------------------------------------------------------------------------- */
-
-function CategoryFilterMenu({
-  categories,
-  byCategory,
-  total,
-  categoryFilter,
-  onSelect,
-}: {
-  categories: Category[];
-  byCategory: {
-    category: Category;
-    total: number;
-  }[];
-  total: number;
-  categoryFilter: string;
-  onSelect: (id: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [align, setAlign] =
-    useState<"left" | "right">("right");
-
-  const [query, setQuery] = useState("");
-
-  const blurTimeout =
-    useRef<number | null>(null);
-
-  const containerRef =
-    useRef<HTMLDivElement>(null);
-
-  const selected =
-    byCategory.find(
-      (c) =>
-        c.category.id === categoryFilter
-    ) ?? null;
-
-  const results = useMemo(() => {
-    const q = query.trim().toLowerCase();
-
-    return byCategory.filter(
-      (c) =>
-        !q ||
-        c.category.name
-          .toLowerCase()
-          .includes(q)
-    );
-  }, [byCategory, query]);
-
-  const close = () => {
-    setOpen(false);
-    setQuery("");
-  };
-
-  const toggle = () => {
-    if (
-      !open &&
-      containerRef.current
-    ) {
-      const rect =
-        containerRef.current.getBoundingClientRect();
-
-      const panelWidth = 288;
-
-      setAlign(
-        rect.left + panelWidth >
-          window.innerWidth - 16
-          ? "right"
-          : "left"
-      );
-    }
-
-    setOpen((value) => !value);
-  };
-
-  return (
-    <div
-      ref={containerRef}
-      className="relative shrink-0"
-    >
-      <button
-        type="button"
-        onClick={toggle}
-        className="flex items-center gap-2 text-[17px] font-medium text-[#292624] underline decoration-[1px] underline-offset-[4px] transition-colors hover:text-[#005d68]"
-      >
-        <Funnel
-          size={17}
-          weight="regular"
-        />
-
-        Filter
-
-        {selected && (
-          <span className="text-[#706a67]">
-            · {selected.category.name}
-          </span>
-        )}
-      </button>
-
-      <AnimatePresence>
-        {open && (
-          <>
-            <button
-              type="button"
-              aria-hidden
-              className="fixed inset-0 z-10 cursor-default"
-              onClick={close}
-              tabIndex={-1}
-            />
-
-            <motion.div
-              initial={{
-                opacity: 0,
-                y: -4,
-                scale: 0.98,
-              }}
-              animate={{
-                opacity: 1,
-                y: 0,
-                scale: 1,
-              }}
-              exit={{
-                opacity: 0,
-                y: -4,
-                scale: 0.98,
-              }}
-              transition={{
-                duration: 0.14,
-                ease: [0.16, 1, 0.3, 1],
-              }}
-              className={`absolute top-full z-20 mt-2 w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-[#968f8b] bg-white shadow-[0_12px_30px_rgba(0,0,0,0.10)] ${
-                align === "left"
-                  ? "left-0"
-                  : "right-0"
-              }`}
-            >
-              <div className="flex items-center gap-2 border-b border-[#ded9d6] px-4 py-3">
-                <SearchIcon />
-
-                <input
-                  autoFocus
-                  value={query}
-                  onChange={(e) =>
-                    setQuery(e.target.value)
-                  }
-                  onBlur={() => {
-                    blurTimeout.current =
-                      window.setTimeout(
-                        close,
-                        120
-                      );
-                  }}
-                  onFocus={() => {
-                    if (
-                      blurTimeout.current
-                    ) {
-                      window.clearTimeout(
-                        blurTimeout.current
-                      );
-                    }
-                  }}
-                  placeholder="Filter by category..."
-                  className="w-full bg-transparent text-[15px] outline-none placeholder:text-[#8a8481]"
-                />
-              </div>
-
-              <div className="max-h-64 overflow-y-auto py-1">
-                <button
-                  type="button"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    onSelect("all");
-                    close();
-                  }}
-                  className={`flex w-full items-center justify-between px-4 py-2.5 text-left text-[15px] transition-colors hover:bg-[#f8f6f5] ${
-                    categoryFilter === "all"
-                      ? "font-medium text-[#005d68]"
-                      : "text-[#292624]"
-                  }`}
-                >
-                  <span>All categories</span>
-
-                  <span className="text-xs text-[#706a67]">
-                    {formatK(total)}
-                  </span>
-                </button>
-
-                {results.map((c) => (
-                  <button
-                    key={c.category.id}
-                    type="button"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-
-                      onSelect(
-                        c.category.id
-                      );
-
-                      close();
-                    }}
-                    className={`flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left text-[15px] transition-colors hover:bg-[#f8f6f5] ${
-                      categoryFilter ===
-                      c.category.id
-                        ? "font-medium text-[#005d68]"
-                        : "text-[#292624]"
-                    }`}
-                  >
-                    <span className="flex min-w-0 items-center gap-2.5">
-                      <span
-                        className={`h-2.5 w-2.5 shrink-0 rounded-full ${categoryDotStyle(
-                          categories,
-                          c.category.id
-                        )}`}
-                      />
-
-                      <span className="truncate">
-                        {c.category.name}
-                      </span>
-                    </span>
-
-                    <span className="shrink-0 text-xs text-[#706a67]">
-                      {formatK(c.total)}
-                    </span>
-                  </button>
-                ))}
-
-                {results.length === 0 && (
-                  <p className="px-4 py-5 text-center text-sm text-[#706a67]">
-                    No categories match.
-                  </p>
-                )}
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
 /* Accounting page                                                            */
 /* -------------------------------------------------------------------------- */
 
@@ -1058,11 +706,8 @@ export default function Accounting() {
     () => (location.state as { categoryFilter?: string } | null)?.categoryFilter ?? "all"
   );
 
-  const [page, setPage] =
-    useState(1);
-
-  const [rowsPerPage, setRowsPerPage] =
-    useState(DEFAULT_PAGE_SIZE);
+  const [page, setPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(DEFAULT_PAGE_SIZE);
 
   const [showForm, setShowForm] =
     useState(false);
@@ -1180,27 +825,14 @@ export default function Accounting() {
     query,
   ]);
 
-  const pageCount = Math.max(
-    1,
-    Math.ceil(
-      filtered.length /
-        rowsPerPage
-    )
-  );
+  const pageCount = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
+  const currentPage = Math.min(page, pageCount);
+  const pageRows = filtered.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
 
-  const currentPage = Math.min(
-    page,
-    pageCount
-  );
-
-  const pageRows = filtered.slice(
-    (currentPage - 1) *
-      rowsPerPage,
-    currentPage * rowsPerPage
-  );
-
+  // The intro/empty illustration is only for a landlord who has never logged an expense. An empty
+  // month for someone with history still shows the normal page (stats, filters, month picker).
   const hasExpenses =
-    monthExpenses.length > 0;
+    expenses.length > 0;
 
   /* ---------------------------------------------------------------------- */
   /* Metrics                                                                 */
@@ -1270,270 +902,204 @@ export default function Accounting() {
   /* Page                                                                    */
   /* ---------------------------------------------------------------------- */
 
+  const openNew = () => {
+    setEditing(null);
+    setPrefill(undefined);
+    setShowForm(true);
+  };
+
+  const categoryOptions = [
+    { value: "all", label: "All categories" },
+    ...byCategory.map(({ category }) => ({ value: category.id, label: category.name })),
+  ];
+
   return (
     <>
       <PageHeader
         title="Expenses"
-        description="See where your property's money is going, by category."
+        description="Everything you spend on your property: log costs, attach receipts and see where the money goes by category."
+        actions={
+          <Button variant="primary" className="gap-1.5" onClick={openNew}>
+            <Plus size={14} weight="bold" />
+            Add expense
+          </Button>
+        }
       />
 
-      <div className="space-y-5 px-4 pb-10 sm:px-8">
-        {/* ---------------------------------------------------------------- */}
-        {/* Top actions                                                       */}
-        {/* ---------------------------------------------------------------- */}
+      <div className="space-y-6 px-4 pb-10 sm:px-8">
 
-        <div className="flex flex-wrap items-center gap-3">
-          {(!isReady ||
-            hasExpenses) && (
-            <MonthSwitcher
-              month={month}
-              monthOffset={
-                monthOffset
-              }
-              onPrev={() =>
-                setMonthOffset(
-                  (o) => o - 1
-                )
-              }
-              onNext={() =>
-                setMonthOffset(
-                  (o) =>
-                    Math.min(
-                      0,
-                      o + 1
-                    )
-                )
-              }
-              onJumpToNow={() =>
-                setMonthOffset(0)
-              }
-            />
-          )}
-
-          <div className="ml-auto flex items-center gap-2">
-            {hasExpenses && (
-              <Button
-                variant="secondary"
-                className="gap-1.5"
-                onClick={() =>
-                  downloadCsv(
-                    `expenses-${month.replace(
-                      " ",
-                      "-"
-                    )}.csv`,
-                    filtered,
-                    categoryName
-                  )
-                }
-              >
-                <DownloadSimple
-                  size={14}
-                  weight="bold"
-                />
-                Export
-              </Button>
-            )}
-
-            <Button
-              variant="secondary"
-              className="gap-1.5"
-              onClick={() =>
-                setShowCategories(
-                  true
-                )
-              }
-            >
-              <SettingsIcon />
-              Categories
-            </Button>
-
-            <Button
-              variant="primary"
-              onClick={() => {
-                setEditing(null);
-                setPrefill(undefined);
-                setShowForm(true);
-              }}
-            >
-              + Add expense
-            </Button>
-          </div>
-        </div>
-
-        {/* ---------------------------------------------------------------- */}
-        {/* Main content                                                      */}
-        {/* ---------------------------------------------------------------- */}
-
-        {!isReady ||
-        hasExpenses ? (
+        {!isReady || hasExpenses ? (
           <>
-            {/* ------------------------------------------------------------ */}
-            {/* Overview: total spent + category breakdown                    */}
-            {/* ------------------------------------------------------------ */}
+            {/* Month + actions */}
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-1 text-sm text-muted">
+                <button
+                  type="button"
+                  aria-label="Previous month"
+                  onClick={() => {
+                    setMonthOffset((o) => o - 1);
+                    setPage(1);
+                  }}
+                  className="flex h-8 w-8 items-center justify-center rounded-md transition-colors hover:bg-mist hover:text-ink"
+                >
+                  <CaretLeft size={16} weight="bold" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMonthOffset(0);
+                    setPage(1);
+                  }}
+                  title="Jump to this month"
+                  className="min-w-[130px] text-center font-medium text-ink"
+                >
+                  {month}
+                </button>
+                <button
+                  type="button"
+                  aria-label="Next month"
+                  disabled={monthOffset >= 0}
+                  onClick={() => {
+                    setMonthOffset((o) => Math.min(0, o + 1));
+                    setPage(1);
+                  }}
+                  className="flex h-8 w-8 items-center justify-center rounded-md transition-colors hover:bg-mist hover:text-ink disabled:opacity-30 disabled:hover:bg-transparent"
+                >
+                  <CaretRight size={16} weight="bold" />
+                </button>
+              </div>
 
-            <div
-              key={`stats-${month}`}
-              className="pay-step grid grid-cols-1 gap-4 lg:grid-cols-5"
-            >
+              <div className="ml-auto flex items-center gap-2">
+                {hasExpenses && (
+                  <Button
+                    variant="secondary"
+                    className="gap-1.5"
+                    onClick={() => navigate("/reports/income-expenses/generate")}
+                  >
+                    <DownloadSimple size={14} weight="bold" />
+                    Export
+                  </Button>
+                )}
+                <Button variant="secondary" className="gap-1.5" onClick={() => setShowCategories(true)}>
+                  <SettingsIcon />
+                  Categories
+                </Button>
+              </div>
+
+            </div>
+
+            {/* Total + category bar */}
+            <div key={`total-${month}`} className="pay-step">
               {!isReady ? (
-                <>
-                  <div className="space-y-3 rounded-lg border border-line bg-paper p-4 lg:col-span-2">
-                    <Skeleton className="h-3 w-24" />
-                    <Skeleton className="h-8 w-32" />
-                    <Skeleton className="h-3 w-40" />
-                  </div>
-
-                  <div className="space-y-3 rounded-lg border border-line bg-paper p-4 lg:col-span-3">
-                    {Array.from({ length: 4 }).map((_, i) => (
-                      <Skeleton key={i} className="h-8 w-full" />
-                    ))}
-                  </div>
-                </>
+                <div className="space-y-3">
+                  <Skeleton className="h-3 w-28" />
+                  <Skeleton className="h-10 w-48" />
+                  <Skeleton className="h-2 w-full" />
+                </div>
               ) : (
                 <>
-                  {/* Total spent this month, with a trend vs the prior month */}
-                  <div className="rounded-lg border border-line bg-paper p-4 lg:col-span-2">
-                    <p className="text-sm font-medium text-muted">
-                      Total spent
+                  <p className="text-[13px] text-muted">Spent in {month}</p>
+                  <p className="mt-1 font-display text-[44px] font-bold leading-[1.1] tracking-[-0.02em] text-ink">
+                    <AnimatedValue value={formatK(total)} />
+                  </p>
+                  {trendPct !== null && trendPct !== 0 && (
+                    <p className="mt-1.5 text-[13px] text-muted">
+                      {Math.abs(trendPct).toFixed(0)}% {trendPct > 0 ? "more" : "less"} than last month
                     </p>
+                  )}
 
-                    <p className="mt-1.5 font-display text-3xl font-semibold tracking-tight text-ink">
-                      <AnimatedValue value={formatK(total)} />
-                    </p>
-
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      {trendPct !== null && (
-                        <span
-                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
-                            trendPct > 0
-                              ? "bg-red-50 text-red-600"
-                              : trendPct < 0
-                              ? "bg-emerald-50 text-emerald-600"
-                              : "bg-mist text-muted"
-                          }`}
-                        >
-                          {trendPct > 0 ? (
-                            <TrendUp size={12} weight="bold" />
-                          ) : trendPct < 0 ? (
-                            <TrendDown size={12} weight="bold" />
-                          ) : null}
-                          {trendPct === 0
-                            ? "No change"
-                            : `${Math.abs(trendPct).toFixed(0)}% vs last month`}
-                        </span>
-                      )}
-
-                      <span className="text-xs text-muted">
-                        {monthExpenses.length} expense
-                        {monthExpenses.length === 1 ? "" : "s"} in {month}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Where the money went this month, by category */}
-                  <div className="rounded-lg border border-line bg-paper p-4 lg:col-span-3">
-                    <p className="text-sm font-medium text-muted">
-                      By category
-                    </p>
-
-                    <div className="mt-3 space-y-3">
-                      {byCategory.filter((c) => c.total > 0).length === 0 ? (
-                        <p className="py-2 text-sm text-muted">
-                          No expenses logged in {month} yet.
-                        </p>
-                      ) : (
-                        byCategory
+                  {total > 0 && (
+                    <>
+                      <div className="mt-5 flex h-2 gap-0.5 overflow-hidden rounded-full">
+                        {byCategory
                           .filter((c) => c.total > 0)
-                          .slice(0, 5)
                           .map(({ category, total: catTotal }) => (
-                            <div key={category.id} className="space-y-1.5">
-                              <div className="flex items-center justify-between gap-3 text-sm">
-                                <span className="flex min-w-0 items-center gap-2 font-medium text-ink">
-                                  <span
-                                    className={`h-2 w-2 shrink-0 rounded-full ${categoryDotStyle(
-                                      categories,
-                                      category.id
-                                    )}`}
-                                  />
-                                  <span className="truncate">
-                                    {category.name}
-                                  </span>
-                                </span>
-
-                                <span className="shrink-0 font-display text-ink">
-                                  {formatK(catTotal)}
-                                </span>
-                              </div>
-
-                              <Progress
-                                value={
-                                  total > 0 ? (catTotal / total) * 100 : 0
-                                }
-                                className="h-1.5"
-                              />
-                            </div>
-                          ))
-                      )}
-                    </div>
-                  </div>
+                            <div
+                              key={category.id}
+                              style={{ flex: catTotal }}
+                              className={`${categoryDotStyle(categories, category.id)} transition-opacity ${
+                                categoryFilter !== "all" && categoryFilter !== category.id ? "opacity-25" : ""
+                              }`}
+                            />
+                          ))}
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5">
+                        {byCategory
+                          .filter((c) => c.total > 0)
+                          .map(({ category, total: catTotal }) => {
+                            const active = categoryFilter === category.id;
+                            return (
+                              <button
+                                key={category.id}
+                                type="button"
+                                onClick={() => {
+                                  setCategoryFilter(active ? "all" : category.id);
+                                  setPage(1);
+                                }}
+                                title={active ? "Show all categories" : `Show only ${category.name}`}
+                                className={`inline-flex items-center gap-1.5 rounded text-xs transition-colors hover:text-ink ${
+                                  active ? "font-semibold text-ink" : "text-muted"
+                                }`}
+                              >
+                                <span className={`h-2 w-2 shrink-0 rounded-full ${categoryDotStyle(categories, category.id)}`} />
+                                {category.name} {formatK(catTotal)}
+                              </button>
+                            );
+                          })}
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </div>
 
-            {/* ------------------------------------------------------------ */}
-            {/* Transactions                                                  */}
-            {/* ------------------------------------------------------------ */}
-
-            <TableCard
-              key={`table-${month}`}
-              className="pay-step"
-            >
+            {isReady && monthExpenses.length === 0 && !query && categoryFilter === "all" ? (
+              <div key={`empty-${month}`} className="pay-step flex flex-col items-center rounded-lg border border-dashed border-line px-6 py-12 text-center">
+                <span className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-soft text-brand">
+                  <Receipt size={28} weight="duotone" />
+                  <span className="absolute -bottom-1.5 -right-1.5 flex h-6 w-6 items-center justify-center rounded-full border-2 border-paper bg-brand text-white">
+                    <Plus size={12} weight="bold" />
+                  </span>
+                </span>
+                <p className="mt-4 text-sm font-semibold text-ink">No expenses in {month}</p>
+                <p className="mt-1 max-w-xs text-[13px] text-muted">
+                  Nothing has been logged for this month yet. Add repairs, bills or salaries as they happen.
+                </p>
+                <Button variant="primary" className="mt-5 gap-1.5" onClick={openNew}>
+                  <Plus size={14} weight="bold" />
+                  Add expense
+                </Button>
+              </div>
+            ) : (
+              <>
+            {/* Expenses table */}
+            <TableCard key={`table-${month}`} className="pay-step">
               <TableCardHeader>
                 <p className="text-sm font-semibold text-ink">
-                  Transactions
+                  Expenses
+                  {isReady && <span className="ml-2 text-xs font-medium text-muted">{filtered.length}</span>}
                 </p>
-
                 <div className="flex flex-wrap items-center gap-2">
-                  <div className="relative w-full sm:w-[280px]">
-                    <div className="flex h-9 items-center rounded-md border border-line bg-paper px-2.5 transition-colors focus-within:border-brand">
-                      <SearchIcon />
-
-                      <input
-                        value={query}
-                        onChange={(e) => {
-                          setQuery(e.target.value);
-                          setPage(1);
-                        }}
-                        placeholder="Find an expense"
-                        className="ml-2 w-full bg-transparent text-sm text-ink outline-none placeholder:text-muted"
-                      />
-                    </div>
-                  </div>
-
-                  <CategoryFilterMenu
-                    categories={
-                      categories
-                    }
-                    byCategory={
-                      byCategory
-                    }
-                    total={total}
-                    categoryFilter={
-                      categoryFilter
-                    }
-                    onSelect={(id) => {
-                      setCategoryFilter(
-                        id
-                      );
+                  <SearchInput
+                    value={query}
+                    onChange={(v) => {
+                      setQuery(v);
                       setPage(1);
                     }}
+                    placeholder="Search expenses"
+                    className="w-full sm:w-64"
+                  />
+                  <Select
+                    value={categoryFilter}
+                    onChange={(v) => {
+                      setCategoryFilter(v);
+                      setPage(1);
+                    }}
+                    options={categoryOptions}
+                    className="min-w-[170px] py-2 text-[13px]"
                   />
                 </div>
               </TableCardHeader>
-
-              {/* ---------------------------------------------------------- */}
-              {/* Desktop expense table                                      */}
-              {/* ---------------------------------------------------------- */}
 
               <div className="hidden md:block">
                 <DataTable>
@@ -1542,13 +1108,10 @@ export default function Accounting() {
                     <Th>Category</Th>
                     <Th>Date</Th>
                     <Th align="right">Amount</Th>
-                    <Th className="w-20" />
+                    <Th className="w-36" />
                   </DataTableHead>
                   <DataTableBody>
-                    {!isReady &&
-                      Array.from({ length: 5 }).map((_, i) => (
-                        <SkeletonRow key={i} cols={5} />
-                      ))}
+                    {!isReady && Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={5} />)}
 
                     {isReady &&
                       pageRows.map((e) => (
@@ -1560,55 +1123,32 @@ export default function Accounting() {
                           }}
                           className="group cursor-pointer"
                         >
-                          {/* Expense */}
                           <Td>
-                            <div className="max-w-[350px]">
-                              <button
-                                type="button"
-                                onClick={(ev) => {
-                                  ev.stopPropagation();
-                                  setEditing(e);
-                                  setShowForm(true);
-                                }}
-                                className="text-left text-sm font-semibold leading-[1.3] text-brand underline decoration-[1px] underline-offset-[2px] transition-colors hover:text-ink"
-                              >
+                            <div className="max-w-[420px]">
+                              <p className="text-sm font-semibold text-ink">
                                 {e.name}
-                              </button>
-                              {e.description && (
-                                <p className="mt-0.5 text-[13px] leading-[1.3] text-muted">
-                                  {e.description}
-                                </p>
-                              )}
-                              {e.source === "payroll" && (
-                                <span className="mt-1 inline-flex items-center rounded-full bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-600">
-                                  Auto
-                                </span>
-                              )}
+                                {e.source === "payroll" && (
+                                  <span className="ml-2 rounded-md bg-violet-50 px-2 py-0.5 text-xs font-semibold text-violet-600">
+                                    Auto
+                                  </span>
+                                )}
+                              </p>
+                              {e.description && <p className="mt-0.5 text-[13px] leading-[1.3] text-muted">{e.description}</p>}
                             </div>
                           </Td>
-                          {/* Category */}
                           <Td>
-                            <span className="inline-flex items-center gap-1.5 text-sm text-ink">
-                              <span
-                                className={`h-1.5 w-1.5 shrink-0 rounded-full ${categoryDotStyle(
-                                  categories,
-                                  e.categoryId
-                                )}`}
-                              />
+                            <span
+                              className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold whitespace-nowrap ${categoryBadgeStyle(categories, e.categoryId)}`}
+                            >
                               {categoryName(e.categoryId)}
                             </span>
                           </Td>
-                          {/* Date */}
-                          <Td className="whitespace-nowrap text-sm text-muted">
-                            {formatDate(e.date)}
-                          </Td>
-                          {/* Amount */}
-                          <Td align="right" className="whitespace-nowrap font-display font-medium text-ink">
+                          <Td className="whitespace-nowrap text-sm text-muted">{formatDate(e.date)}</Td>
+                          <Td align="right" className="whitespace-nowrap font-display font-semibold text-ink">
                             {formatK(e.amount)}
                           </Td>
-                          {/* Actions */}
                           <Td>
-                            <div className="flex items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                            <div className="flex items-center justify-end gap-1.5">
                               {e.photoUrl && (
                                 <button
                                   type="button"
@@ -1618,12 +1158,11 @@ export default function Accounting() {
                                   }}
                                   aria-label="View receipt"
                                   title="View receipt"
-                                  className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-mist hover:text-brand"
+                                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-line text-muted transition-colors hover:border-brand/40 hover:bg-brand-soft hover:text-brand"
                                 >
-                                  <PaperclipIcon />
+                                  <Paperclip size={16} weight="regular" />
                                 </button>
                               )}
-
                               <button
                                 type="button"
                                 onClick={(ev) => {
@@ -1633,11 +1172,10 @@ export default function Accounting() {
                                 }}
                                 aria-label="Edit expense"
                                 title="Edit expense"
-                                className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-mist hover:text-ink"
+                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-line text-muted transition-colors hover:bg-mist hover:text-ink"
                               >
-                                <PencilSimple size={13} weight="duotone" />
+                                <PencilSimple size={16} weight="regular" />
                               </button>
-
                               <button
                                 type="button"
                                 onClick={(ev) => {
@@ -1646,28 +1184,26 @@ export default function Accounting() {
                                 }}
                                 aria-label="Delete expense"
                                 title="Delete expense"
-                                className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-red-50 hover:text-red-600"
+                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-line text-muted transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600"
                               >
-                                <Trash size={13} weight="duotone" />
+                                <Trash size={16} weight="regular" />
                               </button>
                             </div>
                           </Td>
                         </tr>
                       ))}
 
-                    {/* No search results */}
                     {isReady && pageRows.length === 0 && (
                       <tr className="hover:bg-transparent">
-                        <Td colSpan={5} className="py-10">
-                          <div className="flex flex-col items-center justify-center text-center">
-                            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-mist text-muted">
-                              <Receipt size={20} weight="duotone" />
-                            </span>
-                            <p className="mt-3 text-sm font-semibold text-ink">
-                              No expenses found
+                        <Td colSpan={5} className="py-12">
+                          <div className="text-center">
+                            <p className="text-sm font-semibold text-ink">
+                              {monthExpenses.length === 0 ? `No expenses in ${month}` : "No expenses found"}
                             </p>
                             <p className="mt-1 text-[13px] text-muted">
-                              Try changing your search or category filter.
+                              {monthExpenses.length === 0
+                                ? "Nothing was logged for this month. Use Add expense to record one."
+                                : "Try a different search or category."}
                             </p>
                           </div>
                         </Td>
@@ -1676,295 +1212,141 @@ export default function Accounting() {
                   </DataTableBody>
                 </DataTable>
               </div>
-      
 
-              {/* ---------------------------------------------------------- */}
-              {/* Mobile expense list                                        */}
-              {/* ---------------------------------------------------------- */}
-
-              <div className="divide-y divide-[#968f8b] md:hidden">
+              {/* Mobile list */}
+              <div className="divide-y divide-line md:hidden">
                 {!isReady &&
-                  Array.from({
-                    length: 4,
-                  }).map((_, i) => (
-                    <div
-                      key={i}
-                      className="space-y-2 px-1 py-5"
-                    >
+                  Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="space-y-2 px-4 py-4">
                       <Skeleton className="h-4 w-1/2" />
                       <Skeleton className="h-3 w-1/3" />
                     </div>
                   ))}
-
                 {isReady &&
-                  pageRows.map(
-                    (e) => (
-                      <div
-                        key={e.id}
-                        onClick={() => {
-                          setEditing(
-                            e
-                          );
-                          setShowForm(
-                            true
-                          );
-                        }}
-                        className="cursor-pointer px-1 py-5 active:bg-[#faf8f7]"
-                      >
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="min-w-0">
-                            <p className="truncate text-[17px] font-semibold text-[#005d68] underline decoration-[1px] underline-offset-[3px]">
-                              {e.name}
-                            </p>
-
-                            {e.description && (
-                              <p className="mt-1 truncate text-[14px] text-[#706a67]">
-                                {
-                                  e.description
-                                }
-                              </p>
-                            )}
-                          </div>
-
-                          <p className="shrink-0 font-display text-[16px] font-medium text-[#292624]">
-                            {formatK(
-                              e.amount
-                            )}
-                          </p>
+                  pageRows.map((e) => (
+                    <div
+                      key={e.id}
+                      onClick={() => {
+                        setEditing(e);
+                        setShowForm(true);
+                      }}
+                      className="cursor-pointer px-4 py-4 transition-colors active:bg-mist/60"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-ink">{e.name}</p>
+                          {e.description && <p className="mt-0.5 truncate text-[13px] text-muted">{e.description}</p>}
                         </div>
-
-                        <div className="mt-3 flex items-center gap-2 text-[14px] text-[#706a67]">
-                          <span>
-                            {categoryName(
-                              e.categoryId
-                            )}
-                          </span>
-
-                          <span aria-hidden="true">
-                            ·
-                          </span>
-
-                          <span>
-                            {formatDate(
-                              e.date
-                            )}
-                          </span>
-
-                          {e.photoUrl && (
-                            <button
-                              type="button"
-                              onClick={(
-                                ev
-                              ) => {
-                                ev.stopPropagation();
-
-                                setViewingReceipt(
-                                  e.photoUrl!
-                                );
-                              }}
-                              className="ml-auto flex items-center gap-1 text-[#706a67] hover:text-[#005d68]"
-                              aria-label="View receipt"
-                            >
-                              <PaperclipIcon />
-                            </button>
-                          )}
-                        </div>
+                        <p className="shrink-0 font-display text-sm font-semibold text-ink">{formatK(e.amount)}</p>
                       </div>
-                    )
-                  )}
-
-                {isReady &&
-                  pageRows.length ===
-                    0 && (
-                    <div className="px-1 py-14 text-center">
-                      <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#f5f2f0] text-[#706a67]">
-                        <Receipt
-                          size={22}
-                          weight="duotone"
-                        />
-                      </span>
-
-                      <p className="mt-4 text-[15px] font-semibold text-[#292624]">
-                        No expenses
-                        found
-                      </p>
+                      <div className="mt-2 flex items-center gap-2 text-xs text-muted">
+                        <span
+                          className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold ${categoryBadgeStyle(categories, e.categoryId)}`}
+                        >
+                          {categoryName(e.categoryId)}
+                        </span>
+                        <span aria-hidden="true">·</span>
+                        <span>{formatDate(e.date)}</span>
+                        {e.photoUrl && (
+                          <button
+                            type="button"
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              setViewingReceipt(e.photoUrl!);
+                            }}
+                            className="ml-auto text-muted hover:text-brand"
+                            aria-label="View receipt"
+                          >
+                            <PaperclipIcon />
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  )}
+                  ))}
+                {isReady && pageRows.length === 0 && (
+                  <div className="px-4 py-12 text-center text-sm text-muted">
+                    {monthExpenses.length === 0 ? `No expenses in ${month}` : "No expenses found"}
+                  </div>
+                )}
               </div>
             </TableCard>
 
-              {/* ---------------------------------------------------------- */}
-              {/* Receipt lightbox                                           */}
-              {/* ---------------------------------------------------------- */}
+            {isReady && filtered.length > 0 && (
+              <Pagination
+                page={currentPage}
+                pageCount={pageCount}
+                pageSize={rowsPerPage}
+                totalItems={filtered.length}
+                onPageChange={setPage}
+                onPageSizeChange={(size) => {
+                  setRowsPerPage(size);
+                  setPage(1);
+                }}
+              />
+            )}
 
-              {viewingReceipt && (
-                <Lightbox
-                  photos={[
-                    viewingReceipt,
-                  ]}
-                  startIndex={0}
-                  onClose={() =>
-                    setViewingReceipt(
-                      null
-                    )
-                  }
-                />
-              )}
+              </>
+            )}
 
-              {/* ---------------------------------------------------------- */}
-              {/* Delete expense modal                                       */}
-              {/* ---------------------------------------------------------- */}
+            {viewingReceipt && (
+              <Lightbox photos={[viewingReceipt]} startIndex={0} onClose={() => setViewingReceipt(null)} />
+            )}
 
-              {deletingExpense && (
-                <Modal
-                  onClose={() =>
-                    setDeletingExpense(
-                      null
-                    )
-                  }
-                  maxWidth="max-w-sm"
-                  title="Delete expense?"
-                  footer={
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        variant="secondary"
-                        onClick={() =>
-                          setDeletingExpense(
-                            null
-                          )
-                        }
-                      >
-                        Cancel
-                      </Button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          deleteExpense(
-                            deletingExpense.id
-                          );
-
-                          setDeletingExpense(
-                            null
-                          );
-                        }}
-                        className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-paper transition-colors hover:bg-red-700"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  }
-                >
-                  <p className="text-sm text-muted">
-                    This will permanently
-                    remove{" "}
-                    <span className="font-medium text-ink">
-                      {
-                        deletingExpense.name
-                      }
-                    </span>
-                    . This can't be
-                    undone.
-                  </p>
-                </Modal>
-              )}
-
-              {/* ---------------------------------------------------------- */}
-              {/* Pagination                                                  */}
-              {/* ---------------------------------------------------------- */}
-
-              {filtered.length > 0 && (
-                <div className="mt-5">
-                  <Pagination
-                    page={currentPage}
-                    pageCount={
-                      pageCount
-                    }
-                    pageSize={
-                      rowsPerPage
-                    }
-                    totalItems={
-                      filtered.length
-                    }
-                    onPageChange={
-                      setPage
-                    }
-                    onPageSizeChange={(
-                      size
-                    ) => {
-                      setRowsPerPage(
-                        size
-                      );
-                      setPage(1);
-                    }}
-                  />
-                </div>
-              )}
+            {deletingExpense && (
+              <Modal
+                onClose={() => setDeletingExpense(null)}
+                maxWidth="max-w-sm"
+                title="Delete expense?"
+                footer={
+                  <div className="flex justify-end gap-2">
+                    <Button variant="secondary" onClick={() => setDeletingExpense(null)}>
+                      Cancel
+                    </Button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        deleteExpense(deletingExpense.id);
+                        setDeletingExpense(null);
+                      }}
+                      className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-paper transition-colors hover:bg-red-700"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                }
+              >
+                <p className="text-sm text-muted">
+                  This will permanently remove <span className="font-medium text-ink">{deletingExpense.name}</span>.
+                  This can't be undone.
+                </p>
+              </Modal>
+            )}
           </>
         ) : (
-          /* -------------------------------------------------------------- */
-          /* True empty state                                                */
-          /* -------------------------------------------------------------- */
-
           <div className="flex flex-col items-center justify-center gap-3 py-4 text-center">
             <span className="flex w-full max-w-md items-center justify-center text-muted">
-              <img
-                src={Expensephoto}
-                alt=""
-                className="h-auto w-full object-contain"
-              />
+              <img src={Expensephoto} alt="" className="h-auto w-full object-contain" />
             </span>
-
             <div>
               <p className="font-display text-xl font-bold tracking-tight text-brand">
                 Start tracking every rental expense
               </p>
-
               <p className="mt-0.5 max-w-lg text-sm text-muted">
-                Keep full control over your
-                property finances by monitoring
-                every outgoing cost across your
-                rentals in one simple, organized
-                view.
+                Keep full control over your property finances by monitoring every outgoing cost across your rentals
+                in one simple, organized view.
               </p>
             </div>
-
-            <Button
-              variant="primary"
-              onClick={() => {
-                setEditing(null);
-                setPrefill(undefined);
-                setShowForm(true);
-              }}
-            >
+            <Button variant="primary" onClick={openNew}>
               + Add expense
             </Button>
           </div>
         )}
       </div>
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Drawers / modals                                                   */}
-      {/* ------------------------------------------------------------------ */}
-
       <AnimatePresence>
-        {showForm && (
-          <ExpenseFormDrawer
-            editing={editing}
-            prefill={prefill}
-            onClose={() =>
-              setShowForm(false)
-            }
-          />
-        )}
+        {showForm && <ExpenseFormDrawer editing={editing} prefill={prefill} onClose={() => setShowForm(false)} />}
 
-        {showCategories && (
-          <ManageCategoriesModal
-            onClose={() =>
-              setShowCategories(false)
-            }
-          />
-        )}
+        {showCategories && <ManageCategoriesModal onClose={() => setShowCategories(false)} />}
       </AnimatePresence>
     </>
   );

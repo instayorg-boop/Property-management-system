@@ -17,7 +17,7 @@ export default function Careers() {
         {roles.map((r) => (
           <a
             key={r.title}
-            href="mailto:careers@instay.app"
+            href="mailto:careers@instayhomes.com"
             className="flex flex-col gap-1 rounded-2xl border border-line p-5 transition-colors hover:bg-mist sm:flex-row sm:items-center sm:justify-between"
           >
             <div>
@@ -31,7 +31,7 @@ export default function Careers() {
 
       <p className="mt-8 text-center text-sm text-muted">
         Don't see a fit?{" "}
-        <a href="mailto:careers@instay.app" className="font-medium text-ink underline-offset-2 hover:underline">
+        <a href="mailto:careers@instayhomes.com" className="font-medium text-ink underline-offset-2 hover:underline">
           Write to us anyway
         </a>
         .

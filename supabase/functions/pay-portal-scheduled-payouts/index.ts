@@ -192,6 +192,12 @@ Deno.serve(async (req) => {
       );
       const lencoJson = await lencoResponse.json();
 
+      if (!lencoResponse.ok && lencoResponse.status >= 500) {
+        await supabase.from("payouts").update({ status: "processing", failure_reason: "Lenco response not confirmed, awaiting confirmation" }).eq("id", payoutRow.id);
+        results.push({ propertyId, payoutId: payoutRow.id, status: "unknown" });
+        continue;
+      }
+
       if (!lencoResponse.ok) {
         await supabase.from("payouts").update({ status: "failed", failure_reason: lencoJson.message ?? "Lenco rejected the transfer" }).eq("id", payoutRow.id);
         await supabase.rpc("pay_portal_release_payout_collections", { p_payout_id: payoutRow.id });
@@ -207,9 +213,9 @@ Deno.serve(async (req) => {
 
       results.push({ propertyId, payoutId: payoutRow.id, grossAmount, feeAmount, netAmount, status: "processing" });
     } catch (err) {
-      await supabase.from("payouts").update({ status: "failed", failure_reason: String(err) }).eq("id", payoutRow.id);
-      await supabase.rpc("pay_portal_release_payout_collections", { p_payout_id: payoutRow.id });
-      results.push({ propertyId, payoutId: payoutRow.id, failed: String(err) });
+      // Unknown outcome: leave processing, keep claim locked.
+      await supabase.from("payouts").update({ status: "processing", failure_reason: "Lenco response not received, awaiting confirmation" }).eq("id", payoutRow.id);
+      results.push({ propertyId, payoutId: payoutRow.id, status: "unknown", detail: String(err) });
     }
   }
 

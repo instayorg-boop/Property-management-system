@@ -7,9 +7,11 @@ import { Fragment } from "react";
 
 type IncomeExpensesData = {
   rentCollected: number;
-  groups: { category: string; items: { name: string; amount: number }[] }[];
+  groups: { category: string; items: { name: string; amount: number; count?: number }[] }[];
   totalExpenses: number;
   net: number;
+  months?: { month: string; label: string; rent: number; expenses: number; net: number }[];
+  periodLabel?: string;
 };
 
 type OccupancyData = {
@@ -29,6 +31,7 @@ type OverdueRentData = {
 export type GenerateReportResult = {
   ok: true;
   url: string;
+  filePath: string;
   fileName: string;
   reportType: "income_vs_expenses" | "occupancy" | "overdue_rent";
   dateFrom: string;
@@ -93,79 +96,133 @@ function ReportHeader({ result, periodLine }: { result: GenerateReportResult; pe
 }
 
 function IncomeExpensesTable({ data, dateFrom }: { data: IncomeExpensesData; dateFrom: string }) {
-  const month = monthYearLabel(dateFrom);
+  const period = data.periodLabel ?? monthYearLabel(dateFrom);
+  const cell = "border border-[#8a8a8a] px-2.5 py-2";
   return (
-    <table className="w-full border-collapse text-[13px]">
-      <thead>
-        <tr className="bg-[#faf9f7] text-left">
-          <th className="w-[44%] border border-[#8a8a8a] px-2.5 py-2 font-bold">Item</th>
-          <th className="border border-[#8a8a8a] px-2.5 py-2 font-bold">Category</th>
-          <th className="border border-[#8a8a8a] px-2.5 py-2 text-right font-bold">Amount [sum]</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr className="bg-[#e3f1e7] font-bold text-[#14532d]">
-          <td className="border border-[#8a8a8a] px-2.5 py-2">Rent collected</td>
-          <td className="border border-[#8a8a8a] px-2.5 py-2">Income</td>
-          <td className="border border-[#8a8a8a] px-2.5 py-2 text-right">{kwacha(data.rentCollected)}</td>
-        </tr>
-        {data.groups.length === 0 && (
-          <tr>
-            <td className="border border-[#8a8a8a] px-2.5 py-2 text-[#777]" colSpan={3}>
-              No expenses logged in this period.
-            </td>
-          </tr>
-        )}
-        {data.groups.map((group) => {
-          const subtotal = group.items.reduce((s, i) => s + i.amount, 0);
-          return (
-            <Fragment key={group.category}>
-              {group.items.map((item, i) => (
-                <tr key={`${group.category}-${item.name}-${i}`}>
-                  <td className="border border-[#8a8a8a] px-2.5 py-2">{item.name}</td>
-                  {i === 0 && (
-                    <td className="border border-[#8a8a8a] px-2.5 py-2 align-top" rowSpan={group.items.length + 1}>
-                      {group.category}
-                    </td>
-                  )}
-                  <td className="border border-[#8a8a8a] px-2.5 py-2 text-right">{kwacha(item.amount)}</td>
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="rounded-md bg-[#e3f1e7] p-4 text-[#14532d]">
+          <p className="text-xs">Rent collected</p>
+          <p className="mt-1 text-xl font-bold sm:text-2xl">{kwacha(data.rentCollected)}</p>
+        </div>
+        <div className="rounded-md bg-[#fbe9e3] p-4 text-[#9a3412]">
+          <p className="text-xs">Expenses</p>
+          <p className="mt-1 text-xl font-bold sm:text-2xl">{kwacha(data.totalExpenses)}</p>
+        </div>
+        <div className="rounded-md bg-[#14532d] p-4 text-white">
+          <p className="text-xs">Net income</p>
+          <p className="mt-1 text-xl font-bold sm:text-2xl">{kwacha(data.net)}</p>
+        </div>
+      </div>
+
+      {data.months && data.months.length > 1 && (
+        <div>
+          <p className="mb-2 text-[15px] font-bold text-[#1a1a1a]">Month by month</p>
+          <table className="w-full border-collapse text-[13px]">
+            <thead>
+              <tr className="bg-[#faf9f7] text-left">
+                <th className={`${cell} font-bold`}>Month</th>
+                <th className={`${cell} text-right font-bold`}>Rent collected</th>
+                <th className={`${cell} text-right font-bold`}>Expenses</th>
+                <th className={`${cell} text-right font-bold`}>Net</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.months.map((m) => (
+                <tr key={m.month}>
+                  <td className={cell}>{m.label}</td>
+                  <td className={`${cell} text-right`}>{kwacha(m.rent)}</td>
+                  <td className={`${cell} text-right`}>{kwacha(m.expenses)}</td>
+                  <td className={`${cell} text-right ${m.net < 0 ? "text-[#9a3412]" : ""}`}>{kwacha(m.net)}</td>
                 </tr>
               ))}
               <tr className="bg-[#faf9f7] font-bold">
-                <td className="border border-[#8a8a8a] px-2.5 py-2">Subtotal</td>
-                <td className="border border-[#8a8a8a] px-2.5 py-2 text-right">{kwacha(subtotal)}</td>
+                <td className={cell}>Total</td>
+                <td className={`${cell} text-right`}>{kwacha(data.rentCollected)}</td>
+                <td className={`${cell} text-right`}>{kwacha(data.totalExpenses)}</td>
+                <td className={`${cell} text-right`}>{kwacha(data.net)}</td>
               </tr>
-            </Fragment>
-          );
-        })}
-        <tr className="bg-[#fbe9e3] font-bold text-[#9a3412]">
-          <td className="border border-[#8a8a8a] px-2.5 py-2">Total expenses</td>
-          <td className="border border-[#8a8a8a] px-2.5 py-2">Expenses</td>
-          <td className="border border-[#8a8a8a] px-2.5 py-2 text-right">{kwacha(data.totalExpenses)}</td>
-        </tr>
-        <tr className="bg-[#14532d] font-bold text-white">
-          <td className="border border-[#8a8a8a] px-2.5 py-2">Net for {month}</td>
-          <td className="border border-[#8a8a8a] px-2.5 py-2">Net income</td>
-          <td className="border border-[#8a8a8a] px-2.5 py-2 text-right">{kwacha(data.net)}</td>
-        </tr>
-      </tbody>
-    </table>
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div>
+        <p className="mb-2 text-[15px] font-bold text-[#1a1a1a]">Breakdown</p>
+        <table className="w-full border-collapse text-[13px]">
+          <thead>
+            <tr className="bg-[#faf9f7] text-left">
+              <th className={`w-[50%] ${cell} font-bold`}>Item</th>
+              <th className={`${cell} font-bold`}>Category</th>
+              <th className={`${cell} text-right font-bold`}>Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="bg-[#e3f1e7] font-bold text-[#14532d]">
+              <td className={cell}>Rent collected</td>
+              <td className={cell}>Income</td>
+              <td className={`${cell} text-right`}>{kwacha(data.rentCollected)}</td>
+            </tr>
+            {data.groups.length === 0 && (
+              <tr>
+                <td className={`${cell} text-[#777]`} colSpan={3}>
+                  No expenses logged in this period.
+                </td>
+              </tr>
+            )}
+            {data.groups.map((group) => {
+              const subtotal = group.items.reduce((s, i) => s + i.amount, 0);
+              return (
+                <Fragment key={group.category}>
+                  {group.items.map((item, i) => (
+                    <tr key={`${group.category}-${item.name}-${i}`}>
+                      <td className={cell}>
+                        {item.name}
+                        {item.count && item.count > 1 ? <span className="text-[#777]"> ({item.count} payments)</span> : null}
+                      </td>
+                      <td className={`${cell} text-[#777]`}>{i === 0 ? group.category : ""}</td>
+                      <td className={`${cell} text-right`}>{kwacha(item.amount)}</td>
+                    </tr>
+                  ))}
+                  <tr className="bg-[#faf9f7] font-bold">
+                    <td className={cell} colSpan={2}>
+                      {group.category} subtotal
+                    </td>
+                    <td className={`${cell} text-right`}>{kwacha(subtotal)}</td>
+                  </tr>
+                </Fragment>
+              );
+            })}
+            <tr className="bg-[#fbe9e3] font-bold text-[#9a3412]">
+              <td className={cell}>Total expenses</td>
+              <td className={cell}>Expenses</td>
+              <td className={`${cell} text-right`}>{kwacha(data.totalExpenses)}</td>
+            </tr>
+            <tr className="bg-[#14532d] font-bold text-white">
+              <td className={cell}>Net for {period}</td>
+              <td className={cell}>Net income</td>
+              <td className={`${cell} text-right`}>{kwacha(data.net)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
 function OccupancyView({ data }: { data: OccupancyData }) {
   return (
     <>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="rounded-md border border-[#b7d9c1] bg-[#e3f1e7] px-4 py-3.5">
           <p className="text-xs text-[#14532d]">Occupied beds</p>
-          <p className="mt-1 text-[26px] font-bold text-[#14532d]">
+          <p className="mt-1 text-xl font-bold sm:text-[26px] text-[#14532d]">
             {data.totalOccupied} / {data.totalBeds}
           </p>
         </div>
         <div className="rounded-md border border-[#ecd0a4] bg-[#fdf0dc] px-4 py-3.5">
           <p className="text-xs text-[#8a4b06]">Vacant beds</p>
-          <p className="mt-1 text-[26px] font-bold text-[#8a4b06]">{data.vacant}</p>
+          <p className="mt-1 text-xl font-bold sm:text-[26px] text-[#8a4b06]">{data.vacant}</p>
         </div>
         <div className="rounded-md bg-[#14532d] px-4 py-3.5">
           <p className="text-xs text-white/80">Occupancy rate</p>
@@ -294,7 +351,7 @@ function OverdueRentView({ data }: { data: OverdueRentData }) {
 export default function ReportPreview({ result }: { result: GenerateReportResult }) {
   const periodLine =
     result.reportType === "income_vs_expenses"
-      ? `Time Period: ${monthYearLabel(result.dateFrom)} (${formatDMY(result.dateFrom)} to ${formatDMY(result.dateTo)})`
+      ? `Time Period: ${(result.data as IncomeExpensesData).periodLabel ?? monthYearLabel(result.dateFrom)} (${formatDMY(result.dateFrom)} to ${formatDMY(result.dateTo)})`
       : `As at: ${formatDMY(result.dateTo)}`;
 
   return (

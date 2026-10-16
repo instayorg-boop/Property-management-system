@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { CaretRight, X as XIcon } from "@phosphor-icons/react";
+import { X as XIcon } from "@phosphor-icons/react";
 import type { NotificationRow } from "../NotificationsContext";
 import type { Tenant } from "../TenantsContext";
 import { resolveNotificationLink } from "../linkResolver";
@@ -15,11 +15,14 @@ function timeAgo(iso: string) {
   return `${days}d ago`;
 }
 
-/** One notification row, cardless — a time column, a category icon, the message, and a dismiss
- * button. Shared by the dashboard's "Recent activity" preview and the full /notifications page.
- * The whole row is clickable (not just a small hover-only "View" link) and goes to the exact same
- * deep link resolveNotificationLink already resolves for tasks — the tenant profile, the specific
- * maintenance report, etc. — rather than a generic section route. */
+/** Same card look as the bell dropdown's own row (NotificationsDropdown.tsx): a round white icon
+ * chip with the category color carried by the icon itself, a title line with an unread dot and
+ * the timestamp right-aligned, and a short two-line body preview underneath, rather than cramming
+ * everything onto one line, which is what was truncating mid-sentence in a narrow card. Shared by
+ * the dashboard's "Recent activity" preview and the full /notifications page. The whole row is
+ * clickable and goes to the exact same deep link resolveNotificationLink already resolves for
+ * tasks: the tenant profile, the specific maintenance report, etc., rather than a generic
+ * section route. */
 export default function ActivityRow({
   notification,
   tenants,
@@ -31,9 +34,12 @@ export default function ActivityRow({
 }) {
   const navigate = useNavigate();
   const n = notification;
-  const { icon: CategoryIcon, tint, label: categoryLabel } = CATEGORY_STYLE[categoryOf(n)];
+  const { icon: Icon, tint } = CATEGORY_STYLE[categoryOf(n)];
+  const fg = tint.split(" ").find((c) => c.startsWith("text-")) ?? "text-muted";
   const isUnread = !n.read_at;
   const route = resolveNotificationLink(n, tenants);
+  const title = n.title || n.body || "Update";
+  const body = n.title ? n.body : null;
 
   return (
     <div
@@ -46,31 +52,26 @@ export default function ActivityRow({
           navigate(route);
         }
       }}
-      className={`group flex cursor-pointer items-center gap-4 py-3.5 transition-colors hover:bg-mist/30 ${isUnread ? "bg-brand-soft/30" : ""}`}
+      className={`group flex cursor-pointer items-start gap-3 rounded-lg px-2.5 py-2.5 transition-colors ${
+        isUnread ? "bg-brand-soft/40 hover:bg-brand-soft/60" : "hover:bg-mist/50"
+      }`}
     >
-      {/* Time */}
-      <span className="w-[52px] shrink-0 text-xs font-medium tabular-nums text-muted">{timeAgo(n.created_at)}</span>
-
-      {/* Category — an unread dot rides on the icon tile itself rather than a separate column, so
-          read and unread rows still line up identically. */}
-      <span className={`relative flex shrink-0 items-center justify-center rounded-lg ${tint}`} title={categoryLabel}>
-        <CategoryIcon size={18} weight="duotone" aria-hidden="true" />
-        <span className="sr-only">{categoryLabel}</span>
-        {isUnread && (
-          <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-paper bg-brand" aria-hidden="true" />
-        )}
+      {/* A round, white-backed icon chip (border + soft shadow): the icon itself carries the
+          category color, same as the bell dropdown. */}
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-line bg-paper shadow-sm">
+        <Icon size={17} weight="duotone" className={fg} aria-hidden="true" />
       </span>
 
-      {/* Activity */}
       <div className="min-w-0 flex-1">
-        <p className={`truncate text-sm leading-5 ${isUnread ? "font-semibold text-ink" : "text-ink"}`}>{n.body || n.title}</p>
+        <div className="flex items-start justify-between gap-2">
+          <p className="flex min-w-0 items-center gap-1.5 text-[13px] font-semibold text-ink">
+            {isUnread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand" aria-hidden="true" />}
+            <span className="truncate">{title}</span>
+          </p>
+          <span className="shrink-0 pt-px text-[11px] whitespace-nowrap text-muted">{timeAgo(n.created_at)}</span>
+        </div>
+        {body && <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-muted">{body}</p>}
       </div>
-
-      {/* Hover affordance — the whole row navigates, this is just the visual cue that it does. */}
-      <CaretRight
-        size={14}
-        className="shrink-0 text-muted opacity-0 transition-opacity group-hover:opacity-100 max-sm:opacity-100"
-      />
 
       {/* Dismiss */}
       {!n.read_at && (
@@ -82,7 +83,7 @@ export default function ActivityRow({
           }}
           aria-label="Mark activity as read"
           title="Mark as read"
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted opacity-0 transition-all hover:bg-mist hover:text-ink group-hover:opacity-100 group-focus-within:opacity-100 max-sm:opacity-100"
+          className="flex h-6 w-6 shrink-0 items-center justify-center self-start rounded-md text-muted opacity-0 transition-all hover:bg-mist hover:text-ink group-hover:opacity-100 group-focus-within:opacity-100 max-sm:opacity-100"
         >
           <XIcon size={12} weight="bold" />
         </button>

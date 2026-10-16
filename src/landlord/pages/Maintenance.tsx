@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import SearchInput from "../components/SearchInput";
 import { AnimatePresence, motion } from "framer-motion";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
-import SlideOver from "../components/SlideOver";
 import Lightbox from "../components/Lightbox";
 import {
-  MagnifyingGlass,
   Paperclip,
   Wrench,
   CaretRight,
@@ -14,7 +13,10 @@ import {
   DotsThreeVertical,
   DownloadSimple,
   FunnelSimple,
+  WarningCircle,
 } from "@phosphor-icons/react";
+import DatePicker from "../components/DatePicker";
+import { downloadElementAsPdf } from "../../lib/reportPdf";
 import { useMaintenance, type MaintenanceReport, type MaintenanceStatus } from "../MaintenanceContext";
 import type { MaintenancePriority } from "../../lib/maintenance";
 import { useTenants } from "../TenantsContext";
@@ -29,10 +31,6 @@ import { TableCard, DataTable, DataTableHead, Th, DataTableBody, Td, StatusPill,
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { useToast } from "../ToastContext";
 
-function SearchIcon() {
-  return <MagnifyingGlass size={16} weight="bold" />;
-}
-
 const statusLabel: Record<MaintenanceStatus, string> = { open: "Open", "in-progress": "In progress", resolved: "Resolved" };
 
 const statusTone: Record<MaintenanceStatus, StatusTone> = {
@@ -41,7 +39,6 @@ const statusTone: Record<MaintenanceStatus, StatusTone> = {
   resolved: "success",
 };
 
-const priorityOrder: MaintenancePriority[] = ["low", "medium", "high", "urgent"];
 
 const priorityLabel: Record<MaintenancePriority, string> = {
   low: "Low",
@@ -118,6 +115,170 @@ function downloadMaintenanceCsv(filename: string, rows: MaintenanceReport[]) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+const EXPORT_STATUS_OPTIONS: { value: "all" | MaintenanceStatus; label: string }[] = [
+  { value: "all", label: "All statuses" },
+  { value: "open", label: "Open" },
+  { value: "in-progress", label: "In progress" },
+  { value: "resolved", label: "Resolved" },
+];
+
+/** Period and format picker for exporting maintenance requests, matching the design the rest of
+ * the app uses for an export (pick a date range and status, then PDF or CSV), instead of an
+ * instant, unfiltered CSV of whatever's on screen. The PDF is built from a plain off-screen table
+ * (same downloadElementAsPdf utility the generated reports use) rather than a server call, since
+ * every row it needs is already loaded on this page. */
+function ExportMaintenanceModal({ reports, onClose }: { reports: MaintenanceReport[]; onClose: () => void }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState(today);
+  const [status, setStatus] = useState<"all" | MaintenanceStatus>("all");
+  const [format, setFormat] = useState<"pdf" | "csv">("pdf");
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
+
+  const rows = useMemo(() => {
+    return reports
+      .filter((r) => {
+        const submitted = r.submittedAt.slice(0, 10);
+        if (startDate && submitted < startDate) return false;
+        if (endDate && submitted > endDate) return false;
+        if (status !== "all" && r.status !== status) return false;
+        return true;
+      })
+      .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
+  }, [reports, startDate, endDate, status]);
+
+  const handleExport = async () => {
+    if (!startDate) {
+      setError("Pick a start date.");
+      return;
+    }
+    setError(null);
+    setGenerating(true);
+    try {
+      if (format === "csv") {
+        downloadMaintenanceCsv(`maintenance-requests_${startDate}_to_${endDate}.csv`, rows);
+      } else if (previewRef.current) {
+        await downloadElementAsPdf(previewRef.current, `maintenance-requests_${startDate}_to_${endDate}.pdf`);
+      }
+      onClose();
+    } catch {
+      setError("Couldn't generate that export. Try again.");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  return (
+    <Modal onClose={onClose} title="Export maintenance requests" description="Picks exactly what's included, then builds the file.">
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-muted">From</p>
+            <DatePicker value={startDate} onChange={setStartDate} className="w-full" placeholder="Start date" />
+          </div>
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-muted">To</p>
+            <DatePicker value={endDate} onChange={setEndDate} className="w-full" placeholder="End date" />
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-muted">Status</p>
+          <Select value={status} onValueChange={(v) => setStatus(v as "all" | MaintenanceStatus)}>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {EXPORT_STATUS_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-muted">Format</p>
+          <div className="flex gap-2">
+            {(["pdf", "csv"] as const).map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setFormat(f)}
+                className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                  format === f ? "border-brand bg-brand-soft text-brand" : "border-line text-muted hover:bg-mist"
+                }`}
+              >
+                {f.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <p className="text-xs text-muted">
+          {rows.length} request{rows.length === 1 ? "" : "s"} in this range.
+        </p>
+
+        {error && (
+          <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+            <WarningCircle size={16} weight="bold" className="mt-0.5 shrink-0" />
+            {error}
+          </div>
+        )}
+
+        <Button className="w-full" onClick={() => void handleExport()} disabled={generating}>
+          {generating ? "Preparing…" : `Download ${format.toUpperCase()}`}
+        </Button>
+      </div>
+
+      {/* Off-screen printable table, only ever captured into a PDF, never shown on screen. */}
+      <div ref={previewRef} style={{ position: "fixed", left: -10000, top: 0 }}>
+        <div style={{ fontFamily: "Inter, sans-serif", padding: 24, width: 700 }}>
+          <h1 style={{ fontSize: 20, fontWeight: 700, color: "#1a1a1a", margin: 0 }}>Maintenance requests</h1>
+          <p style={{ fontSize: 12, color: "#777", margin: "4px 0 16px" }}>
+            {formatDate(startDate || today)} to {formatDate(endDate)}
+          </p>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: "#faf9f7", textAlign: "left" }}>
+                {["Ticket", "Location", "Tenant", "Priority", "Status", "Submitted", "Resolved"].map((h) => (
+                  <th key={h} style={{ padding: "8px 10px", border: "0.75px solid #8a8a8a", fontWeight: 700 }}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 ? (
+                <tr>
+                  <td colSpan={7} style={{ padding: "8px 10px", border: "0.75px solid #8a8a8a" }}>
+                    No requests in this period.
+                  </td>
+                </tr>
+              ) : (
+                rows.map((r) => (
+                  <tr key={r.id}>
+                    <td style={{ padding: "8px 10px", border: "0.75px solid #8a8a8a" }}>{ticketCode(r.id)}</td>
+                    <td style={{ padding: "8px 10px", border: "0.75px solid #8a8a8a" }}>{r.location}</td>
+                    <td style={{ padding: "8px 10px", border: "0.75px solid #8a8a8a" }}>{r.tenant}</td>
+                    <td style={{ padding: "8px 10px", border: "0.75px solid #8a8a8a" }}>{priorityLabel[r.priority]}</td>
+                    <td style={{ padding: "8px 10px", border: "0.75px solid #8a8a8a" }}>{statusLabel[r.status]}</td>
+                    <td style={{ padding: "8px 10px", border: "0.75px solid #8a8a8a" }}>{formatDate(r.submittedAt)}</td>
+                    <td style={{ padding: "8px 10px", border: "0.75px solid #8a8a8a" }}>{r.resolvedAt ? formatDate(r.resolvedAt) : ""}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </Modal>
+  );
 }
 
 /** One top-of-page number — the at-a-glance counts a landlord actually opens this page to check
@@ -374,10 +535,36 @@ const statusTextColor: Record<MaintenanceStatus, string> = {
 /** What the single primary button at the bottom does next — status only ever advances open → in
  * progress → resolved from here; going back to open is a deliberate "Reopen" correction, styled
  * differently (secondary, not primary) since it's undoing progress rather than making it. */
-const PRIMARY_ACTION: Record<MaintenanceStatus, { label: string; next: MaintenanceStatus; variant: "primary" | "secondary" }> = {
-  open: { label: "Start work", next: "in-progress", variant: "primary" },
-  "in-progress": { label: "Mark resolved", next: "resolved", variant: "primary" },
-  resolved: { label: "Reopen", next: "open", variant: "secondary" },
+const PRIMARY_ACTION: Record<
+  MaintenanceStatus,
+  { label: string; next: MaintenanceStatus; variant: "primary" | "secondary"; helper: string }
+> = {
+  open: {
+    label: "Start work",
+    next: "in-progress",
+    variant: "primary",
+    helper: "Click to move this to In progress because you've started working on it.",
+  },
+  "in-progress": {
+    label: "Mark resolved",
+    next: "resolved",
+    variant: "primary",
+    helper: "Click once it's actually fixed. This records today as the date it was resolved.",
+  },
+  resolved: {
+    label: "Reopen",
+    next: "open",
+    variant: "secondary",
+    helper: "Click if this comes back or wasn't actually fixed, moving it back to Open.",
+  },
+};
+
+/** What each status means, shown next to the status picker so someone new to the app isn't
+ * left guessing what "Open" or "In progress" are supposed to track. */
+const STATUS_HELPER: Record<MaintenanceStatus, string> = {
+  open: "Reported, but nobody has started working on it yet.",
+  "in-progress": "Someone is actively working on fixing this.",
+  resolved: "Fixed and closed out.",
 };
 
 /** One label/value line in the Details list — plain text, no card, separated from its neighbors
@@ -475,7 +662,7 @@ function DetailOverflowMenu({
   );
 }
 
-function RequestDrawer({
+function RequestModal({
   request,
   pendingMaintenanceIds,
   onClose,
@@ -521,9 +708,11 @@ function RequestDrawer({
   const primaryAction = PRIMARY_ACTION[request.status];
 
   return (
-    <SlideOver
+    <Modal
       onClose={onClose}
       title={request.location}
+      icon={<Wrench size={20} weight="duotone" />}
+      maxWidth="lg"
       description={
         !isEditing && (
           <>
@@ -554,7 +743,7 @@ function RequestDrawer({
             onEdit={startEditing}
             expenseLinkState={{
               expensePrefill: {
-                name: `Repair — ${request.location}`,
+                name: `Repair: ${request.location}`,
                 description: request.description,
                 categoryId: "maintenance",
               },
@@ -579,13 +768,16 @@ function RequestDrawer({
             </Button>
           </div>
         ) : (
-          <Button
-            variant={primaryAction.variant}
-            onClick={() => onSetStatus(primaryAction.next)}
-            className="w-full py-2.5 hover:scale-[1.01]"
-          >
-            {primaryAction.label}
-          </Button>
+          <div>
+            <Button
+              variant={primaryAction.variant}
+              onClick={() => onSetStatus(primaryAction.next)}
+              className="w-full py-2.5 hover:scale-[1.01]"
+            >
+              {primaryAction.label}
+            </Button>
+            <p className="mt-2 text-center text-xs text-muted">{primaryAction.helper}</p>
+          </div>
         )
       }
     >
@@ -596,7 +788,7 @@ function RequestDrawer({
             <input
               value={location}
               onChange={(e) => setLocation(e.target.value)}
-              className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+              className="w-full rounded-lg border border-transparent bg-mist px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand/30"
             />
           </div>
           <div>
@@ -605,7 +797,7 @@ function RequestDrawer({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={4}
-              className="w-full resize-none rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+              className="w-full resize-none rounded-lg border border-transparent bg-mist px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand/30"
             />
           </div>
           <div>
@@ -637,20 +829,24 @@ function RequestDrawer({
           )}
 
           <div className="mt-5 divide-y divide-line border-t border-line">
-            <DetailRow label="Request status">
-              <Select value={request.status} onValueChange={(v) => onSetStatus(v as MaintenanceStatus)}>
-                <SelectTrigger size="sm" className={`border border-gray-300 bg-transparent px-3 shadow-none font-medium ${statusTextColor[request.status]}`}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="border-gray-300">
-                  {(["open", "in-progress", "resolved"] as const).map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {statusLabel[s]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </DetailRow>
+            <div className="py-3">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm text-muted">Request status</span>
+                <Select value={request.status} onValueChange={(v) => onSetStatus(v as MaintenanceStatus)}>
+                  <SelectTrigger size="sm" className={`border border-gray-300 bg-transparent px-3 shadow-none font-medium ${statusTextColor[request.status]}`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="border-gray-300">
+                    {(["open", "in-progress", "resolved"] as const).map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {statusLabel[s]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <p className="mt-1.5 text-xs text-muted">{STATUS_HELPER[request.status]}</p>
+            </div>
 
             {request.status === "resolved" && request.resolvedAt && (
               <DetailRow label="Resolved">
@@ -676,7 +872,7 @@ function RequestDrawer({
       {lightboxIndex !== null && (
         <Lightbox photos={request.photoUrls} startIndex={lightboxIndex} onClose={() => setLightboxIndex(null)} />
       )}
-    </SlideOver>
+    </Modal>
   );
 }
 
@@ -701,14 +897,20 @@ function AddRequestDrawer({ onClose, onSave }: { onClose: () => void; onSave: (r
   };
 
   return (
-    <SlideOver
+    <Modal
       onClose={onClose}
-      title="Add maintenance request"
+      title="New maintenance request"
       description="Log an issue noticed anywhere on the property."
+      maxWidth="xs"
       footer={
-        <Button variant="primary" onClick={submit} disabled={!canSave} className="w-full py-3 hover:scale-[1.01] disabled:hover:scale-100">
-          Add maintenance request
-        </Button>
+        <div className="flex w-full justify-end gap-2">
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={submit} disabled={!canSave}>
+            Add request
+          </Button>
+        </div>
       }
     >
       <div className="space-y-4">
@@ -718,7 +920,7 @@ function AddRequestDrawer({ onClose, onSave }: { onClose: () => void; onSave: (r
             value={location}
             onChange={(e) => setLocation(e.target.value)}
             placeholder="e.g. Room 08, Main gate, Borehole pump, Parking lot"
-            className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+            className="w-full rounded-lg border border-transparent bg-mist px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand/30"
           />
         </div>
         <div>
@@ -728,16 +930,16 @@ function AddRequestDrawer({ onClose, onSave }: { onClose: () => void; onSave: (r
             onChange={(e) => setDescription(e.target.value)}
             rows={3}
             placeholder="What's the issue?"
-            className="w-full resize-none rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+            className="w-full resize-none rounded-lg border border-transparent bg-mist px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand/30"
           />
         </div>
         <div>
           <label className="mb-1.5 block text-xs font-medium text-muted">Photos (optional)</label>
           <PhotoPicker photoUrls={photoUrls} onChange={setPhotoUrls} />
         </div>
-        <p className="text-xs text-muted">Priority is set automatically once submitted — you can change it afterward from the request.</p>
+        <p className="text-xs text-muted">Priority is set automatically. You can change it later from the request.</p>
       </div>
-    </SlideOver>
+    </Modal>
   );
 }
 
@@ -750,6 +952,7 @@ export default function Maintenance() {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [addingRequest, setAddingRequest] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
 
   // Picked up when the global Create launcher (Header.tsx) navigates here with ?action=add-request
   // instead of clicking this page's own "+ Add maintenance request" button — cleared immediately
@@ -831,17 +1034,18 @@ export default function Maintenance() {
         title="Maintenance requests"
         description="Review and resolve maintenance requests from tenants."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex w-full gap-2 sm:w-auto">
             {reports.length !== 0 && (
               <Button
                 variant="secondary"
-                onClick={() => downloadMaintenanceCsv("maintenance-requests.csv", filtered)}
+                className="flex-1 sm:flex-none"
+                onClick={() => setExportModalOpen(true)}
               >
                 <DownloadSimple size={14} weight="bold" />
                 Export
               </Button>
             )}
-            <Button variant="primary" onClick={() => setAddingRequest(true)} className="hover:scale-[1.02]">
+            <Button variant="primary" onClick={() => setAddingRequest(true)} className="flex-1 hover:scale-[1.02] sm:flex-none">
               + New request
             </Button>
           </div>
@@ -854,21 +1058,13 @@ export default function Maintenance() {
             <StatCard label="Open" value={openCount} />
             <StatCard label="Urgent" value={urgentCount} valueClassName={urgentCount > 0 ? "text-red-600" : undefined} />
             <StatCard label="In progress" value={inProgressCount} />
-            <StatCard label="Avg. resolution" value={avgResolutionDays === null ? "—" : `${avgResolutionDays.toFixed(1)} days`} />
+            <StatCard label="Avg. resolution" value={avgResolutionDays === null ? "-" : `${avgResolutionDays.toFixed(1)} days`} />
           </div>
         )}
 
         {reports.length !== 0 && (
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2 rounded-lg border border-line bg-white px-3 py-2">
-              <SearchIcon />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search tenant, unit or issue"
-                className="w-56 bg-transparent text-sm outline-none placeholder:text-muted"
-              />
-            </div>
+            <SearchInput value={query} onChange={setQuery} placeholder="Search tenant, unit or issue" className="w-64" />
 
             <FilterMenu value={statusFilter} onChange={setStatusFilter} />
           </div>
@@ -1014,7 +1210,7 @@ export default function Maintenance() {
 
       <AnimatePresence>
         {selected && (
-          <RequestDrawer
+          <RequestModal
             request={selected}
             pendingMaintenanceIds={pendingMaintenanceIds}
             onClose={() => setSelectedId(null)}
@@ -1048,6 +1244,7 @@ export default function Maintenance() {
           />
         )}
       </AnimatePresence>
+      {exportModalOpen && <ExportMaintenanceModal reports={reports} onClose={() => setExportModalOpen(false)} />}
     </>
   );
 }

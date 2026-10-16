@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Phone, CaretDown, CheckCircle, WarningCircle, PencilSimple } from "@phosphor-icons/react";
+import { Phone, CaretDown, CheckCircle, WarningCircle, PencilSimple, UserCircle } from "@phosphor-icons/react";
 import SlideOver from "./SlideOver";
 import Button from "./Button";
 import { useTenants, formatCurrency, type Tenant } from "../TenantsContext";
@@ -77,6 +77,7 @@ export default function TenantPaymentDrawer({
     <SlideOver
       onClose={onClose}
       title={tenant.name}
+      icon={<UserCircle size={22} weight="duotone" />}
       description={`${tenant.room} · ${tenant.roomType}`}
       headerActions={
         <button
@@ -159,7 +160,7 @@ export default function TenantPaymentDrawer({
           onChange={(e) => setNote(e.target.value)}
           rows={2}
           placeholder="e.g. called 5 Sept, said they'd pay by Friday"
-          className="w-full resize-none rounded-lg border border-line px-3 py-2.5 text-sm text-ink outline-none placeholder:text-muted focus:border-brand"
+          className="w-full resize-none rounded-lg border border-transparent bg-mist px-3 py-2.5 text-sm text-ink outline-none placeholder:text-muted focus:ring-2 focus:ring-brand/30"
         />
         {noteDirty && (
           <button type="button" onClick={saveNote} className="mt-1.5 text-xs font-medium text-brand hover:underline">
@@ -212,7 +213,7 @@ export default function TenantPaymentDrawer({
                 <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500">Voided</span>
               ) : (
                 row.status && (
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${ledgerStatusStyle[row.status]}`}>
+                  <span className={`rounded-md px-2 py-0.5 text-xs font-semibold ${ledgerStatusStyle[row.status]}`}>
                     {ledgerStatusLabel[row.status]}
                   </span>
                 )

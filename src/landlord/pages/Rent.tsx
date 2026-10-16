@@ -1,4 +1,5 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
+import SearchInput from "../components/SearchInput";
 import { useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import PageHeader from "../components/PageHeader";
@@ -11,7 +12,7 @@ import { useTenants, formatCurrency, type PaymentStatus, type Tenant } from "../
 import { useRoomTypeRent } from "../RoomsContext";
 import { useSettings } from "../SettingsContext";
 import { calcTotalOwed } from "../invoiceUtils";
-import { LinkSimple, MagnifyingGlass, Plus, Receipt, DotsThreeVertical } from "@phosphor-icons/react";
+import { LinkSimple, Plus, Receipt, DotsThreeVertical } from "@phosphor-icons/react";
 import Pagination, { DEFAULT_PAGE_SIZE } from "../components/Pagination";
 import { Skeleton, SkeletonRow } from "../components/Skeleton";
 import MetricCard from "../components/MetricCard";
@@ -23,10 +24,6 @@ import rentphoto from "../../assets/Rent Empty state UI.png"
 
 function LinkIcon() {
   return <LinkSimple size={14} weight="bold" />;
-}
-
-function SearchIcon() {
-  return <MagnifyingGlass size={16} weight="bold" />;
 }
 
 function PlusIcon() {
@@ -195,12 +192,15 @@ export default function Rent() {
   // actually resident during a browsed-to past month (so someone who's since moved out, or hasn't
   // moved in yet, doesn't wrongly appear in a month they weren't there for).
   const periodTenants = useMemo(() => {
-    if (isCurrentMonth) return tenants.filter((t) => t.active);
     const monthStart = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
     const monthEnd = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
     return tenants.filter((t) => {
+      // The current month shows who is active; someone moving in later (next month or beyond) is
+      // not on this month's roll yet, so they can't show as unpaid or overdue.
+      if (isCurrentMonth && !t.active) return false;
       const moveIn = new Date(t.moveInDate);
-      if (Number.isNaN(moveIn.getTime()) || moveIn > monthEnd) return false;
+      if (Number.isNaN(moveIn.getTime())) return isCurrentMonth;
+      if (moveIn > monthEnd) return false;
       if (t.moveOutDate) {
         const moveOut = new Date(t.moveOutDate);
         if (!Number.isNaN(moveOut.getTime()) && moveOut < monthStart) return false;
@@ -413,6 +413,7 @@ export default function Rent() {
                   label="Rent collected"
                   value={formatCurrency(stats.collectedTotal)}
                   tone="success"
+                  to="/online-payments"
                   insight={
                     <span className="flex w-full items-center gap-2">
                       <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-emerald-100">
@@ -423,7 +424,7 @@ export default function Rent() {
                       </span>
                     </span>
                   }
-                  caption={`${stats.collectedPct}% of target collected`}
+                  caption={`${stats.collectedPct}% of target collected, see what's ready to transfer`}
                 />
 
                 <MetricCard
@@ -453,18 +454,7 @@ export default function Rent() {
           <div className="rounded-lg border border-line bg-paper">
             {/* Toolbar */}
             <div className="flex flex-col gap-3 border-b border-line p-6 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-2.5 rounded-md bg-mist px-3.5 py-2.5 transition-colors focus-within:bg-paper focus-within:ring-2 focus-within:ring-brand/25 sm:w-64">
-                <SearchIcon />
-                <input
-                  value={query}
-                  onChange={(e) => {
-                    setQuery(e.target.value);
-                    setPage(1);
-                  }}
-                  placeholder="Search tenant or room"
-                  className="w-full bg-transparent text-sm outline-none placeholder:text-muted"
-                />
-              </div>
+              <SearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} placeholder="Search tenant or room" className="sm:w-64" />
 
               <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
                 <div className="inline-flex gap-0.5 rounded-md bg-mist p-1">
@@ -522,10 +512,10 @@ export default function Rent() {
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium text-ink">{t.name}</p>
-                        <p className="mt-0.5 text-xs text-muted">{t.room}</p>
+                        <p className="mt-0.5 text-xs text-muted">{t.room || "No unit"}</p>
                       </div>
                       <div className="shrink-0 text-right">
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[row.status]}`}>{statusLabel[row.status]}</span>
+                        <span className={`rounded-md px-2 py-0.5 text-xs font-semibold ${statusStyle[row.status]}`}>{statusLabel[row.status]}</span>
                         {statusDetail(row, isCurrentMonth) && (
                           <p className="mt-1 text-[11px] text-muted">{statusDetail(row, isCurrentMonth)}</p>
                         )}
@@ -587,16 +577,16 @@ export default function Rent() {
             </div>
 
             {/* Desktop / tablet: table */}
-            <div className="hidden max-h-[70vh] overflow-auto md:block">
+            <div className="hidden overflow-x-auto md:block">
               <table className="w-full text-left text-sm">
-                <thead className="sticky top-0 z-10 border-b border-line bg-paper text-[11px] text-muted uppercase">
+                <thead className="border-b border-line bg-paper text-[10.5px] text-muted uppercase">
                   <tr>
-                    <th className="px-4 py-3 font-medium tracking-wide">Tenant</th>
-                    <th className="px-4 py-3 font-medium tracking-wide">Room type</th>
-                    <th className="px-4 py-3 font-medium tracking-wide whitespace-nowrap">Amount paid</th>
-                    <th className="px-4 py-3 font-medium tracking-wide whitespace-nowrap">Outstanding balance</th>
-                    <th className="px-4 py-3 font-medium tracking-wide">Status</th>
-                    <th className="px-4 py-3 font-medium tracking-wide">Action</th>
+                    <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Tenant</th>
+                    <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Room type</th>
+                    <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap whitespace-nowrap">Amount paid</th>
+                    <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap whitespace-nowrap">Outstanding</th>
+                    <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Status</th>
+                    <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line">
@@ -612,7 +602,7 @@ export default function Rent() {
                       >
                         <td className="px-4 py-3">
                           <p className="font-medium text-ink">{t.name}</p>
-                          <p className="text-xs text-muted">{t.room}</p>
+                          <p className="text-xs text-muted">{t.room || "No unit"}</p>
                         </td>
                         <td className="px-4 py-3 text-ink">{t.roomType}</td>
                         <td className={`font-display px-4 py-3 whitespace-nowrap ${row.amountPaid === 0 ? "font-normal text-muted" : "font-medium text-emerald-600"}`}>
@@ -630,7 +620,7 @@ export default function Rent() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex flex-wrap items-center gap-1.5">
-                            <span className={`rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${statusStyle[row.status]}`}>{statusLabel[row.status]}</span>
+                            <span className={`rounded-md px-2 py-0.5 text-xs font-semibold whitespace-nowrap ${statusStyle[row.status]}`}>{statusLabel[row.status]}</span>
                             {pendingTenantIds.has(t.id) && <PendingSyncTag />}
                           </div>
                         </td>
@@ -699,19 +689,23 @@ export default function Rent() {
       ) : (
         /* No tenants this month at all — standalone empty state, no stat cards, no table shape */
         <div className="flex flex-col items-center justify-center gap-3  text-center">
-          <span className="flex  w-sm items-center justify-center  text-muted">
-            <img src={rentphoto} />
-          </span>
+          {isCurrentMonth && (
+            <span className="flex  w-sm items-center justify-center  text-muted">
+              <img src={rentphoto} />
+            </span>
+          )}
           <div>
-              <p className="font-display text-xl font-bold tracking-tight text-brand">Track Rent & Payment History</p>    
+              <p className="font-display text-xl font-bold tracking-tight text-brand">{isCurrentMonth ? "Track Rent & Payment History" : "No rent records this month"}</p>
             <p className="mt-0.5 text-sm max-w-lg text-muted">
               {isCurrentMonth ? "Monitor active rent statuses, view payment schedules and keep a clear record of paid, pending and overdue rent across your property." : "No one was resident during this month."}
             </p>
           </div>
-          <Button variant="primary" onClick={() => setPaymentStep("search")} className="hover:scale-[1.02]">
-                  <PlusIcon />
-                  Log payment
-                </Button>
+          {isCurrentMonth && (
+            <Button variant="primary" onClick={() => setPaymentStep("search")} className="hover:scale-[1.02]">
+              <PlusIcon />
+              Log payment
+            </Button>
+          )}
         </div>
       )}
     </motion.div>
@@ -724,7 +718,7 @@ export default function Rent() {
       onClose={() => setPaymentStep(null)}
       onPick={(t) => {
         setPayingTenant(t);
-        setPaymentStep("ledger");
+        setPaymentStep("confirm");
       }}
     />
   )}
@@ -743,11 +737,15 @@ export default function Rent() {
   {paymentStep === "confirm" && payingTenant && (
     <LogPaymentModal
       tenantName={payingTenant.name}
-      room={`${payingTenant.room} · ${payingTenant.roomType}`}
+      room={[payingTenant.room, payingTenant.roomType].filter(Boolean).join(" · ") || "No unit"}
       outstanding={calcTotalOwed(payingTenant) || payingTenant.rentAmount}
       rentAmount={payingTenant.rentAmount}
       ledger={payingTenant.ledger}
-      onClose={() => setPaymentStep("ledger")}
+      moveInDate={payingTenant.moveInDate}
+      onClose={() => {
+              setPaymentStep(null);
+              setPayingTenant(null);
+            }}
       onConfirm={(payments) => {
         logPayments(
           payingTenant.id,

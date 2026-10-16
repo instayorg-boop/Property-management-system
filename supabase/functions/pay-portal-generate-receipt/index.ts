@@ -158,7 +158,7 @@ Deno.serve(async (req) => {
 
   const { data: collection } = await supabase
     .from("collections")
-    .select("id, tenant_id, property_id, amount, phone, operator, status, updated_at, line_items, fee_amount, owed_before")
+    .select("id, tenant_id, property_id, amount, phone, operator, status, updated_at, line_items, fee_amount, owed_before, lenco_collection_id")
     .eq("id", collectionId)
     .eq("tenant_id", tenantId)
     .maybeSingle();
@@ -192,7 +192,7 @@ Deno.serve(async (req) => {
   const { data: tenant } = await supabase
     .from("tenants")
     // Disambiguated join — same reasoning as pay-portal-resolve-token/index.ts.
-    .select("name, phones, rooms!tenants_room_id_fkey(number), room_types(name)")
+    .select("name, phones, move_in_date, unit_label, rooms!tenants_room_id_fkey(number), room_types(name)")
     .eq("id", tenantId)
     .maybeSingle();
   const { data: property } = await supabase
@@ -206,7 +206,7 @@ Deno.serve(async (req) => {
     .eq("property_id", collection.property_id)
     .maybeSingle();
 
-  const room = (tenant?.rooms as { number: string } | null)?.number ?? null;
+  const room = (tenant?.rooms as { number: string } | null)?.number ?? tenant?.unit_label ?? null;
   const roomType = (tenant?.room_types as { name: string } | null)?.name ?? null;
   const tenantPhone: string | null = Array.isArray(tenant?.phones) && tenant.phones.length > 0 ? tenant.phones[0] : null;
   const paidAt = new Date(collection.updated_at);
@@ -219,12 +219,54 @@ Deno.serve(async (req) => {
   const isPartial = owedBefore != null && rentPortion < owedBefore;
   const remaining = isPartial ? (owedBefore as number) - rentPortion : 0;
 
-  const fileTitle = isPartial ? "Partial payment receipt" : `${monthLabel} rent receipt`;
 
-  const lineItems: LineItem[] =
+  // "Rent paid in advance" is vague: name the month it actually covers. A tenant who hasn't moved
+  // in yet is paying for their move-in month, otherwise it is the month after the payment.
+  const moveIn = tenant?.move_in_date ? new Date(tenant.move_in_date) : null;
+  const advanceStart =
+    moveIn && !Number.isNaN(moveIn.getTime()) && moveIn > paidAt
+      ? moveIn
+      : new Date(paidAt.getFullYear(), paidAt.getMonth() + 1, 1);
+  let advanceLabel = advanceStart.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
+  const rawItems: LineItem[] =
     Array.isArray(collection.line_items) && collection.line_items.length > 0
       ? (collection.line_items as LineItem[])
       : [{ label: `${monthLabel} rent payment`, amount: rentPortion }];
+  // The ledger row written for this payment is the source of truth for what it paid for (the
+  // database labels it: a specific month's charge, rent held for a future month, or the balance).
+  const { data: entry } = await supabase
+    .from("ledger_entries")
+    .select("label")
+    .eq("tenant_id", tenantId)
+    .eq("idempotency_key", `lenco_payment:${collectionId}`)
+    .maybeSingle();
+  const entryLabel: string | null = entry?.label ?? null;
+
+  let lineItems: LineItem[] = rawItems.map((i) =>
+    i.label === "Rent paid in advance" ? { ...i, label: `Rent for ${advanceLabel} (paid in advance)` } : i
+  );
+  let coversAdvance = rawItems.some((i) => i.label === "Rent paid in advance");
+  if (entryLabel) {
+    const advanceMatch = entryLabel.match(/^Rent for (.+) \(paid in advance\)$/);
+    if (advanceMatch) {
+      advanceLabel = advanceMatch[1];
+      coversAdvance = true;
+      lineItems = [{ label: entryLabel, amount: rentPortion }];
+    } else if (entryLabel.startsWith("Mobile money payment, ")) {
+      const what = entryLabel.slice("Mobile money payment, ".length);
+      coversAdvance = false;
+      lineItems = [{ label: what === "towards balance" ? "Payment towards your balance" : what.charAt(0).toUpperCase() + what.slice(1), amount: rentPortion }];
+    }
+  }
+  const balanceAfter = owedBefore != null ? Math.max(0, Math.round((owedBefore - rentPortion) * 100) / 100) : null;
+  const fileTitle = isPartial
+    ? "Partial payment receipt"
+    : coversAdvance
+      ? `${advanceLabel} rent receipt`
+      : entryLabel?.endsWith("towards balance")
+        ? "Payment receipt"
+        : `${monthLabel} rent receipt`;
 
   const logoDataUrl = await fetchLogoDataUrl(IPM_LOGO_URL);
 
@@ -263,6 +305,22 @@ Deno.serve(async (req) => {
   doc.setFont("helvetica", "normal");
   doc.setTextColor(...COLOR.inkMuted);
   doc.text(paidOnLabel, margin + 32, y);
+  y += 6;
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(...COLOR.ink);
+  doc.text("Status", margin, y);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...COLOR.inkMuted);
+  doc.text(isPartial ? "Partly paid" : "Paid in full", margin + 32, y);
+  if (collection.lenco_collection_id) {
+    y += 6;
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(...COLOR.ink);
+    doc.text("Reference", margin, y);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(...COLOR.inkMuted);
+    doc.text(String(collection.lenco_collection_id), margin + 32, y);
+  }
 
   // Bill from / bill to
   y += 12;
@@ -270,16 +328,21 @@ Deno.serve(async (req) => {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
   doc.setTextColor(...COLOR.ink);
-  doc.text(property?.name ?? "—", margin, y);
+  doc.text(property?.name ?? "-", margin, y);
   doc.text("Bill to", margin + colWidth, y, { align: "left" });
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
   doc.setTextColor(...COLOR.inkMuted);
   let yFrom = y + 4.5;
-  if (property?.address) {
-    doc.text(property.address, margin, yFrom, { maxWidth: colWidth - 6 });
+  if (settings?.landlord_name) {
+    doc.text(`Landlord: ${settings.landlord_name}`, margin, yFrom);
     yFrom += 4.5;
+  }
+  if (property?.address) {
+    const lines = doc.splitTextToSize(property.address, colWidth - 6) as string[];
+    doc.text(lines, margin, yFrom);
+    yFrom += 4.5 * lines.length;
   }
   if (settings?.landlord_phone) {
     doc.text(settings.landlord_phone, margin, yFrom);
@@ -287,10 +350,11 @@ Deno.serve(async (req) => {
 
   let yTo = y + 4.5;
   doc.setTextColor(...COLOR.ink);
-  doc.text(tenant?.name ?? "—", margin + colWidth, yTo);
+  doc.text(tenant?.name ?? "-", margin + colWidth, yTo);
   doc.setTextColor(...COLOR.inkMuted);
   yTo += 4.5;
-  const roomLine = [room ? `Room ${room}` : null, roomType].filter(Boolean).join("    ");
+  const roomText = room ? (/^[A-Za-z]?\d+[A-Za-z]?$/.test(room) ? `Room ${room}` : room) : null;
+  const roomLine = [roomText, roomType].filter(Boolean).join("    ");
   if (roomLine) {
     doc.text(roomLine, margin + colWidth, yTo);
     yTo += 4.5;
@@ -365,6 +429,20 @@ Deno.serve(async (req) => {
   doc.text("Amount paid", margin, y);
   doc.text(formatMoney(collection.amount), pageWidth - margin, y, { align: "right" });
 
+  if (balanceAfter != null) {
+    y += 6;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(...COLOR.inkMuted);
+    doc.text("Balance after this payment", margin, y);
+    doc.text(formatMoney(balanceAfter), pageWidth - margin, y, { align: "right" });
+  }
+  if (coversAdvance) {
+    y += 6;
+    doc.setFontSize(8.5);
+    doc.text(`This payment is credited towards ${advanceLabel} rent.`, margin, y);
+  }
+
   // Paid via
   y += 10;
   doc.setFont("helvetica", "normal");
@@ -408,6 +486,7 @@ Deno.serve(async (req) => {
 
   const { error: uploadError } = await supabase.storage.from("tenant-documents").upload(filePath, pdfBytes, {
     contentType: "application/pdf",
+    upsert: true,
   });
   if (uploadError) {
     return new Response(JSON.stringify({ error: "Failed to save the receipt." }), {

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { Suspense, useEffect, useRef } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import Sidebar from "./Sidebar";
@@ -13,20 +13,15 @@ import { MaintenanceProvider } from "../MaintenanceContext";
 import { SettingsProvider } from "../SettingsContext";
 import { NotificationsProvider } from "../NotificationsContext";
 import { InvoicesProvider } from "../InvoicesContext";
-import { SidebarProvider, useSidebar } from "../SidebarContext";
+import { SidebarProvider } from "../SidebarContext";
 import { AssistantUiProvider } from "../AssistantUiContext";
-import ProductTour from "./ProductTour";
 import SyncToast from "./SyncToast";
 import { SyncStatusBadge } from "./SyncStatus";
 import AssistantPanel from "../../components/AssistantPanel";
-import MobileBottomNav from "./MobileBottomNav";
-
-const FOCUSABLE_SELECTOR = 'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
+import { SkeletonPage } from "./Skeleton";
 
 function Shell() {
   const { isDark } = useTheme();
-  const { open, setOpen } = useSidebar();
-  const drawerRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLElement>(null);
   const location = useLocation();
 
@@ -36,41 +31,6 @@ function Shell() {
     mainRef.current?.scrollTo(0, 0);
   }, [location.pathname]);
 
-  // Escape-to-close + a focus trap while the mobile drawer is open, and focus lands inside it on open.
-  useEffect(() => {
-    if (!open) return;
-
-    const drawer = drawerRef.current;
-    const previouslyFocused = document.activeElement as HTMLElement | null;
-    const firstFocusable = drawer?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
-    firstFocusable?.focus();
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setOpen(false);
-        return;
-      }
-      if (e.key !== "Tab" || !drawer) return;
-      const focusables = Array.from(drawer.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
-      if (focusables.length === 0) return;
-      const first = focusables[0];
-      const last = focusables[focusables.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    };
-
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      previouslyFocused?.focus();
-    };
-  }, [open, setOpen]);
-
   return (
     <div className={`flex h-screen flex-col overflow-hidden ${isDark ? "theme-dark" : ""}`}>
       {/* Full-width header spans the whole viewport, above both the sidebar and the content —
@@ -79,16 +39,11 @@ function Shell() {
 
       {/* Standard full-bleed dashboard shell: sidebar and content sit flush, edge to edge, no
           outer padding, no rounded/bordered frame around the pair — just plain colour contrast
-          (gray sidebar, white content) doing the separating. */}
+          (gray sidebar, white content) doing the separating. On mobile, Sidebar renders nothing
+          here at all below `lg` (its own full-screen menu is a fixed overlay, not part of this
+          flex row), so there's no backdrop or drawer-width concern at this level any more. */}
       <div className="relative flex flex-1 overflow-hidden">
-        {open && (
-          <div
-            className="fixed inset-0 z-40 bg-ink/40 lg:hidden"
-            onClick={() => setOpen(false)}
-            aria-hidden="true"
-          />
-        )}
-        <Sidebar ref={drawerRef} />
+        <Sidebar />
 
         {/* scrollbar-gutter: stable — this is the actual scrolling container (the page never
             scrolls), so a page like Settings whose content height changes when you switch tabs
@@ -96,8 +51,8 @@ function Shell() {
             (including anything mid-animation, like the Settings tab bar's sliding underline). */}
         <main
           ref={mainRef}
-          className="flex-1 overflow-y-auto bg-white pb-[calc(3.5rem+env(safe-area-inset-bottom,0px))] lg:pb-0"
-          style={{ scrollbarGutter: "stable" }}
+          className="flex-1 overflow-y-auto bg-mist"
+          style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)", scrollbarGutter: "stable" }}
         >
           {/*
             No AnimatePresence/exit here on purpose: waiting for the old page to fade out before
@@ -112,16 +67,21 @@ function Shell() {
             animate={{ opacity: 1 }}
             transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1], delay: 0.06 }}
           >
-            <Outlet />
+            {/* Pages are lazy-loaded; this inner boundary catches a page chunk still downloading so
+                only the content area shows a skeleton, instead of the root boundary blanking the
+                whole shell with the full-screen loader. */}
+            <Suspense fallback={<SkeletonPage />}>
+              <Outlet />
+            </Suspense>
           </motion.div>
         </main>
       </div>
-      <MobileBottomNav />
-      <ProductTour />
       <SyncToast />
       <SyncStatusBadge />
       {/* Assistant widget — read-only chat, lives on every dashboard page (never on the public
-          tenant payment portal, which has its own separate layout tree entirely). */}
+          tenant payment portal, which has its own separate layout tree entirely). Its own floating
+          trigger is visible at every width now that there's no bottom tab bar reserving that
+          corner's real estate for a "Chat" tab. */}
       <AssistantPanel />
     </div>
   );

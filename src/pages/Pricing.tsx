@@ -8,257 +8,28 @@ import Button from "../landlord/components/Button";
 import Background from "../components/Background";
 import Nav from "../components/Nav";
 import Footer from "../components/Footer";
+import { PLAN_TIERS, COMPARISON_FEATURES, type FeatureValue } from "../lib/plans";
 
 const cn = (...classes: (string | boolean | undefined)[]) =>
   classes.filter(Boolean).join(" ");
 
-interface Plan {
-  name: string;
-  bedRange: string;
-  monthlyPrice: number;
-  setupFee: number;
-  priceIsFrom?: boolean;
-  features: string[];
-  additionalFeatures?: string[];
-  isFeatured?: boolean;
-}
+// Plan/feature data now lives in src/lib/plans.ts so it can't drift from what Settings/Header
+// show in-app — `plans` and `comparisonFeatures` below are just this page's local aliases,
+// shaped the way the rest of this file already expects them.
+const plans = PLAN_TIERS.map((t) => ({
+  name: t.label,
+  bedRange: t.bedRange,
+  monthlyPrice: t.monthlyPrice,
+  setupFee: t.setupFee,
+  priceIsFrom: t.priceIsFrom,
+  isFeatured: t.isFeatured,
+  features: t.features,
+  additionalFeatures: t.additionalFeatures,
+}));
 
-type FeatureValue = true | false | null | string;
-
-interface FeatureSection {
-  category: string;
-  features: {
-    name: string;
-    starter: FeatureValue;
-    growth: FeatureValue;
-    enterprise: FeatureValue;
-  }[];
-}
+const comparisonFeatures = COMPARISON_FEATURES;
 
 const ANNUAL_MONTHS_CHARGED = 10;
-
-const plans: Plan[] = [
-  {
-    name: "Starter",
-    bedRange: "Up to 80 beds",
-    monthlyPrice: 799,
-    setupFee: 999,
-    features: [
-      "Tenant & room management",
-      "Automatic rent collection",
-      "Rent tracking & digital receipts",
-      "Automated reminders",
-      "Maintenance management",
-      "Reports & dashboard",
-    ],
-    additionalFeatures: [
-      "Up to 200 SMS/month",
-      "Up to 2 staff logins",
-    ],
-  },
-  {
-    name: "Growth",
-    bedRange: "81–299 beds",
-    monthlyPrice: 1499,
-    setupFee: 1999,
-    isFeatured: true,
-    features: [
-      "Everything in Starter",
-      "Unlimited automated reminders",
-      "Advanced reports & analytics",
-      "Staff attendance tracking",
-      "Automatic payroll calculation",
-      "Up to 5 staff logins",
-    ],
-    additionalFeatures: ["Increased document storage"],
-  },
-  {
-    name: "Enterprise",
-    bedRange: "300+ beds",
-    monthlyPrice: 2499,
-    setupFee: 2999,
-    priceIsFrom: true,
-    features: [
-      "Everything in Growth",
-      "Unlimited staff logins",
-      "Custom invoice & receipt branding",
-      "Guided onboarding",
-      "Data migration",
-      "Custom pricing",
-    ],
-    additionalFeatures: [
-      "Dedicated setup support",
-      "Custom requirements",
-    ],
-  },
-];
-
-const comparisonFeatures: FeatureSection[] = [
-  {
-    category: "Property management",
-    features: [
-      {
-        name: "Tenant management",
-        starter: true,
-        growth: true,
-        enterprise: true,
-      },
-      {
-        name: "Room management",
-        starter: true,
-        growth: true,
-        enterprise: true,
-      },
-      {
-        name: "Availability tracking",
-        starter: true,
-        growth: true,
-        enterprise: true,
-      },
-      {
-        name: "Maintenance management",
-        starter: true,
-        growth: true,
-        enterprise: true,
-      },
-      {
-        name: "Tenant records",
-        starter: true,
-        growth: true,
-        enterprise: true,
-      },
-    ],
-  },
-  {
-    category: "Payments & collections",
-    features: [
-      {
-        name: "Online rent collection",
-        starter: true,
-        growth: true,
-        enterprise: true,
-      },
-      {
-        name: "Mobile money payments",
-        starter: true,
-        growth: true,
-        enterprise: true,
-      },
-      {
-        name: "Bank payment destination",
-        starter: true,
-        growth: true,
-        enterprise: true,
-      },
-      {
-        name: "Payment tracking",
-        starter: true,
-        growth: true,
-        enterprise: true,
-      },
-      {
-        name: "Digital receipts",
-        starter: true,
-        growth: true,
-        enterprise: true,
-      },
-      {
-        name: "Automatic late fees",
-        starter: true,
-        growth: true,
-        enterprise: true,
-      },
-      {
-        name: "Automated payment reminders",
-        starter: "Standard",
-        growth: "Unlimited",
-        enterprise: "Unlimited",
-      },
-    ],
-  },
-  {
-    category: "Operations",
-    features: [
-      {
-        name: "Reports & dashboard",
-        starter: true,
-        growth: true,
-        enterprise: true,
-      },
-      {
-        name: "Advanced analytics",
-        starter: false,
-        growth: true,
-        enterprise: true,
-      },
-      {
-        name: "Staff attendance",
-        starter: false,
-        growth: true,
-        enterprise: true,
-      },
-      {
-        name: "Automatic payroll calculation",
-        starter: false,
-        growth: true,
-        enterprise: true,
-      },
-      {
-        name: "Staff logins",
-        starter: "Up to 2",
-        growth: "Up to 5",
-        enterprise: "Unlimited",
-      },
-      {
-        name: "Document storage",
-        starter: "Standard",
-        growth: "Increased",
-        enterprise: "Custom",
-      },
-    ],
-  },
-  {
-    category: "Onboarding & support",
-    features: [
-      {
-        name: "Standard support",
-        starter: true,
-        growth: true,
-        enterprise: true,
-      },
-      {
-        name: "Guided onboarding",
-        starter: false,
-        growth: false,
-        enterprise: true,
-      },
-      {
-        name: "Data migration",
-        starter: false,
-        growth: false,
-        enterprise: true,
-      },
-      {
-        name: "Custom invoice & receipt branding",
-        starter: false,
-        growth: false,
-        enterprise: true,
-      },
-      {
-        name: "Dedicated setup support",
-        starter: false,
-        growth: false,
-        enterprise: true,
-      },
-      {
-        name: "Custom requirements",
-        starter: false,
-        growth: false,
-        enterprise: true,
-      },
-    ],
-  },
-];
 
 const formatKwacha = (amount: number) =>
   `K${amount.toLocaleString("en-ZM", {
@@ -455,6 +226,7 @@ export const Pricing = () => {
                     {/* CTA */}
                     <Button
                       variant={plan.isFeatured ? "primary" : "outline"}
+                      onClick={() => window.location.assign("/contact")}
                       className={cn(
                         "mt-7 w-full rounded-lg px-4 py-2.5 text-sm font-semibold",
                         plan.isFeatured

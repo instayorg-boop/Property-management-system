@@ -1,4 +1,5 @@
 import { useMemo, type ReactNode } from "react";
+import { isResident } from "../../../lib/tenants";
 import {
   DownloadSimple,
   Phone,
@@ -117,7 +118,7 @@ export function useArrears(): ArrearsRow[] {
   return useMemo(
     () =>
       tenants
-        .filter((t): t is Tenant => t.active && (t.status === "overdue" || t.status === "unpaid"))
+        .filter((t): t is Tenant => isResident(t) && (t.status === "overdue" || t.status === "unpaid"))
         .map((t) => {
           const contact = t.emergencyContacts[0];
           return {

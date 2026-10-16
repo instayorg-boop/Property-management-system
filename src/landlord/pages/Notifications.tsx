@@ -115,7 +115,7 @@ export default function Notifications() {
                 type="button"
                 onClick={() => setReadTab(t)}
                 className={`rounded-[5px] px-2.5 py-1.5 text-sm font-medium transition-all ${
-                  readTab === t ? "bg-paper text-ink shadow-sm" : "text-muted hover:text-ink"
+                  readTab === t ? "border border-line bg-paper text-ink shadow-sm" : "text-muted hover:text-ink"
                 }`}
               >
                 {t === "all" ? "All" : `Unread${unreadCount > 0 ? ` (${unreadCount})` : ""}`}

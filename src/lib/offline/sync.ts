@@ -1,6 +1,7 @@
 import { supabase } from "../supabaseClient";
 import { syncTenantBalanceIfNewModel, needsBalanceFallbackWrite } from "../tenants";
 import { db, type QueuedAction } from "./db";
+import { logAuditEvent } from "../auditLog";
 
 type Listener = () => void;
 const listeners = new Set<Listener>();
@@ -175,6 +176,15 @@ async function replayLedgerEntry(action: QueuedAction): Promise<ReplayResult> {
     if (tenantError) throw tenantError;
   }
 
+  void logAuditEvent({
+    propertyId: action.propertyId,
+    action: "payment.logged",
+    summary: "Payment logged (synced from offline queue)",
+    targetType: "tenant",
+    targetId: ledgerPayload.tenant_id,
+    metadata: { amount: ledgerPayload.amount, queued: true },
+  });
+
   return { kind: "ok" };
 }
 
@@ -184,6 +194,13 @@ async function replayTenantUpdate(action: QueuedAction): Promise<ReplayResult> {
   if (conflict) return conflict;
   const { error } = await supabase.from("tenants").update(payload as never).eq("id", payload.id);
   if (error) throw error;
+  void logAuditEvent({
+    propertyId: action.propertyId,
+    action: "tenant.updated",
+    summary: action.type === "add_tenant_note" ? "Tenant note added (synced from offline queue)" : "Tenant details updated (synced from offline queue)",
+    targetType: "tenant",
+    targetId: payload.id,
+  });
   return { kind: "ok" };
 }
 

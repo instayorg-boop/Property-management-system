@@ -4,7 +4,7 @@ import { CaretRight } from "@phosphor-icons/react";
 import { groupPortalLedger, groupPortalLedgerByMonth, type PortalLedgerRow } from "../../lib/payPortal";
 import { usePortal } from "./portalData";
 import { ledgerEntryKey } from "./PortalPaymentDetail";
-import { Card, Pill, PortalMessage, PortalTopBar, PoweredByInstay, Shimmer, formatDate, formatMoney, type ToneName } from "./portalUi";
+import { Card, Pill, PortalSelect, PortalMessage, PortalTopBar, PoweredByInstay, Shimmer, formatDate, formatMoney, type ToneName } from "./portalUi";
 
 /** What a ledger row's status is telling you at a glance, so a long column of figures doesn't
  * force a read of every date just to tell paid months from open ones. An ad-hoc charge or credit
@@ -52,29 +52,19 @@ export default function PortalHistory() {
         <>
           {monthGroups.length > 1 && (
             <div className="mb-4">
-              <label htmlFor="history-month" className="sr-only">
-                Filter by month
-              </label>
-              <select
-                id="history-month"
-                className="p-input"
+              <PortalSelect
+                ariaLabel="Filter by month"
                 value={monthFilter}
-                onChange={(e) => setMonthFilter(e.target.value)}
-              >
-                <option value="all">All months</option>
-                {monthGroups.map((g) => (
-                  <option key={g.key} value={g.key}>
-                    {g.label}
-                  </option>
-                ))}
-              </select>
+                onChange={setMonthFilter}
+                options={[{ value: "all", label: "All months" }, ...monthGroups.map((g) => ({ value: g.key, label: g.label }))]}
+              />
             </div>
           )}
 
           <div className="space-y-5">
             {visible.map((group) => (
               <section key={group.key}>
-                <h2 className="mb-2 px-1 text-[13px] font-semibold" style={{ color: "var(--p-muted)" }}>
+                <h2 className="mb-2 px-0.5 text-[10.5px] font-bold uppercase tracking-[.08em]" style={{ color: "var(--p-muted)" }}>
                   {group.label}
                 </h2>
                 <Card>

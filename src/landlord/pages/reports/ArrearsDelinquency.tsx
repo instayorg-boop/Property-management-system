@@ -96,7 +96,7 @@ export default function ArrearsDelinquency() {
                     </td>
                     <td className="px-6 py-4 text-muted">{a.room}</td>
                     <td className="px-6 py-4">
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${daysBadgeStyle(a.daysOverdue)}`}>
+                      <span className={`rounded-md px-2 py-0.5 text-xs font-semibold ${daysBadgeStyle(a.daysOverdue)}`}>
                         {a.daysOverdue}d
                       </span>
                     </td>

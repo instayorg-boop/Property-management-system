@@ -2,10 +2,8 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowCounterClockwise,
-  CaretDown,
+  CaretRight,
   CoffeeIcon,
-  Clock,
-  Sparkle,
 } from "@phosphor-icons/react";
 
 import {
@@ -18,10 +16,11 @@ import {
 } from "../../lib/todaysTasksApi";
 
 import { Skeleton } from "./Skeleton";
-import { ChevronUp } from "lucide-react";
 import { useTenants } from "../TenantsContext";
 import { resolveTaskLink } from "../linkResolver";
 import { Checkbox } from "../../components/ui/checkbox";
+import { StatusPill, type StatusTone } from "./DataTable";
+import AutopilotBadge from "./AutopilotBadge";
 
 /**
  * Today's Tasks
@@ -37,10 +36,14 @@ const PRIORITY_LABEL: Record<TaskPriority, string> = {
   low: "Low",
 };
 
-const PRIORITY_BADGE: Record<TaskPriority, string> = {
-  high: "bg-red-50 text-red-600",
-  medium: "bg-amber-50 text-amber-700",
-  low: "bg-emerald-50 text-emerald-700",
+// Unlike Maintenance.tsx's four-level scale (low/medium/high/urgent), this page's priority
+// tops out at "high" with nothing above it, so High gets the most severe tone (danger/red)
+// here rather than the warning/amber Maintenance.tsx gives its own "high" (one step below
+// "urgent" there).
+const PRIORITY_TONE: Record<TaskPriority, StatusTone> = {
+  high: "danger",
+  medium: "warning",
+  low: "neutral",
 };
 
 export const SNOOZE_DAYS = 3;
@@ -138,12 +141,10 @@ export function labelFor(task: TodayTask): string {
 export function TaskRow({
   task,
   onDone,
-  onSnooze,
   busy,
 }: {
   task: TodayTask;
   onDone: () => void;
-  onSnooze: () => void;
   busy: boolean;
 }) {
   const navigate = useNavigate();
@@ -163,106 +164,60 @@ export function TaskRow({
     setTimeout(onDone, 500);
   };
 
+  // Row navigates only when there's somewhere real to send it — a manual to-do has no record
+  // anywhere else in the app, so its row stays inert and only the checkbox does anything.
+  const clickable = Boolean(label);
+
   return (
     <div
-      className="
-        group
-        flex
-        items-start
-        gap-3
-        border-b
-        border-line/70
-        py-4
-        transition-colors
-        last:border-b-0
-      "
+      role={clickable ? "button" : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onClick={clickable ? () => navigate(route) : undefined}
+      onKeyDown={
+        clickable
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                navigate(route);
+              }
+            }
+          : undefined
+      }
+      className={`group flex items-start gap-3 border-b border-line/70 py-3.5 transition-colors last:border-b-0 ${
+        clickable ? "cursor-pointer hover:bg-mist/30" : ""
+      }`}
     >
-      {/* Checkbox leads the row, todo-list style — checking it off is the same "mark done" action
-          the old far-right checkmark button was, just where a to-do list convention expects it. */}
-      <Checkbox
-        checked={justChecked}
-        onCheckedChange={handleDone}
-        disabled={busy}
-        aria-label={`Mark "${task.title}" as done`}
-        className="mt-0.5 shrink-0"
-      />
-
-      {/* Task content */}
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <p
-            className={`truncate text-[13px] font-medium leading-5 transition-colors ${
-              justChecked ? "text-muted line-through" : "text-ink"
-            }`}
-          >
-            {task.title}
-          </p>
-          <span
-            className={`shrink-0 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${PRIORITY_BADGE[task.priority]}`}
-          >
-            {PRIORITY_LABEL[task.priority]}
-          </span>
-        </div>
-        <p className="mt-0.5 truncate text-[11px] leading-5 text-muted">{factsLine(task)}</p>
-      </div>
-
-      {/* Actions */}
-      <div
-        className="
-          flex
-          shrink-0
-          items-center
-          gap-2 *
-          mx-2
-         
-          transition-opacity
-          group-hover:opacity-100
-          group-focus-within:opacity-100
-          max-sm:opacity-100
-        "
-      >
-        {label && (
-          <button
-            type="button"
-            onClick={() => navigate(route)}
-            className="
-            underline
-            text-xs
-            font-medium
-            text-muted
-            transition-colors
-            
-            hover:text-brand
-          "
-          >
-            {label}
-          </button>
-        )}
-
-        <button
-          type="button"
-          onClick={onSnooze}
+      {/* Checkbox leads the row, todo-list style. Its own click is stopped from bubbling up so
+          checking a task off never also fires the row's navigation. */}
+      <span onClick={(e) => e.stopPropagation()} className="mt-0.5 shrink-0">
+        <Checkbox
+          checked={justChecked}
+          onCheckedChange={handleDone}
           disabled={busy}
-          aria-label={`Snooze "${task.title}" for ${SNOOZE_DAYS} days`}
-          title={`Snooze ${SNOOZE_DAYS} days`}
-          className="
-            flex
-            h-7
-            w-7
-            items-center
-            justify-center
-            rounded-md
-            text-muted
-            transition-colors
-            hover:bg-mist
-            hover:text-ink
-            disabled:cursor-not-allowed
-            disabled:opacity-40
-          "
+          aria-label={`Mark "${task.title}" as done`}
+        />
+      </span>
+
+      {/* Task content, the title wraps instead of cutting off mid-word in a narrow card. Only
+          underlines on hover when the row actually goes somewhere, the same link affordance
+          Maintenance.tsx's report rows use, rather than putting the underline on the badge. */}
+      <div className="min-w-0 flex-1">
+        <p
+          className={`line-clamp-2 text-[13px] font-medium leading-5 transition-colors ${
+            justChecked ? "text-muted line-through" : "text-ink"
+          } ${clickable ? "group-hover:underline" : ""}`}
         >
-          <Clock size={14} />
-        </button>
+          {task.title}
+        </p>
+        <p className="mt-1 text-[11px] leading-5 text-muted">{factsLine(task)}</p>
       </div>
+
+      {/* Priority, in the corner the snooze button and chevron used to occupy: StatusPill, the
+          same pill (reduced roundness, tinted background matching the text) Maintenance.tsx's
+          own Priority/Status columns use everywhere else in the app. */}
+      <span className="shrink-0 self-start">
+        <StatusPill tone={PRIORITY_TONE[task.priority]}>{PRIORITY_LABEL[task.priority]}</StatusPill>
+      </span>
     </div>
   );
 }
@@ -316,7 +271,7 @@ export function PriorityTabs({
               transition-all
               ${
                 active
-                  ? "bg-paper text-ink shadow-sm"
+                  ? "border border-line bg-paper text-ink shadow-sm"
                   : "text-muted hover:text-ink"
               }
             `}
@@ -457,98 +412,27 @@ export default function TodaysTasks({
     low: 0,
   };
 
-  const doneToday =
-    payload?.doneToday ?? 0;
-
-  const totalToday =
-    counts.all + doneToday;
-
-  const completion =
-    totalToday > 0
-      ? Math.round(
-          (doneToday / totalToday) * 100
-        )
-      : 0;
-
-  const rows = payload?.top ?? [];
+  // Only the first 5 show inline — the rest are a tap away via the "See all" button below, rather
+  // than everything the API hands back (which could run well past a glance-able list).
+  const rows = (payload?.top ?? []).slice(0, 5);
   const hasMore = counts.all > rows.length;
 
   return (
     <section className="w-full">
       {/* Header */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <h2 className="font-display text-[15px] font-semibold tracking-tight text-ink">
-            Today's tasks
-          </h2>
+      <div className="flex min-w-0 items-center gap-3">
+        <h2 className="font-display text-xl font-semibold tracking-tight text-ink">
+          Needs your attention
+        </h2>
 
-          {counts.all > 0 && (
-            <span className="rounded-md bg-mist px-1.5 py-0.5 text-[10px] font-medium text-muted">
-              {counts.all}
-            </span>
-          )}
-        </div>
+        <AutopilotBadge />
 
-        <div className="flex shrink-0 items-center gap-3">
-          <span className="text-[11px] text-muted">
-            {doneToday}/{totalToday} done
+        {counts.all > 0 && (
+          <span className="rounded-md bg-mist px-1.5 py-0.5 text-[10px] font-medium text-muted">
+            {counts.all}
           </span>
-
-          {hasMore && (
-            <button
-              type="button"
-              onClick={() => navigate("/tasks")}
-              className="
-                hidden
-                items-center
-                gap-1
-                text-[11px]
-                font-medium
-                text-muted
-                transition-colors
-                hover:text-ink
-                sm:flex
-              "
-            >
-              See all
-              <CaretDown size={12} />
-            </button>
-          )}
-        </div>
+        )}
       </div>
-
-      {/* Progress */}
-      {totalToday > 0 && (
-        <div className="mt-3 h-1 rounded-4xl w-full bg-line">
-          <div
-            className="h-1 rounded-4xl bg-brand transition-[width] duration-500"
-            style={{
-              width: `${completion}%`,
-            }}
-          />
-        </div>
-      )}
-
-      {/* Mobile see all */}
-      {hasMore && (
-        <button
-          type="button"
-          onClick={() => navigate("/tasks")}
-          className="
-              mt-3
-              flex
-              items-center
-              gap-1
-              text-[11px]
-              font-medium
-              text-muted
-              sm:hidden
-            "
-        >
-          See all {counts.all} tasks
-          <ChevronUp size={12} />
-        </button>
-      )}
 
       {/* AI briefing */}
       {payload?.briefing && (
@@ -689,7 +573,7 @@ export default function TodaysTasks({
           </div>
 
           <p className="text-[13px] font-medium text-ink">
-            Nothing left here
+            All good, nothing needs you
           </p>
 
           <p className="mt-1 max-w-[260px] text-[11px] leading-5 text-muted">
@@ -711,36 +595,22 @@ export default function TodaysTasks({
                   "done"
                 )
               }
-              onSnooze={() =>
-                void updateStatus(
-                  task,
-                  "snoozed"
-                )
-              }
             />
           ))}
         </div>
       )}
 
-      {/* Desktop footer */}
+      {/* See all — one clear, always-visible button (replaces the old small muted-text links that
+          were easy to miss) rather than separate desktop/mobile versions. */}
       {hasMore && (
-        <div className="mt-2 hidden border-t border-line/70 pt-3 sm:block">
+        <div className="mt-3 border-t border-line/70 pt-3">
           <button
             type="button"
             onClick={() => navigate("/tasks")}
-            className="
-                flex
-                items-center
-                gap-1
-                text-[11px]
-                font-medium
-                text-muted
-                transition-colors
-                hover:text-ink
-              "
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-line bg-mist/40 px-3 py-2 text-xs font-semibold text-ink transition-colors hover:bg-mist"
           >
             See all {counts.all} tasks
-            <CaretDown size={12} />
+            <CaretRight size={12} weight="bold" />
           </button>
         </div>
       )}

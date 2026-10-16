@@ -15,7 +15,7 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: null,
-      includeAssets: ['favicon-16.png', 'favicon-32.png', 'apple-touch-icon.png'],
+      includeAssets: ['favicon-16.png', 'favicon-32.png', 'apple-touch-icon.png', 'Instay_Manage_Logo-removebg-preview.png'],
       manifest: {
         name: 'Instay Manage',
         short_name: 'Instay Manage',

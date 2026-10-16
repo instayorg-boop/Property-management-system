@@ -3,6 +3,7 @@ import { Link, useNavigate, useLocation } from "react-router-dom";
 import { signIn } from "../lib/auth";
 import { useAuth } from "../landlord/AuthContext";
 import Button from "../landlord/components/Button";
+import LoadingScreen from "../components/LoadingScreen";
 
 function GoogleIcon() {
   return (
@@ -57,6 +58,10 @@ export default function SignIn() {
       setLoading(false);
     }
   };
+
+  // Hold the branded loader while the stored session is checked, and for the instant between
+  // sign-in succeeding and the redirect above landing — so the form never flashes back into view.
+  if (!isReady || session) return <LoadingScreen />;
 
   return (
     <div className="grid min-h-screen bg-white grid-cols-1 lg:grid-cols-2">
@@ -141,10 +146,15 @@ export default function SignIn() {
             </Button>
           </form>
 
-         
+          <p className="mt-5 text-center text-[13px] text-muted">
+            New to Instay Manage?{" "}
+            <Link to="/get-started" className="font-medium text-brand underline-offset-2 hover:underline">
+              Create an account
+            </Link>
+          </p>
 
           <p className="mt-10 text-center text-[12px] text-muted">
-            © {new Date().getFullYear()} Instaymanage. All rights reserved.
+            © {new Date().getFullYear()} Instay Manage. All rights reserved.
           </p>
         </div>
       </div>

@@ -1,21 +1,12 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { ArrowUpRight } from "lucide-react";
-import Button from "../landlord/components/Button";
+import { supportWhatsappUrl } from "../lib/supportContact";
 
 export const Footer: React.FC = () => {
   const navigation = [
     { name: "Pricing", href: "/pricing" },
-    { name: "Features", href: "/#features" },
     { name: "About Us", href: "/about" },
-    { name: "Contact Us", href: "/contact" },
-    { name: "FAQ", href: "/faq" }
-  ];
-
-  const social = [
-    { name: "Facebook", href: "https://x.com" },
-    { name: "Instagram", href: "https://linkedin.com" },
-    { name: "Tiktok", href: "https://linkedin.com" }
+    { name: "Contact Us", href: "/contact" }
   ];
 
   const legal = [
@@ -34,12 +25,14 @@ export const Footer: React.FC = () => {
         We'll walk through your properties with you and confirm it's the right fit, no commitment
         </p>
         <div className="pt-3">
-          <Button
-           variant="primary"
-            className="inline-block bg-[#0056D2] hover:bg-[#0041A3] text-white font-medium text-base px-8 py-3.5  shadow-sm hover:shadow transition-all"
+          <a
+            href={supportWhatsappUrl("Hi Instay Manage, I'd like to book a free demo.")}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-block bg-[#0056D2] hover:bg-[#0041A3] text-white font-medium text-base px-8 py-3.5 rounded-lg shadow-sm hover:shadow transition-all"
           >
             Book Free Demo
-          </Button>
+          </a>
         </div>
       </div>
 
@@ -55,18 +48,6 @@ export const Footer: React.FC = () => {
               >
                 {item.name}
               </Link>
-            </li>
-          ))}
-          {social.map((item) => (
-            <li key={item.name}>
-              <a
-                href={item.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-0.5 font-medium text-slate-700 hover:text-[#0056D2] transition-colors"
-              >
-                {item.name} <ArrowUpRight className="size-4" />
-              </a>
             </li>
           ))}
         </ul>

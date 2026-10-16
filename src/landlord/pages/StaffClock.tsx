@@ -67,11 +67,11 @@ function EntryFormModal({
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="mb-1.5 block text-xs font-medium text-muted">Hours</label>
-            <input value={hours} onChange={(e) => setHours(e.target.value)} inputMode="decimal" className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand" />
+            <input value={hours} onChange={(e) => setHours(e.target.value)} inputMode="decimal" className="w-full rounded-lg border border-transparent bg-mist px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand/30" />
           </div>
           <div>
             <label className="mb-1.5 block text-xs font-medium text-muted">Overtime hours</label>
-            <input value={overtimeHours} onChange={(e) => setOvertimeHours(e.target.value)} inputMode="decimal" className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand" />
+            <input value={overtimeHours} onChange={(e) => setOvertimeHours(e.target.value)} inputMode="decimal" className="w-full rounded-lg border border-transparent bg-mist px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand/30" />
           </div>
         </div>
       </div>
@@ -160,14 +160,14 @@ export default function StaffClock() {
               <col className="w-28" />
               <col className="w-16" />
             </colgroup>
-            <thead className="border-b border-line bg-paper text-[11px] text-muted uppercase">
+            <thead className="border-b border-line bg-paper text-[10.5px] text-muted uppercase">
               <tr>
-                <th className="px-6 py-4 font-medium tracking-wide">Employee</th>
-                <th className="px-6 py-4 font-medium tracking-wide">Date</th>
-                <th className="px-6 py-4 font-medium tracking-wide">Hours</th>
-                <th className="px-6 py-4 font-medium tracking-wide">Overtime</th>
-                <th className="px-6 py-4 font-medium tracking-wide">Source</th>
-                <th className="px-6 py-4 font-medium"></th>
+                <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Employee</th>
+                <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Date</th>
+                <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Hours</th>
+                <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Overtime</th>
+                <th className="px-4 pt-[11px] pb-2.5 font-bold tracking-[0.11em] whitespace-nowrap">Source</th>
+                <th className="px-4 pt-[11px] pb-2.5 font-bold"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
@@ -180,7 +180,7 @@ export default function StaffClock() {
                   <td className="px-6 py-4 text-muted">{c.overtimeHours > 0 ? c.overtimeHours : "—"}</td>
                   <td className="px-6 py-4">
                     <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                      className={`rounded-md px-2 py-0.5 text-xs font-semibold ${
                         c.source === "manual" ? "bg-sky-50 text-sky-600" : "bg-violet-50 text-violet-600"
                       }`}
                     >

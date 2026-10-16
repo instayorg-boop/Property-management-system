@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { hasMovedIn } from "../../lib/tenants";
+import SearchInput from "../components/SearchInput";
+import { useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   CaretDown,
@@ -13,9 +15,9 @@ import {
   MagnifyingGlass,
   SquaresFour,
   Rows,
+  FunnelSimple,
 } from "@phosphor-icons/react";
 import PageHeader from "../components/PageHeader";
-import SlideOver from "../components/SlideOver";
 import Modal from "../components/Modal";
 import LogPaymentModal from "../components/LogPaymentModal";
 import TenantSearchDrawer from "../components/TenantSearchDrawer";
@@ -25,7 +27,6 @@ import SectionLabel from "../components/SectionLabel";
 import {
   useTenants,
   formatCurrency,
-  type PaymentStatus,
   type Tenant,
 } from "../TenantsContext";
 import {
@@ -41,6 +42,8 @@ import { Skeleton } from "../components/Skeleton";
 import Button from "../components/Button";
 import FieldLabel, { FieldError } from "../components/FieldLabel";
 import { calcTotalOwed } from "../invoiceUtils";
+import { TableCard, DataTable, DataTableHead, Th, DataTableBody, Td, StatusPill as StatusBadge } from "../components/DataTable";
+import { dicebearAvatarUrl } from "../avatar";
 
 // ---------- Status vocabulary ----------
 // Every status is expressed three ways — color, a written label, and an icon — so the board is
@@ -52,53 +55,58 @@ const statusMeta: Record<
   {
     label: string;
     chip: string;
+    chipBorder: string;
     swatch: string;
     card: string;
+    /** Tinted background for the detail modal's status/terms banner — same hue family as `chip`,
+     * just low-saturation enough to sit behind text instead of as a small pill. */
+    panel: string;
     Icon: typeof UsersThree;
   }
 > = {
   occupied: {
     label: "Occupied",
     chip: "bg-teal-50 text-teal-700",
+    chipBorder: "border-gray-400",
     swatch: "bg-teal-600",
     card: "border-line bg-paper hover:border-teal-300",
+    panel: "border-gray-400 bg-gray-50",
     Icon: UsersThree,
   },
   vacant: {
     label: "Vacant",
     chip: "bg-slate-100 text-slate-600",
+    chipBorder: "border-line",
     swatch: "border border-line bg-paper",
     card: "border-dashed border-line bg-mist/50 hover:border-brand hover:bg-brand-soft/30",
+    panel: "border-line bg-mist/60",
     Icon: DoorOpen,
   },
   reserved: {
     label: "Reserved",
     chip: "bg-sky-50 text-sky-700",
+    chipBorder: "border-sky-200",
     swatch: "bg-sky-500",
     card: "border-sky-200 bg-sky-50/40 hover:border-sky-300",
+    panel: "border-sky-200 bg-sky-50",
     Icon: CalendarCheck,
   },
   "not-ready": {
     label: "Not ready",
     chip: "bg-amber-50 text-amber-700",
+    chipBorder: "border-amber-200",
     swatch: "bg-amber-500",
     card: "border-amber-200 bg-amber-50/40 hover:border-amber-300",
+    panel: "border-amber-200 bg-amber-50",
     Icon: Wrench,
   },
-};
-
-const dotColor: Record<PaymentStatus, string> = {
-  paid: "bg-emerald-500",
-  overdue: "bg-red-500",
-  unpaid: "bg-slate-400",
-  partial: "bg-amber-500",
 };
 
 /** Rent trouble in any bed — surfaced on the room itself so the board doubles as an arrears map. */
 function rentAlert(room: RoomView): Tenant | null {
   return (
     room.beds.find(
-      (b) => b && (b.status === "overdue" || b.status === "unpaid"),
+      (b) => b && hasMovedIn(b) && (b.status === "overdue" || b.status === "unpaid"),
     ) ?? null
   );
 }
@@ -120,7 +128,7 @@ function StatusPill({ status }: { status: RoomStatus }) {
   const meta = statusMeta[status];
   return (
     <span
-      className={`flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${meta.chip}`}
+      className={`flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${meta.chip} ${meta.chipBorder}`}
     >
       <meta.Icon size={11} weight="duotone" />
       {meta.label}
@@ -149,7 +157,7 @@ function BedMeter({ room }: { room: RoomView }) {
 
 // ---------- Grid card ----------
 // Just the essentials — room number, status, who's in it (if anyone) — no rent, no bed-meter bars,
-// no alert badges. Everything else about a room is one click away in the detail SlideOver, so the
+// no alert badges. Everything else about a room is one click away in the detail modal, so the
 // grid's only job is letting you scan a lot of rooms at once and recognize what you're looking at.
 
 function RoomCard({
@@ -165,7 +173,7 @@ function RoomCard({
     <button
       type="button"
       onClick={onSelect}
-      className={`flex min-h-24 flex-col rounded-lg border p-3 text-left transition-colors ${statusMeta[room.status].card}`}
+      className={`flex min-h-24 flex-col rounded-lg border p-3 text-left transition-all duration-150 active:scale-[0.97] ${statusMeta[room.status].card}`}
     >
       <div className="flex items-start justify-between gap-1.5">
         <div>
@@ -208,46 +216,38 @@ function RoomCard({
 
 // ---------- List row ----------
 
-function RoomRow({ room, onSelect }: { room: RoomView; onSelect: () => void }) {
-  const occupants = room.beds.filter(Boolean) as Tenant[];
+function RoomRow({
+  room,
+  onSelect,
+  showType = false,
+}: {
+  room: RoomView;
+  onSelect: () => void;
+  /** The flat (ungrouped) list view has no group header to carry the room type, so it needs its
+   * own column instead — the per-group table already shows it via the group header above. */
+  showType?: boolean;
+}) {
   const alert = rentAlert(room);
 
   return (
     <tr
       onClick={onSelect}
-      className="group cursor-pointer transition-colors duration-200 ease-in-out hover:bg-mist"
+      className="group cursor-pointer transition-colors hover:bg-mist"
     >
-      <td className="px-6 py-4">
+      <Td>
         <p className="font-medium text-ink">{roomLabel(room.number)}</p>
-        <p className="text-xs text-muted">{room.typeConfig.name}</p>
-      </td>
-      <td className="px-6 py-4">
+        {!showType && <p className="text-xs text-muted">{room.typeConfig.name}</p>}
+      </Td>
+      {showType && (
+        <Td className="text-sm text-muted">{room.typeConfig.name}</Td>
+      )}
+      <Td>
         <BedMeter room={room} />
-      </td>
-      <td className="px-6 py-4">
-        {occupants.length === 0 ? (
-          <span className="text-sm text-muted">—</span>
-        ) : (
-          <p className="text-sm text-ink">
-            {occupants.map((o, i) => (
-              <span key={o.id}>
-                {i > 0 && ", "}
-                <Link
-                  to={`/tenants/${o.portalToken}`}
-                  onClick={(e) => e.stopPropagation()}
-                  className="hover:underline"
-                >
-                  {o.name}
-                </Link>
-              </span>
-            ))}
-          </p>
-        )}
-      </td>
-      <td className="font-display px-6 py-4 text-sm text-muted">
+      </Td>
+      <Td className="text-sm text-muted">
         {formatCurrency(room.typeConfig.rent)}/mo
-      </td>
-      <td className="px-6 py-4">
+      </Td>
+      <Td>
         <div className="flex items-center gap-1.5">
           <StatusPill status={room.status} />
           {alert && (
@@ -256,12 +256,12 @@ function RoomRow({ room, onSelect }: { room: RoomView; onSelect: () => void }) {
             </span>
           )}
         </div>
-      </td>
-      <td className="px-6 py-4">
-        <span className="font-semibold text-ink underline-offset-2 group-hover:underline">
+      </Td>
+      <Td>
+        <span className="font-medium text-ink underline-offset-2 group-hover:underline">
           {room.status === "vacant" ? "Assign" : "Details"}
         </span>
-      </td>
+      </Td>
     </tr>
   );
 }
@@ -273,7 +273,6 @@ function RoomGroup({
   rooms,
   open,
   onToggle,
-  view,
   onSelectRoom,
   onEdit,
   onDelete,
@@ -282,29 +281,25 @@ function RoomGroup({
   rooms: RoomView[];
   open: boolean;
   onToggle: () => void;
-  view: "grid" | "list";
   onSelectRoom: (room: RoomView) => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
   const occupied = rooms.filter((r) => r.status === "occupied").length;
-  const vacant = rooms.filter((r) => r.status === "vacant").length;
 
   return (
     <div>
       <div
-        className={`flex w-full items-center justify-between gap-3 px-6 py-4 transition-colors ${open ? "bg-mist/60" : ""}`}
+        className={`flex w-full items-center justify-between gap-3 px-4 py-3 transition-colors sm:px-6 ${open ? "bg-mist/50" : ""}`}
       >
         <button
           type="button"
           onClick={onToggle}
-          className="flex flex-1 items-center gap-3 text-left"
+          className="flex flex-1 items-center gap-2.5 text-left"
         >
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand">
-            <Bed size={17} weight="duotone" />
-          </span>
+          <Bed size={15} weight="duotone" className="shrink-0 text-muted" />
           <div className="min-w-0">
-            <span className="block truncate font-display text-sm font-semibold text-ink">
+            <span className="block truncate text-sm font-semibold text-ink">
               {type.name}
             </span>
             <span className="text-xs text-muted">
@@ -313,34 +308,34 @@ function RoomGroup({
             </span>
           </div>
         </button>
-        <span className="hidden shrink-0 text-xs text-muted sm:inline">
-          {occupied} occupied · {vacant} vacant
+        <span className="shrink-0 rounded-full border border-line bg-paper px-2 py-0.5 text-[11px] font-medium text-muted">
+          {occupied}/{rooms.length} filled
         </span>
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-0.5">
           <button
             type="button"
             onClick={onEdit}
             aria-label={`Edit ${type.name}`}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-ink"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-mist hover:text-ink"
           >
-            <PencilSimple size={16} weight="duotone" />
+            <PencilSimple size={15} weight="duotone" />
           </button>
           <button
             type="button"
             onClick={onDelete}
             aria-label={`Delete ${type.name}`}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-red-50 hover:text-red-600"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-red-50 hover:text-red-600"
           >
-            <Trash size={16} weight="duotone" />
+            <Trash size={15} weight="duotone" />
           </button>
           <button
             type="button"
             onClick={onToggle}
             aria-label={open ? "Collapse" : "Expand"}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-mist hover:text-ink"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-mist hover:text-ink"
           >
             <CaretDown
-              size={17}
+              size={15}
               weight="duotone"
               className={`transition-transform ${open ? "" : "-rotate-90"}`}
             />
@@ -357,53 +352,15 @@ function RoomGroup({
             transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
             className="overflow-hidden"
           >
-            {view === "grid" ? (
-              <div className="grid grid-cols-2 gap-2.5 border-t border-line px-6 py-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-                {rooms.map((room) => (
-                  <RoomCard
-                    key={room.number}
-                    room={room}
-                    onSelect={() => onSelectRoom(room)}
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="overflow-x-auto border-t border-line">
-                <table className="w-full text-left text-sm">
-                  <thead className="border-b border-line bg-paper text-[11px] text-muted uppercase">
-                    <tr>
-                      <th className="px-6 py-4 font-medium tracking-wide">
-                        Room
-                      </th>
-                      <th className="px-6 py-4 font-medium tracking-wide">
-                        Beds
-                      </th>
-                      <th className="px-6 py-4 font-medium tracking-wide">
-                        Occupant
-                      </th>
-                      <th className="px-6 py-4 font-medium tracking-wide">
-                        Rent
-                      </th>
-                      <th className="px-6 py-4 font-medium tracking-wide">
-                        Status
-                      </th>
-                      <th className="px-6 py-4 font-medium tracking-wide">
-                        Action
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-line">
-                    {rooms.map((room) => (
-                      <RoomRow
-                        key={room.number}
-                        room={room}
-                        onSelect={() => onSelectRoom(room)}
-                      />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            <div className="grid grid-cols-2 gap-2.5 border-t border-line px-6 py-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+              {rooms.map((room) => (
+                <RoomCard
+                  key={room.number}
+                  room={room}
+                  onSelect={() => onSelectRoom(room)}
+                />
+              ))}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -422,49 +379,54 @@ function OccupantBlock({
   onViewRecord: () => void;
   onLogPayment: () => void;
 }) {
-  const owing = occupant.status === "overdue" || occupant.status === "unpaid";
+  const owing = hasMovedIn(occupant) && (occupant.status === "overdue" || occupant.status === "unpaid");
+  const statusTone = owing ? "danger" : occupant.status === "partial" ? "warning" : "success";
+  const statusLabel = owing
+    ? `${formatCurrency(calcTotalOwed(occupant))} owed`
+    : occupant.status === "partial"
+      ? "Partly paid"
+      : "Paid up";
+
   return (
-    <div>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <button
-            type="button"
-            onClick={onViewRecord}
-            className="text-sm font-medium text-ink hover:underline"
-          >
-            {occupant.name}
-          </button>
-          <p className="text-xs text-muted">{occupant.phones[0] ?? "—"}</p>
+    <div className="flex gap-3">
+      <img
+        src={occupant.photoUrl || dicebearAvatarUrl(occupant.id || occupant.name)}
+        alt=""
+        className="h-12 w-12 shrink-0 rounded-md bg-mist object-cover"
+      />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <button
+              type="button"
+              onClick={onViewRecord}
+              className="truncate text-sm font-semibold text-ink hover:underline"
+            >
+              {occupant.name}
+            </button>
+            <p className="text-xs text-muted">{occupant.phones[0] ?? "—"}</p>
+          </div>
+          <StatusBadge tone={statusTone}>{statusLabel}</StatusBadge>
         </div>
-        <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted">
-          <span
-            className={`h-1.5 w-1.5 rounded-full ${dotColor[occupant.status]}`}
-          />
-          {owing
-            ? `${formatCurrency(calcTotalOwed(occupant))} owed`
-            : occupant.status === "partial"
-              ? "Partly paid"
-              : "Paid up"}
-        </span>
-      </div>
-      <p className="mt-1 text-xs text-muted">Moved in {occupant.moveInDate}</p>
-      <div className="mt-3 flex gap-2">
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={onViewRecord}
-          className="flex-1"
-        >
-          View full record
-        </Button>
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={onLogPayment}
-          className="flex-1 hover:scale-[1.01]"
-        >
-          Log payment
-        </Button>
+        <p className="mt-1 text-xs text-muted">Moved in {occupant.moveInDate}</p>
+        <div className="mt-3 flex gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={onViewRecord}
+            className="flex-1"
+          >
+            View full record
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={onLogPayment}
+            className="flex-1 hover:scale-[1.01]"
+          >
+            Log payment
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -492,7 +454,7 @@ function RoomDetailDrawer({
   const emptyBeds = room.beds.filter((b) => !b).length;
 
   return (
-    <SlideOver
+    <Modal
       onClose={onClose}
       title={roomLabel(room.number)}
       description={`${room.typeConfig.name} · ${room.beds.length} bed${room.beds.length === 1 ? "" : "s"}`}
@@ -543,25 +505,27 @@ function RoomDetailDrawer({
         ) : undefined
       }
     >
-      {/* Status first — the one thing you opened this room to check */}
-      <div className="flex items-center justify-between gap-3">
-        <StatusPill status={room.status} />
-        {room.beds.length > 1 && <BedMeter room={room} />}
-      </div>
-
-      {/* Terms — plain rows, no boxes */}
-      <div className="mt-4 space-y-2 text-sm">
+      {/* Status first — the one thing you opened this room to check — tinted to match the room's
+          status so it reads as a banner, not just another row of text. */}
+      <div className={`rounded-lg border p-4 ${statusMeta[room.status].panel}`}>
         <div className="flex items-center justify-between gap-3">
-          <span className="text-muted">Rent</span>
-          <span className="font-medium text-ink">
-            {formatCurrency(room.typeConfig.rent)}/mo
-          </span>
+          <StatusPill status={room.status} />
+          {room.beds.length > 1 && <BedMeter room={room} />}
         </div>
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-muted">Deposit</span>
-          <span className="font-medium text-ink">
-            {formatCurrency(room.typeConfig.depositAmount)}
-          </span>
+
+        <div className="mt-4 space-y-2 text-sm">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-muted">Rent</span>
+            <span className="font-medium text-ink">
+              {formatCurrency(room.typeConfig.rent)}/mo
+            </span>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-muted">Deposit</span>
+            <span className="font-medium text-ink">
+              {formatCurrency(room.typeConfig.depositAmount)}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -616,7 +580,7 @@ function RoomDetailDrawer({
           </div>
         </div>
       )}
-    </SlideOver>
+    </Modal>
   );
 }
 
@@ -726,8 +690,8 @@ function EditRoomTypeModal({
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className={`w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-brand ${
-              submitAttempted && !name.trim() ? "border-red-400" : "border-line"
+            className={`w-full rounded-lg border bg-mist px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand/30 ${
+              submitAttempted && !name.trim() ? "border-red-400" : "border-transparent"
             }`}
           />
           {submitAttempted && !name.trim() && (
@@ -741,8 +705,8 @@ function EditRoomTypeModal({
             min={0}
             value={rent}
             onChange={(e) => setRent(Number(e.target.value) || 0)}
-            className={`w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-brand ${
-              submitAttempted && rent <= 0 ? "border-red-400" : "border-line"
+            className={`w-full rounded-lg border bg-mist px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand/30 ${
+              submitAttempted && rent <= 0 ? "border-red-400" : "border-transparent"
             }`}
           />
           {submitAttempted && rent <= 0 && (
@@ -756,7 +720,7 @@ function EditRoomTypeModal({
             min={0}
             value={depositAmount}
             onChange={(e) => setDepositAmount(Number(e.target.value) || 0)}
-            className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+            className="w-full rounded-lg border border-transparent bg-mist px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand/30"
           />
         </div>
         <div className="sm:col-span-2">
@@ -869,6 +833,84 @@ const statusFilters: ("all" | RoomStatus)[] = [
   "not-ready",
   "reserved",
 ];
+
+/** Single "Filter" button standing in for the row of status pills — opens the same options in a
+ * dropdown, same pattern as Maintenance's FilterMenu. */
+function RoomStatusFilterMenu({
+  value,
+  onChange,
+  counts,
+}: {
+  value: "all" | RoomStatus;
+  onChange: (v: "all" | RoomStatus) => void;
+  counts: Record<"all" | RoomStatus, number>;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [open]);
+
+  const activeLabel = value === "all" ? "All" : statusMeta[value].label;
+
+  return (
+    <div ref={containerRef} className="relative inline-block text-left">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2 rounded-lg bg-brand px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-brand/90"
+      >
+        <FunnelSimple size={14} weight="bold" />
+        Filter
+        {value !== "all" && <span className="text-white/80">· {activeLabel}</span>}
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.97, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.97, y: -4 }}
+            transition={{ duration: 0.12 }}
+            className="absolute right-0 z-30 mt-1 w-44 overflow-hidden rounded-lg border border-line bg-white py-1 shadow-lg"
+          >
+            {statusFilters.map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => {
+                  onChange(f);
+                  setOpen(false);
+                }}
+                className={`flex w-full items-center justify-between px-3 py-2 text-left text-xs font-medium transition-colors hover:bg-mist ${
+                  value === f ? "text-brand" : "text-ink"
+                }`}
+              >
+                <span className="flex items-center gap-1.5">
+                  {f !== "all" && <span className={`h-2.5 w-2.5 rounded-sm ${statusMeta[f].swatch}`} />}
+                  {f === "all" ? "All" : statusMeta[f].label}
+                </span>
+                <span className="text-muted">{counts[f]}</span>
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
 
 export default function Rooms() {
   const navigate = useNavigate();
@@ -987,6 +1029,17 @@ export default function Rooms() {
     [roomTypeConfigs, filtered],
   );
 
+  // List view drops the room-type grouping in favor of one flat, sortable-by-eye table with its
+  // own "Room type" column — sorted by type then room number so it still reads in grouped order.
+  const flatRooms = useMemo(
+    () =>
+      [...filtered].sort((a, b) => {
+        const typeCompare = a.typeConfig.name.localeCompare(b.typeConfig.name);
+        return typeCompare !== 0 ? typeCompare : roomLabel(a.number).localeCompare(roomLabel(b.number));
+      }),
+    [filtered],
+  );
+
   const toggleGroup = (id: string) => {
     setCollapsed((prev) => {
       const next = new Set(prev);
@@ -1001,6 +1054,36 @@ export default function Rooms() {
       <PageHeader
         title="Rooms"
         description="Track occupancy, assign tenants, and manage room types."
+        actions={
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-lg border border-line p-0.5">
+              {[
+                { id: "grid" as const, Icon: SquaresFour, label: "Grid view" },
+                { id: "list" as const, Icon: Rows, label: "List view" },
+              ].map(({ id, Icon, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setView(id)}
+                  aria-label={label}
+                  aria-pressed={view === id}
+                  className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
+                    view === id ? "bg-ink text-paper" : "text-muted hover:bg-mist"
+                  }`}
+                >
+                  <Icon size={16} weight="duotone" />
+                </button>
+              ))}
+            </div>
+            <Button
+              variant="primary"
+              onClick={() => setAddingType(true)}
+              className="hover:scale-[1.02]"
+            >
+              + Add room type
+            </Button>
+          </div>
+        }
       />
 
       <div className="space-y-5 px-4 sm:px-8 pb-10">
@@ -1058,100 +1141,14 @@ export default function Rooms() {
           )}
         </div>
 
-        {/* Top actions — primary action top-right, same placement as "+ Add tenant" on the
-            Tenants page, instead of buried inside the toolbar below. */}
-        <div className="flex items-center justify-end gap-2">
-          <div className="flex rounded-lg border border-line p-0.5">
-            {[
-              { id: "grid" as const, Icon: SquaresFour, label: "Grid view" },
-              { id: "list" as const, Icon: Rows, label: "List view" },
-            ].map(({ id, Icon, label }) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setView(id)}
-                aria-label={label}
-                aria-pressed={view === id}
-                className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
-                  view === id ? "bg-ink text-paper" : "text-muted hover:bg-mist"
-                }`}
-              >
-                <Icon size={16} weight="duotone" />
-              </button>
-            ))}
-          </div>
-          <Button
-            variant="primary"
-            onClick={() => setAddingType(true)}
-            className="hover:scale-[1.02]"
-          >
-            + Add room type
-          </Button>
+        {/* Search + filter row, same pill-search-plus-filter-button pattern as Maintenance. */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <SearchInput value={query} onChange={setQuery} placeholder="Search room, type or tenant" className="w-full sm:w-64" />
+
+          <RoomStatusFilterMenu value={statusFilter} onChange={setStatusFilter} counts={statusCounts} />
         </div>
 
-        {/* Search + status filters share one bordered card with the room list below it, same
-            toolbar-attached-to-content layout as the Tenants and Rent pages. */}
-        <div className="rounded-xl border border-line bg-paper">
-          <div className="flex flex-col gap-3 border-b border-line p-6 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-2.5 rounded-md bg-mist px-3.5 py-2.5 transition-colors focus-within:bg-paper focus-within:ring-2 focus-within:ring-brand/25 sm:w-64">
-              <MagnifyingGlass size={16} weight="bold" className="text-muted" />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search room, type or tenant"
-                className="w-full bg-transparent text-sm outline-none placeholder:text-muted"
-              />
-            </div>
-
-            {/* Segmented control, same sliding-pill treatment as Rent's status tabs — the colour
-                swatch + count are kept, since together they double as the board's legend. */}
-            <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-              <div className="inline-flex gap-0.5 rounded-md bg-mist p-1">
-                {statusFilters.map((f) => {
-                  const active = statusFilter === f;
-                  return (
-                    <button
-                      key={f}
-                      type="button"
-                      onClick={() => setStatusFilter(f)}
-                      className="relative flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
-                    >
-                      {active && (
-                        <motion.span
-                          layoutId="rooms-filter-pill"
-                          transition={{
-                            type: "spring",
-                            stiffness: 480,
-                            damping: 38,
-                          }}
-                          className="absolute inset-0 rounded-md bg-paper shadow-sm"
-                        />
-                      )}
-                      <span
-                        className={`relative flex items-center gap-1.5 ${active ? "text-ink" : "text-muted"}`}
-                      >
-                        {f !== "all" && (
-                          <span
-                            className={`h-2.5 w-2.5 rounded-sm ${statusMeta[f].swatch}`}
-                          />
-                        )}
-                        {f === "all" ? "All" : statusMeta[f].label}
-                        <span
-                          className={`rounded-full px-1.5 py-0.5 text-[11px] font-semibold ${
-                            f === "all"
-                              ? "bg-slate-100 text-slate-600"
-                              : statusMeta[f].chip
-                          }`}
-                        >
-                          {statusCounts[f]}
-                        </span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
+        <TableCard>
 
           {/* Room type accordions */}
           {!isReady ? (
@@ -1192,7 +1189,7 @@ export default function Rooms() {
                 + Add room type
               </Button>
             </div>
-          ) : groups.length === 0 ? (
+          ) : flatRooms.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
               <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
                 <MagnifyingGlass size={22} weight="duotone" />
@@ -1214,6 +1211,29 @@ export default function Rooms() {
                 Clear filters
               </Button>
             </div>
+          ) : view === "list" ? (
+            // Flat, ungrouped table — a dedicated "Room type" column stands in for the grid
+            // view's group headers instead of nesting a table per room type.
+            <DataTable>
+              <DataTableHead>
+                <Th>Room</Th>
+                <Th>Room type</Th>
+                <Th>Beds</Th>
+                <Th>Rent</Th>
+                <Th>Status</Th>
+                <Th>Action</Th>
+              </DataTableHead>
+              <DataTableBody>
+                {flatRooms.map((room) => (
+                  <RoomRow
+                    key={room.number}
+                    room={room}
+                    showType
+                    onSelect={() => setSelectedNumber(room.number)}
+                  />
+                ))}
+              </DataTableBody>
+            </DataTable>
           ) : (
             <div className="divide-y divide-line">
               {groups.map(({ type, rooms: groupRooms }) => (
@@ -1224,7 +1244,6 @@ export default function Rooms() {
                   // A filtered board never hides its results behind a collapsed header.
                   open={isFiltering || !collapsed.has(type.id)}
                   onToggle={() => toggleGroup(type.id)}
-                  view={view}
                   onSelectRoom={(r) => setSelectedNumber(r.number)}
                   onEdit={() => setEditingType(type)}
                   onDelete={() => setDeletingType(type)}
@@ -1232,7 +1251,7 @@ export default function Rooms() {
               ))}
             </div>
           )}
-        </div>
+        </TableCard>
       </div>
 
       <AnimatePresence>
@@ -1328,6 +1347,7 @@ export default function Rooms() {
             outstanding={calcTotalOwed(payingTenant) || payingTenant.rentAmount}
             rentAmount={payingTenant.rentAmount}
             ledger={payingTenant.ledger}
+            moveInDate={payingTenant.moveInDate}
             onClose={() => setPayingTenant(null)}
             onConfirm={(payments) => {
               logPayments(

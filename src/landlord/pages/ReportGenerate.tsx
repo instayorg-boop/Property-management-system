@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { downloadElementAsPdf } from "../../lib/reportPdf";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { ArrowLeft, WarningCircle } from "@phosphor-icons/react";
 import { getReportType } from "../reportTypes";
@@ -6,7 +7,7 @@ import { useSettings } from "../SettingsContext";
 import { supabase } from "../../lib/supabaseClient";
 import { edgeFunctionErrorMessage } from "../../lib/functionsError";
 import ReportPreview, { type GenerateReportResult } from "../components/ReportPreview";
-import { Button } from "../../components/ui/button";
+import Button from "../components/Button";
 import { Label } from "../../components/ui/label";
 import { Input } from "../../components/ui/input";
 import { RadioGroup, RadioGroupItem } from "../../components/ui/radio-group";
@@ -93,6 +94,7 @@ export default function ReportGenerate() {
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<GenerateReportResult | null>(() => (slug ? readCachedResult(slug) : null));
+  const previewRef = useRef<HTMLDivElement>(null);
 
   if (!report) {
     return (
@@ -156,6 +158,11 @@ export default function ReportGenerate() {
     if (!result) return;
     setDownloading(true);
     try {
+      // PDFs are made from the preview on screen, so the file looks exactly like what you see.
+      if (result.fileName.endsWith(".pdf") && previewRef.current) {
+        await downloadElementAsPdf(previewRef.current, result.fileName);
+        return;
+      }
       // Re-sign rather than reuse result.url directly — that URL is only good for 5 minutes, and
       // this preview can now sit around across reloads far longer than that. `download` forces a
       // real save (Content-Disposition: attachment) instead of the browser opening another
@@ -194,10 +201,10 @@ export default function ReportGenerate() {
           </button>
 
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={goBackToForm}>
+            <Button variant="secondary" onClick={goBackToForm}>
               Generate another
             </Button>
-            <Button onClick={() => void handleDownload()} disabled={downloading}>
+            <Button variant="primary" onClick={() => void handleDownload()} disabled={downloading}>
               {downloading ? "Preparing…" : `Download ${result.fileName.endsWith(".pdf") ? "PDF" : "CSV"}`}
             </Button>
           </div>
@@ -210,7 +217,7 @@ export default function ReportGenerate() {
           </div>
         )}
 
-        <div className="mt-6">
+        <div className="mt-6" ref={previewRef}>
           <ReportPreview result={result} />
         </div>
       </div>
@@ -229,7 +236,7 @@ export default function ReportGenerate() {
       </button>
 
       <div className="mt-8 flex flex-col items-center text-center">
-        <span className={`flex h-14 w-14 items-center justify-center rounded-xl ${report.tint}`}>
+        <span className={`flex h-14 w-14 items-center justify-center rounded-md ${report.tint}`}>
           <Icon size={26} weight="duotone" />
         </span>
         <h1 className="font-display mt-4 text-xl font-bold tracking-tight text-ink">Generate: {report.title}</h1>
@@ -341,7 +348,7 @@ export default function ReportGenerate() {
         </div>
       )}
 
-      <Button className="mt-6 w-full" size="lg" disabled={!canGenerate || generating} onClick={() => void handleGenerate()}>
+      <Button variant="primary" className="mt-6 w-full py-2.5" disabled={!canGenerate || generating} onClick={() => void handleGenerate()}>
         {generating ? "Generating…" : "Generate report"}
       </Button>
     </div>

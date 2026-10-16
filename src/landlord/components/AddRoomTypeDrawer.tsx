@@ -71,8 +71,8 @@ export default function AddRoomTypeDrawer({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Studio, Ensuite"
-            className={`w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-brand ${
-              submitAttempted && !name.trim() ? "border-red-400" : "border-line"
+            className={`w-full rounded-lg border bg-mist px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand/30 ${
+              submitAttempted && !name.trim() ? "border-red-400" : "border-transparent"
             }`}
           />
           {submitAttempted && !name.trim() && (
@@ -88,7 +88,7 @@ export default function AddRoomTypeDrawer({
             onChange={(e) =>
               setCapacity(Math.max(1, Number(e.target.value) || 1))
             }
-            className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+            className="w-full rounded-lg border border-transparent bg-mist px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand/30"
           />
         </div>
         <div>
@@ -100,7 +100,7 @@ export default function AddRoomTypeDrawer({
             onChange={(e) =>
               setRoomCount(Math.max(1, Number(e.target.value) || 1))
             }
-            className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+            className="w-full rounded-lg border border-transparent bg-mist px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand/30"
           />
         </div>
         <div>
@@ -110,8 +110,8 @@ export default function AddRoomTypeDrawer({
             min={0}
             value={rent}
             onChange={(e) => setRent(Number(e.target.value) || 0)}
-            className={`w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-brand ${
-              submitAttempted && rent <= 0 ? "border-red-400" : "border-line"
+            className={`w-full rounded-lg border bg-mist px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand/30 ${
+              submitAttempted && rent <= 0 ? "border-red-400" : "border-transparent"
             }`}
           />
           {submitAttempted && rent <= 0 && (
@@ -125,7 +125,7 @@ export default function AddRoomTypeDrawer({
             min={0}
             value={depositAmount}
             onChange={(e) => setDepositAmount(Number(e.target.value) || 0)}
-            className="w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+            className="w-full rounded-lg border border-transparent bg-mist px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand/30"
           />
         </div>
         <div className="sm:col-span-2">

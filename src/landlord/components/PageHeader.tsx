@@ -19,13 +19,21 @@ export default function PageHeader({
     <div
       className={`px-4 pt-5 pb-6 sm:px-8 ${align === "center" ? "text-center" : ""}`}
     >
-      <div className={`flex items-start justify-between gap-3 ${align === "center" ? "justify-center" : ""}`}>
-        <div>
-          <h1 className="font-display text-2xl font-bold tracking-tight text-brand">
+      {/* Column on mobile — title/description first, actions below at their natural width —
+          becomes the old side-by-side row from `sm` up. Squeezing a button into the same row as
+          a wrapping multi-line description at phone widths is what made every page header look
+          cramped; this is the one place that fixes all of them at once. */}
+      <div
+        className={`flex flex-col gap-3 ${
+          align === "center" ? "items-center" : "sm:flex-row sm:items-start sm:justify-between"
+        }`}
+      >
+        <div className="min-w-0">
+          <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-[-0.025em] text-brand sm:text-[26px]">
             {title}
           </h1>
           {description && (
-            <p className="mt-1.5 text-sm text-muted">{description}</p>
+            <p className="mt-1 text-[13px] leading-5 text-muted">{description}</p>
           )}
         </div>
         {actions && <div className="shrink-0">{actions}</div>}

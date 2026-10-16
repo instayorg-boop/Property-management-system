@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTenants, type RoomType, type DepositRefundability, type Tenant } from "./TenantsContext";
 import { useSettings } from "./SettingsContext";
+import { useToast } from "./ToastContext";
 import {
   listRoomTypeConfigs,
   listRooms,
@@ -70,6 +71,7 @@ const RoomsContext = createContext<RoomsContextValue | null>(null);
 
 export function RoomsProvider({ children }: { children: ReactNode }) {
   const { propertyId } = useSettings();
+  const { showToast } = useToast();
   const [rooms, setRooms] = useState<RoomRecord[]>([]);
   const [roomTypeConfigs, setRoomTypeConfigs] = useState<RoomTypeConfig[]>([]);
   const [isReady, setIsReady] = useState(false);
@@ -121,7 +123,12 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
       });
       return;
     }
-    void markRoomReady(propertyId, number);
+    void markRoomReady(propertyId, number)
+      .then(() => showToast(`Room ${number} marked ready`, "success"))
+      .catch((e) => {
+        console.error("Failed to mark room ready", e);
+        showToast("Couldn't update that room, please try again.", "error");
+      });
   };
 
   // Not offline-queued (unlike the other room mutators here) — reserving a room is tied to logging
@@ -130,7 +137,13 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
   // and just requires being online.
   const reserveRoom = (number: string, tenantId: string) => {
     setRooms((prev) => prev.map((r) => (r.number === number ? { ...r, override: "reserved", reservedForTenantId: tenantId } : r)));
-    if (propertyId) void reserveRoomForTenant(propertyId, number, tenantId).catch((e) => console.error("Failed to reserve room", e));
+    if (propertyId)
+      void reserveRoomForTenant(propertyId, number, tenantId)
+        .then(() => showToast(`Room ${number} reserved`, "success"))
+        .catch((e) => {
+          console.error("Failed to reserve room", e);
+          showToast("Couldn't reserve that room, please try again.", "error");
+        });
   };
 
   const markNotReady = (number: string) => {
@@ -147,12 +160,23 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
       });
       return;
     }
-    void markRoomNotReady(propertyId, number);
+    void markRoomNotReady(propertyId, number)
+      .then(() => showToast(`Room ${number} marked not ready`, "success"))
+      .catch((e) => {
+        console.error("Failed to mark room not ready", e);
+        showToast("Couldn't update that room, please try again.", "error");
+      });
   };
 
   const deleteRoom = (number: string) => {
     setRooms((prev) => prev.filter((r) => r.number !== number));
-    if (propertyId) void deleteRoomRow(propertyId, number).catch((e) => console.error("Failed to delete room", e));
+    if (propertyId)
+      void deleteRoomRow(propertyId, number)
+        .then(() => showToast(`Room ${number} deleted`, "success"))
+        .catch((e) => {
+          console.error("Failed to delete room", e);
+          showToast("Couldn't delete that room, please try again.", "error");
+        });
   };
 
   const addRoomType = async (config: Omit<RoomTypeConfig, "id">, roomCount: number) => {
@@ -161,6 +185,7 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
     const { roomType, rooms: newRooms } = await addRoomTypeWithRooms(propertyId, config, roomCount, startingRoomNumber);
     setRoomTypeConfigs((prev) => [...prev, roomType]);
     setRooms((prev) => [...prev, ...newRooms]);
+    showToast(`${config.name} added`, "success");
   };
 
   const updateRoomType = (
@@ -168,7 +193,12 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
     patch: Partial<Pick<RoomTypeConfig, "name" | "rent" | "depositAmount" | "depositRefundability">>
   ) => {
     setRoomTypeConfigs((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
-    void updateRoomTypeRow(id, patch).catch((e) => console.error("Failed to update room type", e));
+    void updateRoomTypeRow(id, patch)
+      .then(() => showToast("Room type updated", "success"))
+      .catch((e) => {
+        console.error("Failed to update room type", e);
+        showToast("Couldn't save that change, please try again.", "error");
+      });
   };
 
   // Not optimistic like the other mutators here — a delete that fails (e.g. rooms still reference
@@ -177,6 +207,7 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
   const deleteRoomType = async (id: string) => {
     await deleteRoomTypeRow(id);
     setRoomTypeConfigs((prev) => prev.filter((t) => t.id !== id));
+    showToast("Room type deleted", "success");
   };
 
   return (

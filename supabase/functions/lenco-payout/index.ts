@@ -298,6 +298,12 @@ Deno.serve(async (req) => {
     );
     const lencoJson = await lencoResponse.json();
 
+    if (!lencoResponse.ok && lencoResponse.status >= 500) {
+      // Unknown outcome: keep claimed money locked, leave processing for webhook/status check.
+      await supabase.from("payouts").update({ status: "processing", failure_reason: "Lenco response not confirmed, awaiting confirmation" }).eq("id", payoutRow.id);
+      return new Response(JSON.stringify({ ok: true, payoutId: payoutRow.id, status: "unknown" }), { status: 202, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     if (!lencoResponse.ok) {
       await supabase.from("payouts").update({ status: "failed", failure_reason: lencoJson.message ?? "Lenco rejected the transfer" }).eq("id", payoutRow.id);
       await supabase.rpc("pay_portal_release_payout_collections", { p_payout_id: payoutRow.id });
@@ -318,11 +324,9 @@ Deno.serve(async (req) => {
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
-    await supabase.from("payouts").update({ status: "failed", failure_reason: String(err) }).eq("id", payoutRow.id);
-    await supabase.rpc("pay_portal_release_payout_collections", { p_payout_id: payoutRow.id });
-    return new Response(JSON.stringify({ error: "Failed to reach Lenco", detail: String(err) }), {
-      status: 502,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    // Timeout / network error: the transfer may have gone through. Never release the claim here.
+    console.error("[lenco-payout] unknown outcome reaching Lenco", String(err));
+    await supabase.from("payouts").update({ status: "processing", failure_reason: "Lenco response not received, awaiting confirmation" }).eq("id", payoutRow.id);
+    return new Response(JSON.stringify({ ok: true, payoutId: payoutRow.id, status: "unknown" }), { status: 202, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 });
