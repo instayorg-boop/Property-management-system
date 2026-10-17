@@ -28,6 +28,8 @@ import { useNotifications } from "../NotificationsContext";
 import { useSettings } from "../SettingsContext";
 import { readCachedTasks } from "../../lib/todaysTasksApi";
 import SectionLabel from "./SectionLabel";
+import { useAccess } from "../AccessContext";
+import type { Permission } from "../permissions";
 
 const icons = {
   dashboard: SquaresFour,
@@ -54,6 +56,13 @@ type NavItem = {
   to: string;
   icon: keyof typeof icons;
   children?: NavChild[];
+  /** Hidden from the nav unless the active row holds this permission. Omit for always-visible items. */
+  permission?: Permission;
+  /** Hidden unless the active row holds at least one of these (an "any of" gate, e.g. Payouts:
+   * visible to payouts.view OR payouts.request OR payout_methods.manage). */
+  anyPermission?: Permission[];
+  /** Hidden from the nav for anyone but the owner (no permission key exists yet for these areas). */
+  ownerOnly?: boolean;
 };
 
 const groups: { label: string; items: NavItem[] }[] = [
@@ -61,19 +70,18 @@ const groups: { label: string; items: NavItem[] }[] = [
     label: "Daily",
     items: [
       { label: "Dashboard", to: "/dashboard", icon: "dashboard" },
-      { label: "Tasks", to: "/tasks", icon: "tasks" },
-      { label: "Notifications", to: "/notifications", icon: "notifications" },
+      { label: "Tasks", to: "/tasks", icon: "tasks", permission: "tasks.manage" },
     ],
   },
   {
     label: "Operations",
     items: [
-      { label: "Rent", to: "/rent", icon: "rent" },
-      { label: "Tenants", to: "/tenants", icon: "tenants" },
-      { label: "Rooms", to: "/rooms", icon: "rooms" },
-      { label: "Online payments", to: "/online-payments", icon: "onlinePayments" },
-      { label: "Maintenance requests", to: "/maintenance", icon: "maintenance" },
-      { label: "Expense Tracker", to: "/expense-tracker", icon: "accounting" },
+      { label: "Rent", to: "/rent", icon: "rent", permission: "rent.view" },
+      { label: "Tenants", to: "/tenants", icon: "tenants", permission: "tenants.view" },
+      { label: "Rooms", to: "/rooms", icon: "rooms", permission: "tenants.view" },
+      { label: "Online payments", to: "/online-payments", icon: "onlinePayments", anyPermission: ["payouts.view", "payouts.request", "payout_methods.manage"] },
+      { label: "Maintenance requests", to: "/maintenance", icon: "maintenance", permission: "maintenance.view" },
+      { label: "Expense Tracker", to: "/expense-tracker", icon: "accounting", permission: "expenses.view" },
       // Staff/payroll — out of scope for the MVP. Re-enable by uncommenting plus
       // the matching routes in App.tsx (search "MVP: staff/payroll").
       // {
@@ -93,7 +101,7 @@ const groups: { label: string; items: NavItem[] }[] = [
     items: [
       // Reports now opens a single hub page (src/landlord/pages/Reports.tsx) with its own
       // report-type cards, rather than expanding this nav item into a list of links in place.
-      { label: "Reports", to: "/reports", icon: "reports" },
+      { label: "Reports", to: "/reports", icon: "reports", permission: "reports.view" },
     ],
   },
   {
@@ -227,9 +235,22 @@ export default function Sidebar() {
   const { open, setOpen } = useSidebar();
   const { reports } = useMaintenance();
   const { tenants } = useTenants();
-  const { notifications, unreadCount } = useNotifications();
+  const { notifications } = useNotifications();
   const { propertyId } = useSettings();
+  const { can, isOwner } = useAccess();
   const panelRef = useRef<HTMLDivElement>(null);
+
+  const visibleGroups = groups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => {
+        if (item.ownerOnly) return isOwner;
+        if (item.anyPermission) return isOwner || item.anyPermission.some((p) => can(p));
+        if (item.permission) return can(item.permission);
+        return true;
+      }),
+    }))
+    .filter((group) => group.items.length > 0);
 
   // Open task count comes from the same localStorage cache the Dashboard's Today's Tasks card
   // already keeps warm (see src/lib/todaysTasksApi.ts): a plain synchronous read, no extra
@@ -244,7 +265,6 @@ export default function Sidebar() {
     // here as unread notifications (category "payment" / "payout") before the person has looked.
     "/online-payments": notifications.some((n) => !n.read_at && (n.category === "payment" || n.category === "payout")),
     "/tasks": openTaskCount > 0,
-    "/notifications": unreadCount > 0,
   };
 
   // Escape-to-close + a focus trap while the mobile full-screen menu is open, focus landing
@@ -292,7 +312,7 @@ export default function Sidebar() {
           not this same panel sliding in. */}
       <div className="hidden lg:flex lg:h-full lg:w-64 lg:shrink-0 lg:flex-col lg:border-r lg:border-line lg:bg-paper">
         <nav className="flex-1 overflow-y-auto px-3 pb-4 pt-4">
-          {groups.map((group, i) => (
+          {visibleGroups.map((group, i) => (
             <div key={group.label} className={i > 0 ? "mt-4" : ""}>
               <SectionLabel className="px-3 pb-1.5">{group.label}</SectionLabel>
               <div className="space-y-0.5">
@@ -348,7 +368,7 @@ export default function Sidebar() {
                 className="flex-1 overflow-y-auto px-4 pt-4"
                 style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom, 0px))" }}
               >
-                {groups.map((group, i) => (
+                {visibleGroups.map((group, i) => (
                   <div key={group.label} className={i > 0 ? "mt-6" : ""}>
                     <SectionLabel className="px-3 pb-2">{group.label}</SectionLabel>
                     <div className="space-y-1">

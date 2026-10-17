@@ -32,6 +32,29 @@ export function usePayoutSummary() {
     };
   }, [propertyId]);
 
+  // The ledger's own running balance — what request-withdrawal-otp/lenco-payout actually check
+  // against for the K100 payout minimum, kept in sync server-side rather than recomputed here.
+  const [availableBalance, setAvailableBalance] = useState<number | null>(null);
+  useEffect(() => {
+    if (!propertyId) return;
+    let cancelled = false;
+    supabase
+      .from("property_balances")
+      .select("available_balance")
+      .eq("property_id", propertyId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (error) {
+          console.error("Failed to load property balance", error);
+          return;
+        }
+        if (!cancelled) setAvailableBalance(data?.available_balance ?? 0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [propertyId]);
+
   // Live updates — same debounced postgres_changes refetch Dashboard.tsx uses for its own copy of
   // this figure, so the Accounting header pill / Settings "Available to withdraw" block don't sit on
   // a stale balance until the component remounts.
@@ -47,12 +70,25 @@ export function usePayoutSummary() {
             if (!cancelled) setLencoAvailable(available);
           })
           .catch((e) => console.error("Failed to refresh Lenco balance after a live update", e));
+        supabase
+          .from("property_balances")
+          .select("available_balance")
+          .eq("property_id", propertyId)
+          .maybeSingle()
+          .then(({ data, error }) => {
+            if (error) {
+              console.error("Failed to refresh property balance after a live update", error);
+              return;
+            }
+            if (!cancelled) setAvailableBalance(data?.available_balance ?? 0);
+          });
       }, 250);
     };
     const channel = supabase
       .channel(`payout-summary-balance:${propertyId}:${instanceId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "collections", filter: `property_id=eq.${propertyId}` }, refetch)
       .on("postgres_changes", { event: "*", schema: "public", table: "payouts", filter: `property_id=eq.${propertyId}` }, refetch)
+      .on("postgres_changes", { event: "*", schema: "public", table: "property_balances", filter: `property_id=eq.${propertyId}` }, refetch)
       .subscribe();
     return () => {
       cancelled = true;
@@ -94,6 +130,9 @@ export function usePayoutSummary() {
   return {
     payout,
     lencoAvailable,
+    /** The ledger's available_balance (property_balances) — the real K100 payout minimum check,
+     * null while still loading. */
+    availableBalance,
     hasFailedPayout: lastPayout?.status === "failed",
     lastPayout,
   };

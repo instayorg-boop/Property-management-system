@@ -17,6 +17,7 @@ import {
   tenantPatchToRow,
   relationLabel,
   RELATION_OPTIONS,
+  isResident,
   type Tenant,
   type PaymentStatus,
   type DepositStatus,
@@ -599,9 +600,9 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
           // Fire-and-forget, after the balance write above has landed — send-payment-receipt-sms
           // reads tenants.owed_amount fresh, so this must come after the sync/fallback write, not
           // before, or the receipt would quote the tenant's pre-payment balance.
-          payments.forEach(({ amount }) => {
+          payments.forEach(({ amount, label }) => {
             void supabase.functions
-              .invoke("send-payment-receipt-sms", { body: { tenantId: id, amount } })
+              .invoke("send-payment-receipt-sms", { body: { tenantId: id, amount, label } })
               .catch((e) => console.error("Failed to send payment receipt SMS", e));
           });
 
@@ -899,13 +900,20 @@ export function useTenants() {
  * Rent actually collected from active tenants right now — paid tenants count their full rent,
  * partial tenants count only what they've actually paid so far. Shared by Rent, Expenses, and the
  * Owner Payout / Income vs Expenses reports so "collected" means the same thing everywhere.
+ *
+ * Uses isResident (active AND already moved in), not a bare `active` check: a tenant pre-booked
+ * and pre-paid for a future move-in date is active and may already be marked "paid" for that
+ * future month, but hasn't moved in yet, so their rent isn't collected for the current period.
+ * Counting them inflated this total by their full rent until their move-in date actually arrived
+ * (caught via a Dashboard-vs-Rent-page mismatch: Rent.tsx's own month view already excludes them
+ * the same way, via periodTenants' move-in check).
  */
 export function useCollectedRent() {
   const { tenants } = useTenants();
   return useMemo(
     () =>
       tenants
-        .filter((t) => t.active)
+        .filter((t) => isResident(t))
         .reduce((sum, t) => {
           if (t.status === "paid") return sum + t.rentAmount;
           if (t.status === "partial") return sum + (t.ledger[0]?.paidAmount ?? 0);

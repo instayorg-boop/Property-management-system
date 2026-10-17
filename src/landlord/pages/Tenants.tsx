@@ -90,7 +90,7 @@ export default function Tenants() {
   return (
     <>
       {importOpen && <ImportTenantsModal onClose={() => setImportOpen(false)} />}
-      <div className="min-h-full bg-paper text-ink">
+      <div className="min-h-full">
         {/* Page header */}
         <PageHeader
           title="Tenants"

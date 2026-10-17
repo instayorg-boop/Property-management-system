@@ -114,6 +114,7 @@ Deno.serve(async (req) => {
 
   const atApiKey = Deno.env.get("AT_API_KEY");
   const atUsername = Deno.env.get("AT_USERNAME") || "sandbox";
+  const atSenderId = Deno.env.get("AT_SENDER_ID");
 
   if (!atApiKey) {
     console.log(`[pay-portal-request-otp] placeholder — no AT_API_KEY set, code for ${tenantId} is ${code} (dev-only, not sent)`);
@@ -140,6 +141,7 @@ Deno.serve(async (req) => {
             username: atUsername,
             to: toE164Zambia(phone),
             message: `Your Instay verification code is ${code}. It expires in ${OTP_TTL_MINUTES} minutes.`,
+            ...(atSenderId ? { from: atSenderId } : {}),
           }),
         }
       );

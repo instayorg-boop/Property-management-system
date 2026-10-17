@@ -23,10 +23,8 @@ import {
   PauseCircle,
   Plus,
   SignOut,
-  WhatsappLogo,
   CaretDown,
   IdentificationCard,
-  Phone,
   ChatCircleText,
   ArrowRight,
   ArrowSquareOut,
@@ -183,7 +181,7 @@ function furthestPaidMonth(
   const moveInOk = moveIn && !Number.isNaN(moveIn.getTime()) ? moveIn : null;
   let furthest: { year: number; month: number } | null = null;
   for (const row of ledger) {
-    if (row.status !== "paid") continue;
+    if (row.status !== "paid" || row.voidedAt) continue;
     const yearMatch = row.label.match(/\d{4}/);
     if (!yearMatch) continue;
     let month = MONTH_NAMES.findIndex((name) => row.label.includes(name));
@@ -218,31 +216,8 @@ function Field({ label, value, muted }: { label: string; value: React.ReactNode;
   );
 }
 
-/** Call + WhatsApp shortcuts next to a phone number. */
 function PhoneValue({ phone }: { phone: string }) {
-  return (
-    <span className="flex items-center justify-end gap-1.5">
-      <span className="truncate">{phone}</span>
-      <a
-        href={`tel:${phone.replace(/\s/g, "")}`}
-        aria-label={`Call ${phone}`}
-        title="Call"
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-line text-muted transition-colors hover:bg-mist hover:text-ink"
-      >
-        <Phone size={13} weight="bold" />
-      </a>
-      <a
-        href={`https://wa.me/${phone.replace(/\D/g, "")}`}
-        target="_blank"
-        rel="noreferrer"
-        aria-label={`WhatsApp ${phone}`}
-        title="WhatsApp"
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-line text-emerald-600 transition-colors hover:bg-emerald-50"
-      >
-        <WhatsappLogo size={13} weight="bold" />
-      </a>
-    </span>
-  );
+  return <span className="truncate">{phone}</span>;
 }
 
 /** A compact white card with an icon + title row (and an optional edit action), holding a list
@@ -878,6 +853,13 @@ export default function TenantProfile() {
   const today = new Date();
   const paidThrough = furthestPaidMonth(tenant.ledger, tenant.moveInDate);
 
+  // AddTenant lets a landlord pin this tenant to their own due day (e.g. "full month, keep
+  // billing on the move-in date" instead of the property's shared due day), tenant.dueDay is
+  // the same override column generate-rent-charges/autopilot-collections already prefer
+  // server-side (tenant.due_day ?? settings.due_day), so this mirrors that here instead of
+  // only ever using the property default.
+  const effectiveDueDay = tenant.dueDay ?? dueDay;
+
   // A charge row's own period comes from billingPeriodId (falling back to parsing its label) —
   // shared by the current-period-row gate below and the grouping logic further down, so both agree
   // on which real charge covers which month.
@@ -1282,10 +1264,10 @@ export default function TenantProfile() {
     );
   }
   let nextDueDate = paidThrough
-    ? dueDateIn(paidThrough.year, paidThrough.month + 1, dueDay)
+    ? dueDateIn(paidThrough.year, paidThrough.month + 1, effectiveDueDay)
     : tenant.status === "paid"
-      ? dueDateIn(today.getFullYear(), today.getMonth() + 1, dueDay)
-      : dueDateIn(today.getFullYear(), today.getMonth(), dueDay);
+      ? dueDateIn(today.getFullYear(), today.getMonth() + 1, effectiveDueDay)
+      : dueDateIn(today.getFullYear(), today.getMonth(), effectiveDueDay);
 
   // A paid-up tenant's next due date must be in the future — if it isn't (e.g. furthestPaidMonth
   // couldn't parse a month out of the ledger label, which happens for real mobile-money payments:
@@ -1302,7 +1284,7 @@ export default function TenantProfile() {
       nextDueDate = dueDateIn(
         nextDueDate.getFullYear(),
         nextDueDate.getMonth() + 1,
-        dueDay,
+        effectiveDueDay,
       );
     }
   }
@@ -1653,14 +1635,9 @@ export default function TenantProfile() {
                       ) : (
                         tenant.emergencyContacts.map((c) => (
                           <div key={c.id} className="py-3">
-                            <div className="flex items-center gap-2.5">
-                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-mist text-xs font-semibold text-ink">
-                                {c.name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("")}
-                              </span>
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-medium text-ink">{c.name}</p>
-                                <p className="text-xs text-muted">{relationLabel(c)}</p>
-                              </div>
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium text-ink">{c.name}</p>
+                              <p className="text-xs text-muted">{relationLabel(c)}</p>
                             </div>
                             {c.phones.map((p, i) => (
                               <div key={i} className="mt-2 flex justify-end text-sm font-medium text-ink">

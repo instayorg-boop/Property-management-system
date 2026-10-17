@@ -202,7 +202,7 @@ export default function HelpDocs() {
 
   if (notFound) {
     return (
-      <div className="min-h-screen bg-white">
+      <div className="min-h-screen bg-canvas">
         <HelpTopBar />
         <div className="px-4 py-10 text-center sm:px-8">
           <p className="text-sm text-muted">That help topic doesn't exist anymore.</p>
@@ -219,7 +219,7 @@ export default function HelpDocs() {
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-canvas">
       <HelpTopBar />
       <div className="flex gap-8 px-4 pb-16 pt-5 sm:px-8">
       {/* Left: topic nav, the product's own groups, every guide listed, nothing forced into one

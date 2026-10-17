@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 
 import PageHeader from "../components/PageHeader";
+import MonthSwitcher from "../components/MonthSwitcher";
 import Modal from "../components/Modal";
 import ExpenseFormDrawer from "../components/ExpenseFormDrawer";
 import Lightbox from "../components/Lightbox";
@@ -12,6 +13,8 @@ import {
   type Expense,
   type Category,
 } from "../ExpensesContext";
+import { useSettings } from "../SettingsContext";
+import { supabase } from "../../lib/supabaseClient";
 
 import {
   Paperclip,
@@ -26,8 +29,6 @@ import {
   Sparkle,
   Check,
   X as XIcon,
-  CaretLeft,
-  CaretRight,
   Receipt,
 } from "@phosphor-icons/react";
 
@@ -680,6 +681,28 @@ export default function Accounting() {
 
   const location = useLocation();
   const navigate = useNavigate();
+  const { propertyId } = useSettings();
+
+  // Who recorded each expense — fetched once per property so expense rows with a `created_by`
+  // can show "Recorded by X" (pre-existing rows have no created_by and show nothing).
+  const [peopleById, setPeopleById] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    if (!propertyId) return;
+    let cancelled = false;
+    supabase
+      .rpc("property_people", { p_property: propertyId })
+      .then(({ data, error }) => {
+        if (cancelled || error || !data) return;
+        const map = new Map<string, string>();
+        for (const person of data as { user_id: string; full_name: string; status: string }[]) {
+          map.set(person.user_id, person.status === "revoked" ? `${person.full_name} (removed)` : person.full_name);
+        }
+        setPeopleById(map);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [propertyId]);
 
   const [monthOffset, setMonthOffset] =
     useState(0);
@@ -932,42 +955,22 @@ export default function Accounting() {
           <>
             {/* Month + actions */}
             <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-1 text-sm text-muted">
-                <button
-                  type="button"
-                  aria-label="Previous month"
-                  onClick={() => {
-                    setMonthOffset((o) => o - 1);
-                    setPage(1);
-                  }}
-                  className="flex h-8 w-8 items-center justify-center rounded-md transition-colors hover:bg-mist hover:text-ink"
-                >
-                  <CaretLeft size={16} weight="bold" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMonthOffset(0);
-                    setPage(1);
-                  }}
-                  title="Jump to this month"
-                  className="min-w-[130px] text-center font-medium text-ink"
-                >
-                  {month}
-                </button>
-                <button
-                  type="button"
-                  aria-label="Next month"
-                  disabled={monthOffset >= 0}
-                  onClick={() => {
-                    setMonthOffset((o) => Math.min(0, o + 1));
-                    setPage(1);
-                  }}
-                  className="flex h-8 w-8 items-center justify-center rounded-md transition-colors hover:bg-mist hover:text-ink disabled:opacity-30 disabled:hover:bg-transparent"
-                >
-                  <CaretRight size={16} weight="bold" />
-                </button>
-              </div>
+              <MonthSwitcher
+                month={month}
+                monthOffset={monthOffset}
+                onPrev={() => {
+                  setMonthOffset((o) => o - 1);
+                  setPage(1);
+                }}
+                onNext={() => {
+                  setMonthOffset((o) => Math.min(0, o + 1));
+                  setPage(1);
+                }}
+                onJumpToNow={() => {
+                  setMonthOffset(0);
+                  setPage(1);
+                }}
+              />
 
               <div className="ml-auto flex items-center gap-2">
                 {hasExpenses && (
@@ -1134,6 +1137,9 @@ export default function Accounting() {
                                 )}
                               </p>
                               {e.description && <p className="mt-0.5 text-[13px] leading-[1.3] text-muted">{e.description}</p>}
+                              {e.createdBy && peopleById.get(e.createdBy) && (
+                                <p className="mt-0.5 text-[11px] text-muted">Recorded by {peopleById.get(e.createdBy)}</p>
+                              )}
                             </div>
                           </Td>
                           <Td>
@@ -1236,6 +1242,9 @@ export default function Accounting() {
                         <div className="min-w-0">
                           <p className="truncate text-sm font-semibold text-ink">{e.name}</p>
                           {e.description && <p className="mt-0.5 truncate text-[13px] text-muted">{e.description}</p>}
+                          {e.createdBy && peopleById.get(e.createdBy) && (
+                            <p className="mt-0.5 truncate text-[11px] text-muted">Recorded by {peopleById.get(e.createdBy)}</p>
+                          )}
                         </div>
                         <p className="shrink-0 font-display text-sm font-semibold text-ink">{formatK(e.amount)}</p>
                       </div>

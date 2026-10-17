@@ -1,86 +1,83 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { ChartLineUp } from "@phosphor-icons/react";
 import { getReportLink, type ReportLinkData } from "../../lib/reportLink";
-import { Card, SectionLabel, MoneyRow, PortalFrame, PortalMessage, Shimmer, PoweredByInstay, formatDate } from "./portalUi";
+import ReportDocument from "../../components/ReportDocument";
 
 /**
- * Where the "all tenants paid" milestone SMS sends the landlord: a plain summary of the month's
- * income vs expenses, no dashboard sign-in needed, same reasoning as SubscriptionPay.tsx for the
- * landlord's own fee link. There is nothing to log into here, the token itself is the one thing
- * that reveals this property's numbers, and there is no payment step on this page at all.
+ * Where the autopilot milestone/weekly/monthly SMS sends the landlord: a plain, no-login report
+ * page. The token itself is the one thing that reveals this property's numbers, same reasoning
+ * as subscriptionPay.ts for the landlord's own IPM fee link — no auth is added here.
  */
 export default function ReportLink() {
   const { token } = useParams();
   const [data, setData] = useState<ReportLinkData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [networkError, setNetworkError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     if (!token) return;
+    setLoadError(null);
+    setNetworkError(false);
     getReportLink(token)
       .then(setData)
-      .catch((err) => setLoadError(err instanceof Error ? err.message : "This link isn't valid anymore."));
+      .catch((err) => {
+        const message = err instanceof Error ? err.message : "This link isn't valid anymore.";
+        // A network failure (no response at all) gets a retry button; an invalid-token response
+        // from the server gets the plain "not available" message instead.
+        if (message.includes("connection")) {
+          setNetworkError(true);
+        } else {
+          setLoadError(message);
+        }
+      });
   }, [token]);
+
+  useEffect(() => {
+    load();
+  }, [load, attempt]);
+
+  if (networkError) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-mist px-4 text-center">
+        <p className="text-sm text-muted">Couldn't reach the server. Check your connection.</p>
+        <button
+          type="button"
+          onClick={() => setAttempt((a) => a + 1)}
+          className="rounded-lg border border-line bg-paper px-4 py-2 text-sm font-medium text-ink hover:bg-mist"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
 
   if (loadError) {
     return (
-      <PortalFrame>
-        <PortalMessage title="Link not available" body={loadError} />
-        <PoweredByInstay />
-      </PortalFrame>
+      <div className="flex min-h-screen items-center justify-center bg-mist px-4">
+        <div className="w-full max-w-sm rounded-xl border border-line bg-paper p-6 text-center shadow-sm">
+          <p className="text-sm font-medium text-ink">Link not available</p>
+          <p className="mt-1.5 text-sm text-muted">{loadError}</p>
+        </div>
+      </div>
     );
   }
 
   if (!data) {
     return (
-      <PortalFrame>
-        <div className="flex flex-col gap-3 pt-8">
-          <Shimmer className="h-8 w-2/3" />
-          <Shimmer className="h-32 w-full" />
-          <Shimmer className="h-48 w-full" />
+      <div className="mx-auto w-full max-w-[794px] px-4 py-8 sm:px-10">
+        <div className="flex flex-col gap-3">
+          <div className="h-8 w-2/3 animate-pulse rounded bg-mist" />
+          <div className="h-32 w-full animate-pulse rounded bg-mist" />
+          <div className="h-48 w-full animate-pulse rounded bg-mist" />
         </div>
-      </PortalFrame>
+      </div>
     );
   }
 
   return (
-    <PortalFrame>
-      <div className="mb-5 flex flex-col items-center gap-1 pt-4 text-center">
-        <span
-          className="flex h-12 w-12 items-center justify-center rounded-full"
-          style={{ background: "var(--p-green-tint)", color: "var(--p-green)" }}
-        >
-          <ChartLineUp size={24} weight="bold" />
-        </span>
-        <h1 className="display mt-2 text-[19px] font-semibold">Income vs expenses</h1>
-        <span className="text-[13px]" style={{ color: "var(--p-muted)" }}>
-          {data.propertyName} &middot; {data.periodLabel}
-        </span>
-      </div>
-
-      <Card className="flex flex-col gap-1">
-        <MoneyRow label="Rent collected" amount={data.rentCollected} />
-        <MoneyRow label="Total expenses" amount={data.totalExpenses} />
-        <div className="my-1 border-t" style={{ borderColor: "var(--p-line)" }} />
-        <MoneyRow label="Net income" amount={data.net} strong />
-      </Card>
-
-      {data.breakdown.length > 0 && (
-        <>
-          <SectionLabel>Expense breakdown</SectionLabel>
-          <Card className="flex flex-col gap-1">
-            {data.breakdown.map((item) => (
-              <MoneyRow key={item.category} label={item.category} amount={item.amount} />
-            ))}
-          </Card>
-        </>
-      )}
-
-      <p className="mt-6 text-center text-[12px]" style={{ color: "var(--p-muted)" }}>
-        Covers {formatDate(data.dateFrom)} to {formatDate(data.dateTo)}. Open your dashboard any time for the full report history.
-      </p>
-
-      <PoweredByInstay />
-    </PortalFrame>
+    <div className="min-h-screen bg-mist print:bg-white">
+      <ReportDocument report={data} />
+    </div>
   );
 }

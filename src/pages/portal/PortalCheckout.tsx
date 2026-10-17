@@ -1,15 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import {
-  initiateCollection,
-  getCollectionStatus,
-  generatePortalReceipt,
-  groupPortalLedger,
-  portalOwedPeriodLabel,
-} from "../../lib/payPortal";
+import { groupPortalLedger, portalOwedPeriodLabel } from "../../lib/payPortal";
 import { onlineFeeRateForRent } from "../../lib/pricing";
 import { MOBILE_MONEY_LOGO } from "../../lib/mobileMoneyProviders";
-import { usePortal, invalidatePortal } from "./portalData";
+import { usePortal } from "./portalData";
 import { isPortalDevMode } from "./portalDev";
 import { Card, MoneyRow, PortalButton, PortalMessage, PortalTopBar, Shimmer, formatMoney } from "./portalUi";
 
@@ -42,9 +36,6 @@ function detectOperator(phone: string): Operator | null {
   return null;
 }
 
-const POLL_INTERVAL_MS = 3000;
-const MAX_POLLS = 20; // ~60s before we stop waiting and tell the tenant to check back
-
 export default function PortalCheckout() {
   const { token } = useParams();
   const navigate = useNavigate();
@@ -55,10 +46,11 @@ export default function PortalCheckout() {
   const [phoneInput, setPhoneInput] = useState<string | null>(null);
   const [operatorChoice, setOperatorChoice] = useState<Operator | null>(null);
   const [overriding, setOverriding] = useState(false);
+  // Guards against a double tap firing two navigations before the first one lands: the actual
+  // payment (initiateCollection + the poll loop) now lives entirely on PortalProcessing, this
+  // page only validates the form and hands off to it.
   const [submitting, setSubmitting] = useState(false);
-  const [stillWaiting, setStillWaiting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const pollTimer = useRef<number | null>(null);
 
   // Derived, not synced: the number on file is the value until the tenant types their own, and
   // the network is read off whatever number is currently in the field. Prefilling from an effect
@@ -71,10 +63,6 @@ export default function PortalCheckout() {
   // Latched on the first `?dev=1` seen this tab session — see portalDev.ts for why it can't just
   // read the current URL.
   const devMode = isPortalDevMode();
-
-  useEffect(() => () => {
-    if (pollTimer.current) window.clearTimeout(pollTimer.current);
-  }, []);
 
   if (loading) {
     return (
@@ -118,60 +106,18 @@ export default function PortalCheckout() {
   const amountValid = amount > 0 && amount <= balanceOwed;
   const phoneValid = phone.replace(/\D/g, "").length >= 9;
 
-  // The operator is passed through rather than read from state at navigation time: by then the
-  // detected value could be null (a dev-mode run with an empty field), and the success page should
-  // name the network that was actually charged.
-  const finish = (
-    collectionId: string,
-    charged: { amount: number; feeAmount: number; rentPortion: number; isPartial: boolean },
-    chargedWith: Operator
-  ) => {
-    // Fire-and-forget — the receipt is a convenience filed under Documents, not something the
-    // tenant should be held on a spinner for.
-    void generatePortalReceipt(tenant.id, collectionId).catch((err) => console.error("Failed to generate receipt", err));
-    // The balance the tenant just changed is cached; drop it so the success page and the home
-    // screen behind it both read the post-payment figure.
-    invalidatePortal(token!, tenant.id);
-    navigate(`/p/${token}/success`, {
-      state: { ...charged, provider: chargedWith, phone, reference: collectionId },
-      replace: true,
-    });
-  };
-
-  const poll = (collectionId: string, attempt: number, charged: Parameters<typeof finish>[1], chargedWith: Operator) => {
-    getCollectionStatus(tenant.id, collectionId)
-      .then(({ status, failureReason }) => {
-        if (status === "successful") return finish(collectionId, charged, chargedWith);
-        if (status === "failed") {
-          setSubmitting(false);
-          navigate(`/p/${token}/failed`, {
-            state: { reason: failureReason ?? "The mobile money provider declined this payment. No amount was charged." },
-          });
-          return;
-        }
-        if (attempt >= MAX_POLLS) {
-          setStillWaiting(true);
-          return;
-        }
-        pollTimer.current = window.setTimeout(() => poll(collectionId, attempt + 1, charged, chargedWith), POLL_INTERVAL_MS);
-      })
-      .catch(() => {
-        // A transient network error mid-poll shouldn't abandon a payment that may still succeed.
-        if (attempt >= MAX_POLLS) {
-          setStillWaiting(true);
-          return;
-        }
-        pollTimer.current = window.setTimeout(() => poll(collectionId, attempt + 1, charged, chargedWith), POLL_INTERVAL_MS);
-      });
-  };
-
+  // Validates the form, then hands the whole rest of the payment (the actual initiateCollection
+  // call, polling, and routing on to success/failed) off to PortalProcessing: this page's job
+  // ends at a valid tap of "Pay". The operator is passed through explicitly rather than re-derived
+  // on the next page: by then the detected value could differ (a dev-mode run with an empty
+  // field), and the next page should charge/name the exact network this page validated against.
   const pay = (devSimulate?: "success" | "failed") => {
     setError(null);
     if (!amountValid) {
       setError(`Enter an amount between K1 and ${formatMoney(balanceOwed)}.`);
       return;
     }
-    // A simulated run doesn't touch a real wallet, so it doesn't need a real number — otherwise
+    // A simulated run doesn't touch a real wallet, so it doesn't need a real number: otherwise
     // testing the success screen would mean typing a valid one every time.
     const chargePhone = devSimulate ? phone || "0977000000" : phone;
     const chargeOperator = operator ?? detectOperator(chargePhone) ?? "mtn";
@@ -184,31 +130,16 @@ export default function PortalCheckout() {
       return;
     }
     setSubmitting(true);
-    setStillWaiting(false);
-    initiateCollection(identity.propertySlug, tenant.id, chargePhone, chargeOperator, amount, devSimulate)
-      .then(({ collectionId, status, amount: charged, feeAmount, rentPortion, isPartial: partial }) => {
-        const result = { amount: charged, feeAmount, rentPortion, isPartial: partial };
-        if (status === "successful") return finish(collectionId, result, chargeOperator);
-        if (status === "failed") {
-          setSubmitting(false);
-          navigate(`/p/${token}/failed`, {
-            state: { reason: "The mobile money provider declined this payment. No amount was charged." },
-          });
-          return;
-        }
-        poll(collectionId, 0, result, chargeOperator);
-      })
-      .catch((err) => {
-        setSubmitting(false);
-        navigate(`/p/${token}/failed`, {
-          state: {
-            reason:
-              err instanceof Error && err.message && err.message !== "Failed to start the payment."
-                ? err.message
-                : "We could not confirm whether this payment started. Do not pay again yet. If you approved a prompt on your phone, it will show in your payment history within a few minutes.",
-          },
-        });
-      });
+    navigate(`/p/${token}/processing`, {
+      state: {
+        propertySlug: identity.propertySlug,
+        tenantId: tenant.id,
+        phone: chargePhone,
+        operator: chargeOperator,
+        amount,
+        devSimulate,
+      },
+    });
   };
 
   return (
@@ -377,7 +308,7 @@ export default function PortalCheckout() {
 
       <div className="mt-5">
         <PortalButton onClick={() => pay()} disabled={submitting || !amountValid || !phoneValid}>
-          {submitting ? "Waiting for approval…" : `Pay ${formatMoney(total)}`}
+          {submitting ? "Starting…" : `Pay ${formatMoney(total)}`}
         </PortalButton>
       </div>
 
@@ -401,11 +332,7 @@ export default function PortalCheckout() {
       )}
 
       <p className="mt-3 text-center text-[12px] leading-relaxed" style={{ color: "var(--p-muted)" }}>
-        {stillWaiting
-          ? "Still waiting on your network. If you approved it, the payment will show in your history shortly — you can safely close this page."
-          : submitting
-            ? "Approve the prompt on your phone to complete the payment."
-            : "You'll get a prompt on your phone to approve this payment."}
+        You'll get a prompt on your phone to approve this payment.
       </p>
       {isPartial && amountValid && !submitting && (
         <p className="mt-2 text-center text-[12px]" style={{ color: "var(--p-amber)" }}>

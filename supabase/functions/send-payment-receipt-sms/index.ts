@@ -13,7 +13,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, handleOptions } from "../_shared/cors.ts";
 import { sendPaymentReceiptSms } from "../_shared/paymentReceipt.ts";
 
-type Payload = { tenantId?: string; amount?: number };
+type Payload = { tenantId?: string; amount?: number; label?: string };
 
 Deno.serve(async (req) => {
   const preflight = handleOptions(req);
@@ -60,7 +60,7 @@ Deno.serve(async (req) => {
   });
   const serviceClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-  await sendPaymentReceiptSms(supabase, serviceClient, tenantId, amount);
+  await sendPaymentReceiptSms(supabase, serviceClient, tenantId, amount, payload.label?.trim() || undefined);
 
   return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 });

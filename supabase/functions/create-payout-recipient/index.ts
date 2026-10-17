@@ -31,7 +31,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, handleOptions } from "../_shared/cors.ts";
-import { sendEmail } from "../_shared/email.ts";
+import { sendEmail, buildAlertEmailHtml } from "../_shared/email.ts";
 import { sha256Hex } from "../_shared/otpCrypto.ts";
 
 type CreateRecipientPayload = {
@@ -216,12 +216,10 @@ Deno.serve(async (req) => {
 
   const { data: settingsRow } = await supabase.from("settings").select("account_email").eq("property_id", propertyId).maybeSingle();
   if (settingsRow?.account_email) {
+    const subject = "A new payout method was added to your account";
+    const bodyText = `A bank account ending in ${accountNumber.slice(-4)} was just added as a payout destination on your Instay account. If this wasn't you, remove it in Settings > Bank & payouts right away.`;
     try {
-      await sendEmail(
-        settingsRow.account_email,
-        "A new payout method was added to your account",
-        `A bank account ending in ${accountNumber.slice(-4)} was just added as a payout destination on your Instay account. If this wasn't you, remove it in Settings > Bank & payouts right away.`
-      );
+      await sendEmail(settingsRow.account_email, subject, bodyText, buildAlertEmailHtml(subject, bodyText));
     } catch (err) {
       console.error("[create-payout-recipient] failed to send security alert email", String(err));
     }

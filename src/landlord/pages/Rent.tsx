@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import SearchInput from "../components/SearchInput";
 import { useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
@@ -6,13 +6,12 @@ import PageHeader from "../components/PageHeader";
 import LogPaymentModal from "../components/LogPaymentModal";
 import TenantSearchDrawer from "../components/TenantSearchDrawer";
 import TenantPaymentDrawer from "../components/TenantPaymentDrawer";
-import GenerateInvoicesOverlay from "../components/GenerateInvoicesOverlay";
 import MoveOutModal from "../components/MoveOutModal";
 import { useTenants, formatCurrency, type PaymentStatus, type Tenant } from "../TenantsContext";
 import { useRoomTypeRent } from "../RoomsContext";
 import { useSettings } from "../SettingsContext";
 import { calcTotalOwed } from "../invoiceUtils";
-import { LinkSimple, Plus, Receipt, DotsThreeVertical } from "@phosphor-icons/react";
+import { Plus, Receipt } from "@phosphor-icons/react";
 import Pagination, { DEFAULT_PAGE_SIZE } from "../components/Pagination";
 import { Skeleton, SkeletonRow } from "../components/Skeleton";
 import MetricCard from "../components/MetricCard";
@@ -21,10 +20,6 @@ import MonthSwitcher from "../components/MonthSwitcher";
 import { PendingSyncTag } from "../components/SyncStatus";
 import { usePendingTenantIds } from "../../lib/offline/hooks";
 import rentphoto from "../../assets/Rent Empty state UI.png"
-
-function LinkIcon() {
-  return <LinkSimple size={14} weight="bold" />;
-}
 
 function PlusIcon() {
   return <Plus size={14} weight="bold" />;
@@ -130,7 +125,7 @@ type PaymentStep = "search" | "ledger" | "confirm";
 
 export default function Rent() {
   const { tenants, logPayments, moveOutTenant, isReady: tenantsReady } = useTenants();
-  const { invoicesOn, collectionTargetPct } = useSettings();
+  const { collectionTargetPct } = useSettings();
   const roomTypeRent = useRoomTypeRent();
   const pendingTenantIds = usePendingTenantIds();
   const location = useLocation();
@@ -149,11 +144,6 @@ export default function Rent() {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(DEFAULT_PAGE_SIZE);
-  const [linkCopied, setLinkCopied] = useState(false);
-  const [invoiceMode, setInvoiceMode] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
-  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
-  const moreMenuRef = useRef<HTMLDivElement>(null);
 
   const [paymentStep, setPaymentStep] = useState<PaymentStep | null>(null);
 
@@ -273,48 +263,12 @@ export default function Rent() {
     return { totalExpected, collectedTotal, outstanding, delinquentCount, collectedPct, trend, outstandingSeverity };
   }, [rentRows, isCurrentMonth]);
 
-  const copyLink = () => {
-    setLinkCopied(true);
-    window.setTimeout(() => setLinkCopied(false), 1500);
-  };
-
-  useEffect(() => {
-    if (!moreMenuOpen) return;
-    const onClick = (e: MouseEvent) => {
-      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) setMoreMenuOpen(false);
-    };
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [moreMenuOpen]);
-
-  const showToast = (msg: string) => {
-    setToast(msg);
-    window.setTimeout(() => setToast((t) => (t === msg ? null : t)), 2000);
-  };
 
   return (
     <>
             <PageHeader title="Rent" description="Log payments and monitor who's paid, overdue or behind." />
 
 <div className="space-y-5 px-4 sm:px-8 pb-10">
-  {invoiceMode ? (
-    <motion.div
-      key="invoice"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1], delay: 0.05 }}
-    >
-      <GenerateInvoicesOverlay
-        periodDate={monthDate}
-        periodLabel={month}
-        onCancel={() => setInvoiceMode(false)}
-        onSent={(count) => {
-          showToast(`Invoices sent to ${count} tenant${count === 1 ? "" : "s"}`);
-          setInvoiceMode(false);
-        }}
-      />
-    </motion.div>
-  ) : (
     <motion.div
       key="rent"
       initial={{ opacity: 0 }}
@@ -335,42 +289,6 @@ export default function Rent() {
               )}
 
               <div className="flex items-center gap-2 ml-auto">
-                <div ref={moreMenuRef} className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setMoreMenuOpen((v) => !v)}
-                    aria-label="More actions"
-                    aria-expanded={moreMenuOpen}
-                    className="flex h-9 w-9 items-center justify-center rounded-lg border border-line text-muted transition-colors hover:bg-mist hover:text-ink"
-                  >
-                    <DotsThreeVertical size={16} weight="bold" />
-                  </button>
-                  {moreMenuOpen && (
-                    <div className="absolute top-full right-0 z-10 mt-1 w-52 overflow-hidden rounded-lg border border-line bg-paper py-1 shadow-card">
-                      {invoicesOn && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMoreMenuOpen(false);
-                            setInvoiceMode(true);
-                          }}
-                          className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm font-medium text-ink hover:bg-mist"
-                        >
-                          <Receipt size={15} weight="bold" />
-                          Generate invoices
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={copyLink}
-                        className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm font-medium text-ink hover:bg-mist"
-                      >
-                        <LinkIcon />
-                        {linkCopied ? "Link copied" : "Share payment link"}
-                      </button>
-                    </div>
-                  )}
-                </div>
                 <Button variant="primary" onClick={() => setPaymentStep("search")} className="hover:scale-[1.02]">
                   <PlusIcon />
                   Log payment
@@ -709,7 +627,6 @@ export default function Rent() {
         </div>
       )}
     </motion.div>
-  )}
 </div>
 
 <AnimatePresence>
@@ -772,20 +689,6 @@ export default function Rent() {
         setPayingTenant(null);
       }}
     />
-  )}
-</AnimatePresence>
-
-<AnimatePresence>
-  {toast && (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 8 }}
-      transition={{ duration: 0.15 }}
-      className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-ink px-4 py-2 text-xs font-medium text-paper shadow-card"
-    >
-      {toast}
-    </motion.div>
   )}
 </AnimatePresence>
 </>

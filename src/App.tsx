@@ -2,6 +2,8 @@ import { lazy, Suspense, useEffect, type ReactNode } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider } from "./landlord/AuthContext";
 import RequireAuth from "./landlord/components/RequireAuth";
+import RequirePermission from "./landlord/components/RequirePermission";
+const AcceptInvite = lazy(() => import("./pages/AcceptInvite"));
 import ErrorBoundary from "./components/ErrorBoundary";
 import LoadingScreen from "./components/LoadingScreen";
 import Landing from "./pages/Landing";
@@ -24,6 +26,7 @@ import Terms from "./pages/Terms";
 const PortalLayout = lazy(() => import("./pages/portal/PortalLayout"));
 const PortalHome = lazy(() => import("./pages/portal/PortalHome"));
 const PortalCheckout = lazy(() => import("./pages/portal/PortalCheckout"));
+const PortalProcessing = lazy(() => import("./pages/portal/PortalProcessing"));
 const PortalSuccess = lazy(() => import("./pages/portal/PortalSuccess"));
 const PortalFailed = lazy(() => import("./pages/portal/PortalFailed"));
 const PortalHistory = lazy(() => import("./pages/portal/PortalHistory"));
@@ -60,10 +63,12 @@ const IncomeExpenses = lazy(() => import("./landlord/pages/reports/IncomeExpense
 // import PayrollSummary from "./landlord/pages/reports/PayrollSummary";
 const OccupancyRate = lazy(() => import("./landlord/pages/reports/OccupancyRate"));
 const Settings = lazy(() => import("./landlord/pages/Settings"));
+const TeamMembers = lazy(() => import("./landlord/pages/TeamMembers"));
 const ActivityLog = lazy(() => import("./landlord/pages/ActivityLog"));
 const HelpSupport = lazy(() => import("./landlord/pages/HelpSupport"));
 const HelpDocs = lazy(() => import("./landlord/pages/HelpDocs"));
 const Reports = lazy(() => import("./landlord/pages/Reports"));
+const ReportView = lazy(() => import("./landlord/pages/ReportView"));
 const ReportGenerate = lazy(() => import("./landlord/pages/ReportGenerate"));
 
 // ScrollToTop component for paramore between pages
@@ -111,6 +116,7 @@ export default function App() {
           <Route element={<PortalLayout />}>
             <Route path="/p/:token" element={<PortalHome />} />
             <Route path="/p/:token/pay" element={<PortalCheckout />} />
+            <Route path="/p/:token/processing" element={<PortalProcessing />} />
             <Route path="/p/:token/success" element={<PortalSuccess />} />
             <Route path="/p/:token/failed" element={<PortalFailed />} />
             <Route path="/p/:token/history" element={<PortalHistory />} />
@@ -132,22 +138,40 @@ export default function App() {
               milestone (see send-notification-digests/index.ts). Same trust-boundary reasoning as
               /subscription/:token above, no dashboard sign-in, no payment step on this page. */}
           <Route path="/report/:token" element={<ReportLink />} />
+          <Route path="/accept-invite" element={<AcceptInvite />} />
 
           <Route element={<RequireAuth />}>
             <Route element={<DashboardLayout />}>
               <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/tasks" element={<Tasks />} />
-              <Route path="/notifications" element={<NotificationsPage />} />
-              <Route path="/rent" element={<Rent />} />
-              <Route path="/tenants" element={<Tenants />} />
-              <Route path="/tenants/new" element={<AddTenant />} />
-              <Route path="/tenants/:code/edit" element={<AddTenant />} />
-              <Route path="/tenants/:code" element={<TenantProfile />} />
-              <Route path="/rooms" element={<Rooms />} />
-              <Route path="/maintenance" element={<Maintenance />} />
-              <Route path="/expense-tracker" element={<Accounting />} />
-              <Route path="/online-payments" element={<Payouts />} />
-              <Route path="/online-payments/transfer" element={<Payouts />} />
+              <Route path="/tasks" element={<RequirePermission permission="tasks.manage"><Tasks /></RequirePermission>} />
+              <Route path="/notifications" element={<RequirePermission permission="notifications.view"><NotificationsPage /></RequirePermission>} />
+              <Route path="/rent" element={<RequirePermission permission="rent.view"><Rent /></RequirePermission>} />
+              <Route path="/tenants" element={<RequirePermission permission="tenants.view"><Tenants /></RequirePermission>} />
+              <Route path="/tenants/new" element={<RequirePermission permission="tenants.manage"><AddTenant /></RequirePermission>} />
+              <Route path="/tenants/:code/edit" element={<RequirePermission permission="tenants.manage"><AddTenant /></RequirePermission>} />
+              <Route path="/tenants/:code" element={<RequirePermission permission="tenants.view"><TenantProfile /></RequirePermission>} />
+              <Route path="/rooms" element={<RequirePermission permission="tenants.view"><Rooms /></RequirePermission>} />
+              <Route path="/maintenance" element={<RequirePermission permission="maintenance.view"><Maintenance /></RequirePermission>} />
+              <Route path="/expense-tracker" element={<RequirePermission permission="expenses.view"><Accounting /></RequirePermission>} />
+              {/* Billing stays owner-only (gated inside the page via useIsOwner). Payouts is now
+                  reachable by anyone holding a payout permission — Payouts.tsx itself further
+                  gates individual actions (request/manage methods) below view-only. */}
+              <Route
+                path="/online-payments"
+                element={
+                  <RequirePermission anyPermission={["payouts.view", "payouts.request", "payout_methods.manage"]}>
+                    <Payouts />
+                  </RequirePermission>
+                }
+              />
+              <Route
+                path="/online-payments/transfer"
+                element={
+                  <RequirePermission anyPermission={["payouts.view", "payouts.request", "payout_methods.manage"]}>
+                    <Payouts />
+                  </RequirePermission>
+                }
+              />
               <Route path="/billing" element={<Billing />} />
               {/* Old paths — "Accounting" was renamed to "Expense Tracker" — kept as redirects so any
                   existing bookmarks/links still land somewhere. */}
@@ -159,16 +183,18 @@ export default function App() {
               {/* <Route path="/staff/employees" element={<StaffEmployees />} /> */}
               {/* <Route path="/staff/payroll" element={<StaffPayroll />} /> */}
               {/* <Route path="/staff/clock" element={<StaffClock />} /> */}
-              <Route path="/reports" element={<Reports />} />
-              <Route path="/reports/:slug/generate" element={<ReportGenerate />} />
+              <Route path="/reports" element={<RequirePermission permission="reports.view"><Reports /></RequirePermission>} />
+              <Route path="/reports/view/:id" element={<RequirePermission permission="reports.view"><ReportView /></RequirePermission>} />
+              <Route path="/reports/:slug/generate" element={<RequirePermission permission="reports.view"><ReportGenerate /></RequirePermission>} />
               {/* <Route path="/reports/bed-rent-roll" element={<BedRentRoll />} /> */}
-              <Route path="/reports/arrears-delinquency" element={<ArrearsDelinquency />} />
+              <Route path="/reports/arrears-delinquency" element={<RequirePermission permission="reports.view"><ArrearsDelinquency /></RequirePermission>} />
               {/* <Route path="/reports/owner-payout-statement" element={<OwnerPayoutStatement />} /> */}
-              <Route path="/reports/income-expenses" element={<IncomeExpenses />} />
+              <Route path="/reports/income-expenses" element={<RequirePermission permission="reports.view"><IncomeExpenses /></RequirePermission>} />
               {/* <Route path="/reports/payroll-summary" element={<PayrollSummary />} /> */}
-              <Route path="/reports/occupancy-rate" element={<OccupancyRate />} />
+              <Route path="/reports/occupancy-rate" element={<RequirePermission permission="reports.view"><OccupancyRate /></RequirePermission>} />
               <Route path="/settings/:section?" element={<Settings />} />
-              <Route path="/activity-log" element={<ActivityLog />} />
+              <Route path="/settings/team" element={<RequirePermission permission="team.invite"><TeamMembers /></RequirePermission>} />
+              <Route path="/activity-log" element={<RequirePermission permission="audit.view"><ActivityLog /></RequirePermission>} />
             </Route>
 
             {/* Help & Support deliberately sits outside DashboardLayout: it's a docs-style reading

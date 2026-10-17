@@ -13,6 +13,8 @@ export type Expense = {
   hasPhoto: boolean;
   photoUrl?: string;
   source: "manual" | "payroll";
+  /** Who recorded this expense — null for historical rows predating per-person attribution. */
+  createdBy?: string | null;
 };
 
 const DEFAULT_CATEGORY_NAMES = [
@@ -30,7 +32,7 @@ function toCategory(row: CategoryRow): Category {
   return { id: row.id, name: row.name, active: row.active };
 }
 
-type ExpenseRow = Pick<Tables<"expenses">, "id" | "name" | "description" | "category_id" | "amount" | "date" | "photo_url" | "source">;
+type ExpenseRow = Pick<Tables<"expenses">, "id" | "name" | "description" | "category_id" | "amount" | "date" | "photo_url" | "source" | "created_by">;
 function toExpense(row: ExpenseRow): Expense {
   return {
     id: row.id,
@@ -42,6 +44,7 @@ function toExpense(row: ExpenseRow): Expense {
     hasPhoto: !!row.photo_url,
     photoUrl: row.photo_url ?? undefined,
     source: row.source as Expense["source"],
+    createdBy: row.created_by ?? null,
   };
 }
 
@@ -68,7 +71,7 @@ const EXPENSE_LIST_LIMIT = 1000;
 export async function listExpenses(propertyId: string): Promise<Expense[]> {
   const { data, error } = await supabase
     .from("expenses")
-    .select("id, name, description, category_id, amount, date, photo_url, source")
+    .select("id, name, description, category_id, amount, date, photo_url, source, created_by")
     .eq("property_id", propertyId)
     .order("date", { ascending: false })
     .limit(EXPENSE_LIST_LIMIT);
@@ -77,6 +80,7 @@ export async function listExpenses(propertyId: string): Promise<Expense[]> {
 }
 
 export async function insertExpense(propertyId: string, id: string, e: Omit<Expense, "id">): Promise<void> {
+  const { data: userData } = await supabase.auth.getUser();
   const { error } = await supabase.from("expenses").insert({
     id,
     property_id: propertyId,
@@ -87,6 +91,7 @@ export async function insertExpense(propertyId: string, id: string, e: Omit<Expe
     date: e.date,
     photo_url: e.photoUrl ?? null,
     source: e.source,
+    created_by: userData.user?.id ?? null,
   });
   if (error) throw error;
 }

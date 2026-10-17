@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { ArrowRight, ClockCounterClockwise, ArrowSquareOut, DownloadSimple } from "@phosphor-icons/react";
 import PageHeader from "../components/PageHeader";
 import Button from "../components/Button";
@@ -18,7 +18,20 @@ import {
   TableEmptyState,
 } from "../components/DataTable";
 
-type HubTab = "new" | "history";
+type HubTab = "new" | "history" | "auto";
+
+type AutoReportRow = {
+  id: string;
+  kind: string;
+  period_label: string;
+  date_from: string;
+  date_to: string;
+  rent_collected: number;
+  created_at: string;
+  public_token: string;
+};
+
+type AutoFilter = "all" | "weekly" | "monthly";
 
 type ReportHistoryRow = {
   id: string;
@@ -83,10 +96,42 @@ function ReportActions({
  * a dashboard, matching the "browse types, then configure one" flow common property-management
  * reporting tools use (Buildium, AppFolio) rather than a flat list of pre-built views. */
 export default function Reports() {
+  const navigate = useNavigate();
   const [tab, setTab] = useState<HubTab>("new");
   const { propertyId } = useSettings();
   const [history, setHistory] = useState<ReportHistoryRow[] | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [autoReports, setAutoReports] = useState<AutoReportRow[] | null>(null);
+  const [autoFilter, setAutoFilter] = useState<AutoFilter>("all");
+
+  useEffect(() => {
+    if (tab !== "auto" || !propertyId) return;
+    let cancelled = false;
+    // `report_links` isn't in the generated Supabase types yet, cast through `any` like
+    // role_permissions elsewhere in this app. RLS already scopes this to the caller's property
+    // and, for members, to `reports.view`.
+    (supabase as any)
+      .from("report_links")
+      .select("id, kind, period_label, date_from, date_to, rent_collected, created_at, public_token")
+      .eq("property_id", propertyId)
+      .in("kind", ["weekly", "monthly"])
+      .order("created_at", { ascending: false })
+      .limit(100)
+      .then(({ data, error }: { data: AutoReportRow[] | null; error: unknown }) => {
+        if (cancelled) return;
+        if (error) {
+          console.error("Failed to load weekly/monthly reports", error);
+          setAutoReports([]);
+        } else {
+          setAutoReports(data ?? []);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, propertyId]);
+
+  const visibleAutoReports = (autoReports ?? []).filter((r) => autoFilter === "all" || r.kind === autoFilter);
 
   useEffect(() => {
     if (tab !== "history" || !propertyId) return;
@@ -154,7 +199,7 @@ export default function Reports() {
 
       <div className="overflow-x-auto border-b border-line px-4 sm:px-8">
         <div className="flex items-center gap-1">
-          {(["new", "history"] as const).map((t) => (
+          {(["new", "history", "auto"] as const).map((t) => (
             <button
               key={t}
               type="button"
@@ -163,7 +208,7 @@ export default function Reports() {
                 tab === t ? "border-brand text-ink" : "border-transparent text-muted hover:text-ink"
               }`}
             >
-              {t === "new" ? "New reports" : "Report history"}
+              {t === "new" ? "New reports" : t === "history" ? "Report history" : "Weekly & monthly"}
             </button>
           ))}
         </div>
@@ -288,6 +333,109 @@ export default function Reports() {
               )}
             </div>
           </TableCard>
+        )}
+
+        {tab === "auto" && (
+          <>
+            <div className="mb-4 flex gap-2">
+              {(["all", "weekly", "monthly"] as const).map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => setAutoFilter(f)}
+                  className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
+                    autoFilter === f ? "border-brand bg-brand-soft text-brand" : "border-line text-muted hover:bg-mist"
+                  }`}
+                >
+                  {f === "all" ? "All" : f === "weekly" ? "Weekly" : "Monthly"}
+                </button>
+              ))}
+            </div>
+            <TableCard>
+              <div className="hidden md:block">
+                <DataTable>
+                  <DataTableHead>
+                    <Th>Kind</Th>
+                    <Th>Period</Th>
+                    <Th>Rent collected</Th>
+                    <Th>Generated</Th>
+                    <Th align="right">Actions</Th>
+                  </DataTableHead>
+                  <DataTableBody>
+                    {autoReports === null ? (
+                      Array.from({ length: 3 }).map((_, i) => <SkeletonRow key={i} cols={5} />)
+                    ) : visibleAutoReports.length === 0 ? (
+                      <TableEmptyState
+                        colSpan={5}
+                        icon={<ClockCounterClockwise size={20} />}
+                        title="No reports yet"
+                        description="Your first report arrives on the next Monday after you turn weekly reports on in Settings > Notifications."
+                      />
+                    ) : (
+                      visibleAutoReports.map((row) => (
+                        <tr key={row.id}>
+                          <Td>
+                            <StatusPill tone={row.kind === "weekly" ? "info" : "success"}>
+                              {row.kind === "weekly" ? "Weekly" : "Monthly"}
+                            </StatusPill>
+                          </Td>
+                          <Td className="text-ink">{row.period_label}</Td>
+                          <Td className="text-muted">K{(row.rent_collected ?? 0).toLocaleString()}</Td>
+                          <Td className="text-muted">{formatDay(row.created_at)}</Td>
+                          <Td align="right">
+                            <Button variant="outline" size="sm" onClick={() => navigate(`/reports/view/${row.id}`)}>
+                              <ArrowSquareOut size={14} />
+                              Open
+                            </Button>
+                          </Td>
+                        </tr>
+                      ))
+                    )}
+                  </DataTableBody>
+                </DataTable>
+              </div>
+
+              <div className="space-y-3 p-3 md:hidden">
+                {autoReports === null ? (
+                  Array.from({ length: 3 }).map((_, i) => (
+                    <div key={i} className="space-y-2 rounded-xl border border-line p-4">
+                      <Skeleton className="h-4 w-1/2" />
+                      <Skeleton className="h-3 w-1/3" />
+                    </div>
+                  ))
+                ) : visibleAutoReports.length === 0 ? (
+                  <div className="flex flex-col items-center gap-3 px-4 py-10 text-center">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-mist text-muted">
+                      <ClockCounterClockwise size={20} />
+                    </span>
+                    <p className="text-[13px] text-muted">
+                      Your first report arrives on the next Monday after you turn weekly reports on in Settings &gt; Notifications.
+                    </p>
+                  </div>
+                ) : (
+                  visibleAutoReports.map((row) => (
+                    <div key={row.id} className="rounded-xl border border-line bg-paper p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-[15px] font-medium text-ink">{row.period_label}</p>
+                          <p className="mt-0.5 text-xs text-muted">K{(row.rent_collected ?? 0).toLocaleString()} collected</p>
+                        </div>
+                        <StatusPill tone={row.kind === "weekly" ? "info" : "success"}>
+                          {row.kind === "weekly" ? "Weekly" : "Monthly"}
+                        </StatusPill>
+                      </div>
+                      <div className="mt-4">
+                        <Button variant="outline" size="sm" onClick={() => navigate(`/reports/view/${row.id}`)}>
+                          <ArrowSquareOut size={14} />
+                          Open
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </TableCard>
+          </>
         )}
       </div>
     </>

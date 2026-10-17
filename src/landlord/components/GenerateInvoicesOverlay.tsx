@@ -22,7 +22,6 @@ import {
   lateFeeDisclaimerLabel,
   computeInvoiceDates,
   isDueSoonOrPast,
-  sendInvoiceViaWhatsApp,
   type TenantInvoiceCalc,
 } from "../invoiceUtils";
 
@@ -221,9 +220,7 @@ export default function GenerateInvoicesOverlay({
     try {
       let tenantsCovered = 0;
       for (const row of rows) {
-        const { invoice, tenantIds } = recordRow(row, "sent");
-        const primaryTenant: Tenant = row.kind === "individual" ? row.calc.tenant : row.calcs[0].tenant;
-        await sendInvoiceViaWhatsApp(primaryTenant, invoice, propertyName);
+        const { tenantIds } = recordRow(row, "sent");
         tenantsCovered += tenantIds.length;
       }
       onSent(tenantsCovered);

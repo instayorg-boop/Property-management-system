@@ -570,6 +570,8 @@ export async function insertTenant(propertyId: string, id: string, t: Omit<Tenan
   if (error) throw error;
 
   if (t.ledger.length > 0) {
+    const { data: userData } = await supabase.auth.getUser();
+    const createdBy = userData.user?.id ?? null;
     const { error: ledgerError } = await supabase.from("ledger_entries").insert(
       t.ledger.map((l) => ({
         id: l.id,
@@ -579,6 +581,7 @@ export async function insertTenant(propertyId: string, id: string, t: Omit<Tenan
         paid_amount: l.paidAmount ?? null,
         status: l.status ?? null,
         source: l.source,
+        created_by: createdBy,
       }))
     );
     if (ledgerError) throw ledgerError;
@@ -597,6 +600,7 @@ export async function deleteTenantRow(id: string): Promise<void> {
 }
 
 export async function addLedgerEntry(tenantId: string, entry: LedgerRow): Promise<void> {
+  const { data: userData } = await supabase.auth.getUser();
   const { error } = await supabase.from("ledger_entries").insert({
     id: entry.id,
     tenant_id: tenantId,
@@ -606,6 +610,7 @@ export async function addLedgerEntry(tenantId: string, entry: LedgerRow): Promis
     status: entry.status ?? null,
     method: entry.method ?? null,
     source: entry.source,
+    created_by: userData.user?.id ?? null,
     // Defaults to the DB's own now() when omitted — only set explicitly when the caller picked a
     // specific paid-on date (LogPaymentModal), so a backdated/advance payment sorts and displays
     // under the date it actually applies to, not whenever it happened to be typed in.
@@ -638,6 +643,7 @@ export type NewLedgerEventInsert = {
 /** Inserts one new-model financial event. Sibling to addLedgerEntry (legacy shape) — this is the
  * Phase 3D write path for a NEW manual payment; existing legacy rows/writers are untouched. */
 export async function addLedgerEvent(entry: NewLedgerEventInsert): Promise<void> {
+  const { data: userData } = await supabase.auth.getUser();
   const { error } = await supabase.from("ledger_entries").insert({
     id: entry.id,
     tenant_id: entry.tenantId,
@@ -650,6 +656,7 @@ export async function addLedgerEvent(entry: NewLedgerEventInsert): Promise<void>
     charge_id: entry.chargeId,
     idempotency_key: entry.idempotencyKey,
     method: entry.method ?? null,
+    created_by: userData.user?.id ?? null,
     ...(entry.createdAt ? { created_at: entry.createdAt } : {}),
   });
   if (error) throw error;

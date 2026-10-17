@@ -12,7 +12,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, handleOptions } from "../_shared/cors.ts";
 import { sha256Hex, randomOtpCode } from "../_shared/otpCrypto.ts";
-import { sendEmail } from "../_shared/email.ts";
+import { sendEmail, buildOtpEmailHtml } from "../_shared/email.ts";
 
 const OTP_TTL_MINUTES = 5;
 const MAX_REQUESTS_PER_HOUR = 5;
@@ -113,13 +113,18 @@ Deno.serve(async (req) => {
   }
 
   const subject = purpose === "withdrawal" ? "Confirm your withdrawal" : "Confirm this new payout method";
+  const introText =
+    purpose === "withdrawal"
+      ? "Enter this code to confirm you want to move money out of your account."
+      : "Someone is adding a new bank account or mobile money number as a payout destination on your Instay account.";
   const body =
     purpose === "withdrawal"
       ? `Your withdrawal confirmation code is ${code}. It expires in ${OTP_TTL_MINUTES} minutes. If you didn't request this, ignore this email — no money moves without this code.`
       : `Your confirmation code is ${code}. It expires in ${OTP_TTL_MINUTES} minutes. Someone is adding a new bank account or mobile money number as a payout destination on your Instay account. If this wasn't you, ignore this email — nothing is added without this code.`;
+  const html = buildOtpEmailHtml(subject, introText, code, OTP_TTL_MINUTES);
 
   try {
-    const result = await sendEmail(settingsRow.account_email, subject, body);
+    const result = await sendEmail(settingsRow.account_email, subject, body, html);
     if (result.dev) {
       // Same "no provider configured yet" convention as SMS — hand the code back so the flow can
       // still be exercised end-to-end. Never present once RESEND_API_KEY is actually set.

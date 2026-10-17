@@ -20,6 +20,10 @@ export type SendSmsResult =
 export async function sendSms(phone: string, message: string): Promise<SendSmsResult> {
   const atApiKey = Deno.env.get("AT_API_KEY");
   const atUsername = Deno.env.get("AT_USERNAME") || "sandbox";
+  // Alphanumeric sender ID (e.g. "InstayHomes"), approved on Africa's Talking's side first, and is
+  // omitted entirely when unset, since sending an unapproved 'from' value gets the message
+  // rejected rather than just falling back to the shared shortcode.
+  const atSenderId = Deno.env.get("AT_SENDER_ID");
 
   // Explicit override, checked before the API-key check below — lets a project with AT_API_KEY
   // already configured (e.g. for real use later) still be tested end-to-end without any SMS
@@ -52,6 +56,7 @@ export async function sendSms(phone: string, message: string): Promise<SendSmsRe
         username: atUsername,
         to: toE164Zambia(phone),
         message,
+        ...(atSenderId ? { from: atSenderId } : {}),
       }),
     });
   } catch (err) {

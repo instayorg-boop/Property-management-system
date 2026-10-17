@@ -31,8 +31,12 @@ function portalLink(portalToken: string): string {
   return `https://portal.instayhomes.com/p/${portalToken}`;
 }
 
+/** First word of the tenant's full name, skipping a title prefix (see PREFIX_OPTIONS in
+ * AddTenant.tsx) so "Mr Chanda Mwansa" greets as "Chanda", not "Mr". */
 function firstName(fullName: string): string {
-  return fullName.trim().split(/\s+/)[0] || fullName;
+  const parts = fullName.trim().split(/\s+/);
+  while (parts.length > 1 && /^(mr|mrs|ms|dr)\.?$/i.test(parts[0])) parts.shift();
+  return parts[0] || fullName;
 }
 
 function formatDisplayDate(ymd: string): string {
@@ -80,7 +84,7 @@ Deno.serve(async (req) => {
 
     const { data: tenants, error: tenantsError } = await supabase
       .from("tenants")
-      .select("id, name, phones, emergency_contacts, rent_amount, move_in_date, move_out_date, active, due_day, grace_period_days, owed_amount, days_overdue, portal_token")
+      .select("id, name, phones, emergency_contacts, rent_amount, move_in_date, move_out_date, active, due_day, grace_period_days, owed_amount, days_overdue, portal_token, rooms!tenants_room_id_fkey(number)")
       .eq("property_id", settings.property_id)
       .eq("active", true);
 
@@ -116,7 +120,8 @@ Deno.serve(async (req) => {
             const primary = settings.contact_order === "guardian" ? guardian?.phones?.[0] ?? tenantPhone : tenantPhone ?? guardian?.phones?.[0] ?? null;
             if (primary) {
               const link = portalLink(tenant.portal_token);
-              const message = `Hi ${firstName(tenant.name)}, your rent of K${Number(plan.amount).toLocaleString()} is due on ${formatDisplayDate(plan.dueDate)}. You can make your payment through your tenant portal: ${link}`;
+              const roomSuffix = tenant.rooms?.number ? ` for Room ${tenant.rooms.number}` : "";
+              const message = `Hi ${firstName(tenant.name)}, your rent of K${Number(plan.amount).toLocaleString()}${roomSuffix} is due on ${formatDisplayDate(plan.dueDate)}. You can make your payment through your tenant portal: ${link}`;
               if (await withinDailySmsCap(supabase, settings.property_id)) {
                 const sendResult = await sendSms(primary, message);
                 await supabase.from("sms_send_log").insert({ property_id: settings.property_id, recipient_phone: primary, category: "pre_due_reminder", status: sendResult.ok ? "sent" : "failed", message });

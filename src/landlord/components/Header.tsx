@@ -15,6 +15,9 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useSidebar } from "../SidebarContext";
 import { useSettings } from "../SettingsContext";
 import { useNotifications } from "../NotificationsContext";
+import { useAuth } from "../AuthContext";
+import { useAccess } from "../AccessContext";
+import { ROLE_LABELS } from "../permissions";
 import { signOut as signOutRequest } from "../../lib/auth";
 import { SUPPORT_PHONE_DISPLAY, SUPPORT_PHONE_TEL, SUPPORT_WHATSAPP_URL } from "../../lib/supportContact";
 import GlobalSearch from "./GlobalSearch";
@@ -52,9 +55,17 @@ function MenuLink({ to, icon, onClick, children }: { to: string; icon: React.Rea
  * above both the sidebar and the page content, rather than being boxed into the sidebar column. */
 export default function Header() {
   const { setOpen } = useSidebar();
-  const { propertyName, propertyLogoUrl, landlordName, accountEmail, subscriptionPlan } = useSettings();
+  const { propertyName, propertyLogoUrl, subscriptionPlan } = useSettings();
   const { unreadCount } = useNotifications();
+  const { user } = useAuth();
+  const { rows, active, isOwner, can, setActivePropertyId } = useAccess();
   const navigate = useNavigate();
+
+  // The signed-in person's own name — works the same for the owner and any team member, unlike
+  // landlordName/accountEmail (owner-only Settings fields that are blank for everyone else).
+  const personFullName = (user?.user_metadata as { full_name?: string } | undefined)?.full_name;
+  const personName = personFullName?.trim() || user?.email?.split("@")[0] || "Account";
+  const [propertySwitcherOpen, setPropertySwitcherOpen] = useState(false);
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchDraft, setSearchDraft] = useState("");
@@ -123,7 +134,7 @@ export default function Header() {
   };
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between border-b border-gray-200 bg-paper px-4 sm:px-6">
+    <header className="flex h-14 shrink-0 items-center justify-between border-b border-line bg-paper px-4 sm:px-6">
       <div className="flex items-center gap-3">
         <button
           type="button"
@@ -136,7 +147,7 @@ export default function Header() {
 
         <Link to="/dashboard" className="flex items-center gap-3">
           <img
-            src="https://rlmcuhejgfftcdshbrbe.supabase.co/storage/v1/object/public/Company%20assets/Instay%20Manage%20Logo.png"
+            src="https://rlmcuhejgfftcdshbrbe.supabase.co/storage/v1/object/public/Company%20assets/Instay_Manage_Logo-removebg-preview.png"
             alt="Instay Manage"
             className="h-9"
           />
@@ -229,7 +240,7 @@ export default function Header() {
                 <span className="truncate text-sm font-semibold text-ink">{propertyName || "Your property"}</span>
                 <TierBadge plan={subscriptionPlan} size="sm" />
               </span>
-              <span className="w-full truncate text-[11px] text-muted">{landlordName || "Landlord"}</span>
+              <span className="w-full truncate text-[11px] text-muted">{personName}</span>
             </span>
             <CaretDown
               size={12}
@@ -254,16 +265,58 @@ export default function Header() {
                       <p className="truncate text-sm font-semibold text-ink">{propertyName || "Your property"}</p>
                       <TierBadge plan={subscriptionPlan} size="sm" />
                     </div>
-                    <p className="truncate text-xs text-muted">{accountEmail || landlordName || "Property account"}</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="truncate text-xs text-muted">{personName}</p>
+                      {!isOwner && active && (
+                        <span className="shrink-0 rounded-md bg-mist px-1.5 py-0.5 text-[10px] font-semibold text-muted">
+                          {ROLE_LABELS[active.role] ?? active.role}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
+                {rows.length > 1 && (
+                  <div className="border-b border-line p-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setPropertySwitcherOpen((v) => !v)}
+                      className="flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-xs font-medium text-ink hover:bg-mist"
+                    >
+                      Switch property
+                      <CaretDown size={12} weight="bold" className={`transition-transform ${propertySwitcherOpen ? "rotate-180" : ""}`} />
+                    </button>
+                    {propertySwitcherOpen && (
+                      <div className="mt-0.5 space-y-0.5">
+                        {rows.map((r) => (
+                          <button
+                            key={r.property_id}
+                            type="button"
+                            onClick={() => {
+                              setActivePropertyId(r.property_id);
+                              setPropertySwitcherOpen(false);
+                              setAccountOpen(false);
+                            }}
+                            className={`flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-2 text-left text-xs hover:bg-mist ${
+                              r.property_id === active?.property_id ? "font-semibold text-ink" : "text-muted"
+                            }`}
+                          >
+                            <span className="truncate">{r.property_name}</span>
+                            <span className="shrink-0 text-[10px] text-muted">{r.is_owner ? "Owner" : ROLE_LABELS[r.role] ?? r.role}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="p-1.5">
                   <MenuLink to="/settings" icon={<GearSix size={16} weight="duotone" />} onClick={() => setAccountOpen(false)}>
                     Settings
                   </MenuLink>
-                  <MenuLink to="/online-payments" icon={<Wallet size={16} weight="duotone" />} onClick={() => setAccountOpen(false)}>
-                    Online payments
-                  </MenuLink>
+                  {(isOwner || can("payouts.view") || can("payouts.request") || can("payout_methods.manage")) && (
+                    <MenuLink to="/online-payments" icon={<Wallet size={16} weight="duotone" />} onClick={() => setAccountOpen(false)}>
+                      Online payments
+                    </MenuLink>
+                  )}
                   <MenuLink to="/notifications" icon={<BellIcon size={16} weight="duotone" />} onClick={() => setAccountOpen(false)}>
                     Notifications
                     {unreadCount > 0 && (

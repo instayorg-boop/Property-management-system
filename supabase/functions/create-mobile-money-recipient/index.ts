@@ -15,7 +15,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, handleOptions } from "../_shared/cors.ts";
-import { sendEmail } from "../_shared/email.ts";
+import { sendEmail, buildAlertEmailHtml } from "../_shared/email.ts";
 import { sha256Hex } from "../_shared/otpCrypto.ts";
 
 const PROVIDERS = ["mtn", "airtel", "zamtel"];
@@ -119,12 +119,10 @@ Deno.serve(async (req) => {
 
   const { data: settingsRow } = await supabase.from("settings").select("account_email").eq("property_id", propertyId).maybeSingle();
   if (settingsRow?.account_email) {
+    const subject = "A new payout method was added to your account";
+    const bodyText = `A ${provider.toUpperCase()} mobile money number ending in ${phoneNumber.slice(-4)} (${accountName}) was just added as a payout destination on your Instay account. If this wasn't you, remove it in Settings > Bank & payouts right away.`;
     try {
-      await sendEmail(
-        settingsRow.account_email,
-        "A new payout method was added to your account",
-        `A ${provider.toUpperCase()} mobile money number ending in ${phoneNumber.slice(-4)} (${accountName}) was just added as a payout destination on your Instay account. If this wasn't you, remove it in Settings > Bank & payouts right away.`
-      );
+      await sendEmail(settingsRow.account_email, subject, bodyText, buildAlertEmailHtml(subject, bodyText));
     } catch (err) {
       console.error("[create-mobile-money-recipient] failed to send security alert email", String(err));
     }

@@ -4,6 +4,59 @@ import { getOrCreateSettings, updateSettings, type SettingsRow } from "../lib/se
 import { readSettingsCache, writeSettingsCache, patchCachedProperty } from "../lib/offline/settingsCache";
 import { setLateFeeConfig, type LateFeeMode } from "./invoiceUtils";
 import { logAuditEvent } from "../lib/auditLog";
+import { useAccess } from "./AccessContext";
+import { supabase } from "../lib/supabaseClient";
+
+/** Non-owners can't select from `settings` directly (RLS). get_property_settings_safe returns a
+ * subset as jsonb, gated server-side on `tenants.view`. Pad the fields it omits (payroll/payout
+ * config an owner-only area anyway) so fromRow() below never sees `undefined`. */
+function safeRowToSettingsRow(propertyId: string, safe: Record<string, unknown>): SettingsRow {
+  return {
+    property_id: propertyId,
+    invoices_on: (safe.invoices_on as boolean) ?? false,
+    collection_target_pct: (safe.collection_target_pct as number) ?? 90,
+    landlord_name: "",
+    landlord_phone: "",
+    payment_methods: [],
+    management_fee_rate: 0,
+    billing_period: (safe.billing_period as string) ?? "Monthly",
+    due_day: (safe.due_day as number) ?? 1,
+    grace_period_days: (safe.grace_period_days as number) ?? 5,
+    daily_penalty_rate: (safe.daily_penalty_rate as number) ?? 15,
+    late_fee_enabled: (safe.late_fee_enabled as boolean) ?? false,
+    late_fee_mode: (safe.late_fee_mode as string) ?? "prorated_rent",
+    late_fee_percent: (safe.late_fee_percent as number) ?? 1,
+    late_fee_cap_enabled: (safe.late_fee_cap_enabled as boolean) ?? false,
+    late_fee_cap_amount: (safe.late_fee_cap_amount as number | null) ?? null,
+    reminder_lead_days: (safe.reminder_lead_days as number) ?? 3,
+    escalation_days: (safe.escalation_days as number) ?? 7,
+    contact_order: (safe.contact_order as string) ?? "student",
+    pre_due_reminders_enabled: (safe.pre_due_reminders_enabled as boolean) ?? true,
+    escalation_enabled: (safe.escalation_enabled as boolean) ?? true,
+    autopilot_enabled: (safe.autopilot_enabled as boolean) ?? false,
+    autopilot_config: safe.autopilot_config ?? null,
+    task_overdue_rent_enabled: true,
+    task_stale_maintenance_enabled: true,
+    task_collections_target_enabled: true,
+    notification_prefs: {},
+    notification_phone: "",
+    payment_sms_mode: (safe.payment_sms_mode as string) ?? "daily_digest",
+    sms_notification_prefs: {},
+    send_onboarding_sms: (safe.send_onboarding_sms as boolean) ?? true,
+    send_payment_receipt_sms: (safe.send_payment_receipt_sms as boolean) ?? true,
+    lenco_connected: false,
+    bank_name: "",
+    account_number: "",
+    account_holder_name: "",
+    payout_day: "Friday",
+    account_email: "",
+    subscription_plan: "",
+    subscription_renews_at: "",
+    napsa_insurable_earnings_ceiling: 0,
+    minimum_wage_reference: 0,
+    name_change_count: 0,
+  } as unknown as SettingsRow;
+}
 
 export type NotificationPrefs = {
   newPayment: boolean;
@@ -143,6 +196,16 @@ type SettingsContextValue = {
   sendPaymentReceiptSms: boolean;
   setSendPaymentReceiptSms: (v: boolean) => void;
 
+  // Reports and alerts (owner only) — IPM Phase 3.
+  reportWeeklyEnabled: boolean;
+  setReportWeeklyEnabled: (v: boolean) => void;
+  reportMonthlyEnabled: boolean;
+  setReportMonthlyEnabled: (v: boolean) => void;
+  opsSmsOwnerCopy: boolean;
+  setOpsSmsOwnerCopy: (v: boolean) => void;
+  payoutSmsEnabled: boolean;
+  setPayoutSmsEnabled: (v: boolean) => void;
+
   // Online payments (Lenco payout account)
   lencoConnected: boolean;
   setLencoConnected: (v: boolean) => void;
@@ -244,6 +307,10 @@ function fromRow(row: SettingsRow) {
     },
     sendOnboardingSms: row.send_onboarding_sms ?? true,
     sendPaymentReceiptSms: row.send_payment_receipt_sms ?? true,
+    reportWeeklyEnabled: row.report_weekly_enabled ?? false,
+    reportMonthlyEnabled: row.report_monthly_enabled ?? false,
+    opsSmsOwnerCopy: row.ops_sms_owner_copy ?? false,
+    payoutSmsEnabled: row.payout_sms_enabled ?? false,
     lencoConnected: row.lenco_connected,
     bankName: row.bank_name ?? "",
     accountNumber: row.account_number ?? "",
@@ -261,6 +328,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [propertyId, setPropertyId] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const { active, isOwner, isReady: accessReady } = useAccess();
 
   const [invoicesOn, setInvoicesOnState] = useState(false);
   const [collectionTargetPct, setCollectionTargetPctState] = useState(90);
@@ -303,6 +371,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [taskOverdueRentEnabled, setTaskOverdueRentEnabledState] = useState(true);
   const [taskStaleMaintenanceEnabled, setTaskStaleMaintenanceEnabledState] = useState(true);
   const [taskCollectionsTargetEnabled, setTaskCollectionsTargetEnabledState] = useState(true);
+  const [reportWeeklyEnabled, setReportWeeklyEnabledState] = useState(false);
+  const [reportMonthlyEnabled, setReportMonthlyEnabledState] = useState(false);
+  const [opsSmsOwnerCopy, setOpsSmsOwnerCopyState] = useState(false);
+  const [payoutSmsEnabled, setPayoutSmsEnabledState] = useState(false);
 
   const [notificationPrefs, setNotificationPrefsState] = useState<NotificationPrefs>({
     newPayment: true,
@@ -367,6 +439,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setSmsNotificationPrefsState(s.smsNotificationPrefs);
     setSendOnboardingSmsState(s.sendOnboardingSms);
     setSendPaymentReceiptSmsState(s.sendPaymentReceiptSms);
+    setReportWeeklyEnabledState(s.reportWeeklyEnabled);
+    setReportMonthlyEnabledState(s.reportMonthlyEnabled);
+    setOpsSmsOwnerCopyState(s.opsSmsOwnerCopy);
+    setPayoutSmsEnabledState(s.payoutSmsEnabled);
     setLencoConnectedState(s.lencoConnected);
     setBankNameState(s.bankName);
     setAccountNumberState(s.accountNumber);
@@ -396,6 +472,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
+    if (!accessReady) return;
 
     // propertyId gates every other context's fetch (Tenants, Rooms, Expenses, ...), so if this
     // never resolves — e.g. offline with no network call possible — nothing else in the app can
@@ -413,6 +490,53 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       applySettingsRow(cached.settingsRow as SettingsRow);
       setProperties(cached.properties);
       setIsReady(true);
+    }
+
+    // A non-owner team member can't select from `settings` (RLS); read the permitted subset via
+    // get_property_settings_safe instead, and skip getOrCreatePrimaryProperty/getOrCreateSettings
+    // entirely — both are owner-provisioning paths that would otherwise try to create rows for them.
+    if (!isOwner) {
+      if (!active) {
+        if (!cached) setIsReady(true);
+        return;
+      }
+      (async () => {
+        try {
+          const propertyId = active.property_id;
+          setPropertyId(propertyId);
+          setPropertyNameState(active.property_name);
+          setPropertyNameChangeCount(0);
+
+          // RLS lets any active member (not just the owner) select their property's row — only
+          // `settings` is owner-only — so the logo, address and slug can come from the real row
+          // instead of being left blank for team members.
+          const { data: propertyRow } = await supabase
+            .from("properties")
+            .select("address, address_lat, address_lng, property_type, slug, logo_url")
+            .eq("id", propertyId)
+            .maybeSingle();
+          if (cancelled) return;
+          setPropertyAddressState(propertyRow?.address ?? "");
+          setPropertyCoordsState({ lat: propertyRow?.address_lat ?? null, lng: propertyRow?.address_lng ?? null });
+          setPropertyTypeState(propertyRow?.property_type ?? "");
+          setPropertySlugState(propertyRow?.slug ?? "");
+          setPropertyLogoUrlState(propertyRow?.logo_url ?? null);
+
+          const { data: safe, error } = await supabase.rpc("get_property_settings_safe", { p_property: propertyId });
+          if (cancelled) return;
+          if (error) throw error;
+          if (safe) applySettingsRow(safeRowToSettingsRow(propertyId, safe as Record<string, unknown>));
+          setProperties([active.property_name]);
+          setIsReady(true);
+        } catch (e) {
+          if (cancelled) return;
+          if (!cached) setIsReady(true);
+          console.error("Failed to load settings for team member", e);
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
     }
 
     (async () => {
@@ -466,7 +590,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [accessReady, isOwner, active?.property_id]);
 
   const persist = (patch: Parameters<typeof updateSettings>[1]) => {
     if (!propertyId) return;
@@ -630,6 +754,22 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const setTaskCollectionsTargetEnabled = (v: boolean) => {
     setTaskCollectionsTargetEnabledState(v);
     persist({ task_collections_target_enabled: v });
+  };
+  const setReportWeeklyEnabled = (v: boolean) => {
+    setReportWeeklyEnabledState(v);
+    persist({ report_weekly_enabled: v });
+  };
+  const setReportMonthlyEnabled = (v: boolean) => {
+    setReportMonthlyEnabledState(v);
+    persist({ report_monthly_enabled: v });
+  };
+  const setOpsSmsOwnerCopy = (v: boolean) => {
+    setOpsSmsOwnerCopyState(v);
+    persist({ ops_sms_owner_copy: v });
+  };
+  const setPayoutSmsEnabled = (v: boolean) => {
+    setPayoutSmsEnabledState(v);
+    persist({ payout_sms_enabled: v });
   };
   const setLencoConnected = (v: boolean) => {
     setLencoConnectedState(v);
@@ -811,6 +951,14 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         setSendOnboardingSms,
         sendPaymentReceiptSms,
         setSendPaymentReceiptSms,
+        reportWeeklyEnabled,
+        setReportWeeklyEnabled,
+        reportMonthlyEnabled,
+        setReportMonthlyEnabled,
+        opsSmsOwnerCopy,
+        setOpsSmsOwnerCopy,
+        payoutSmsEnabled,
+        setPayoutSmsEnabled,
         lencoConnected,
         setLencoConnected,
         bankName,

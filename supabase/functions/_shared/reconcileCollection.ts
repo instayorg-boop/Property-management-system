@@ -258,5 +258,15 @@ export async function reconcileSuccessfulCollection(supabase: SupabaseClient, co
 
   // Fires after every branch above — each one has fully applied this payment's effect on
   // owed_amount by this point, so the balance in the receipt is always the real post-payment one.
-  await sendPaymentReceiptSms(supabase, supabase, collectionRow.tenant_id, rentPortion);
+  const receiptLabel = lineItems?.find((item) => item.label)?.label ?? "rent";
+  await sendPaymentReceiptSms(supabase, supabase, collectionRow.tenant_id, rentPortion, receiptLabel);
+
+  // Without this, the tenant's overdue_rent task only clears at the next sync-tasks-daily cron run
+  // (03:30), so "Needs your attention" could keep showing a tenant as overdue for up to a day after
+  // their payment already landed and shows up in Recent transactions. sync_tasks is idempotent and
+  // re-scans the whole property's detectors, so it's safe to call on every payment.
+  const { error: syncTasksError } = await supabase.rpc("sync_tasks", { p_property_id: collectionRow.property_id });
+  if (syncTasksError) {
+    console.error("[reconcileSuccessfulCollection] failed to resync tasks after payment", collectionRow.property_id, syncTasksError.message);
+  }
 }

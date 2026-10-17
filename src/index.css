@@ -37,6 +37,11 @@
   --color-ink: #212529;
   --color-paper: #ffffff;
   --color-mist: #f8f9fa;
+  /* The whole-page canvas behind cards/content — kept separate from --color-mist (the gray fill
+     used for hover states, input backgrounds, badges, skeletons) so the page itself can stay pure
+     white while those smaller surfaces keep their gray contrast. In dark mode this matches
+     --color-mist there (the darkest surface, correctly below --color-paper's card tone). */
+  --color-canvas: #ffffff;
   --color-line: #dde2ea;
   --color-muted: #6c757d;
   --color-brand: #1e3a8a;
@@ -95,7 +100,7 @@ html {
 }
 
 body {
-  background-color: var(--color-mist);
+  background-color: var(--color-canvas);
   color: var(--color-ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
@@ -139,9 +144,16 @@ body {
   --color-ink: #ececec;
   --color-paper: #232326;
   --color-mist: #18181b;
+  --color-canvas: #18181b;
   --color-line: #3a3a3d;
   --color-muted: #9a9a9f;
-  --color-brand-soft: rgba(30, 58, 138, 0.22);
+  /* The light-mode brand navy (#1e3a8a) was never overridden here, so every brand-blue accent —
+     sidebar active states, headings, primary buttons — rendered as the same dark, desaturated
+     navy against the near-black dark surface: it read as dull/washed-out rather than as an
+     accent. Brightened to the same blue already used for the dark chart ramp's first series
+     (--chart-series-1) below, so the two agree on what "brand blue" looks like on this surface. */
+  --color-brand: #3987e5;
+  --color-brand-soft: rgba(57, 135, 229, 0.18);
 
   /* Same 8 hues, stepped for the dark surface (#18181b) per the dataviz skill's dark-mode ramps. */
   --chart-series-1: #3987e5;
@@ -373,4 +385,40 @@ body {
 }
 .spinner-blade {
   animation: spinner-fade 1s linear infinite;
+}
+
+/* Report document print stylesheet — /report/:token and the in-app report view share this via
+ * ReportDocument.tsx. A4, 18mm margins, no app chrome, keep each heading with its table. */
+@media print {
+  @page {
+    size: A4;
+    margin: 18mm;
+  }
+  body * {
+    visibility: hidden;
+  }
+  #report-document,
+  #report-document * {
+    visibility: visible;
+  }
+  #report-document {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    max-width: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  .report-section,
+  .report-section table {
+    break-inside: avoid;
+  }
+  .report-heading {
+    break-after: avoid;
+  }
+  table thead tr {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
 }

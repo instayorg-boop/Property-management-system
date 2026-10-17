@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { signUp } from "../lib/auth";
+import { signUp, requestSignupOtp, verifySignupOtp } from "../lib/auth";
 import Button from "../landlord/components/Button";
 import LocationPicker, { type Location } from "../components/LocationPicker";
+import PhoneNumberInput from "../landlord/components/PhoneNumberInput";
 
 function GoogleIcon() {
   return (
@@ -40,9 +41,60 @@ export default function GetStarted() {
   const [loading, setLoading] = useState(false);
   const [checkEmail, setCheckEmail] = useState(false);
 
+  // Phone is verified here, at sign-up, rather than left for Settings > SMS later — otherwise
+  // nobody finds that page and the SMS alert number just stays blank. Once verified, the OTP step
+  // locks: changing the number afterwards starts verification over.
+  const [phone, setPhone] = useState("");
+  const [phoneVerified, setPhoneVerified] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
+  const [otpError, setOtpError] = useState<string | null>(null);
+  const [otpLoading, setOtpLoading] = useState(false);
+  const [devCode, setDevCode] = useState<string | null>(null);
+
+  const changePhone = (v: string) => {
+    setPhone(v);
+    setPhoneVerified(false);
+    setOtpSent(false);
+    setOtpCode("");
+    setOtpError(null);
+    setDevCode(null);
+  };
+
+  const sendOtp = async () => {
+    setOtpError(null);
+    setOtpLoading(true);
+    try {
+      const { devCode: code } = await requestSignupOtp(phone);
+      setOtpSent(true);
+      setDevCode(code ?? null);
+    } catch (err) {
+      setOtpError(err instanceof Error ? err.message : "Couldn't send a code. Try again.");
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  const confirmOtp = async () => {
+    setOtpError(null);
+    setOtpLoading(true);
+    try {
+      await verifySignupOtp(phone, otpCode);
+      setPhoneVerified(true);
+    } catch (err) {
+      setOtpError(err instanceof Error ? err.message : "Incorrect code.");
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
   const next = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    if (!phoneVerified) {
+      setError("Verify your phone number to continue.");
+      return;
+    }
     setStep(2);
   };
 
@@ -58,6 +110,7 @@ export default function GetStarted() {
         propertyName,
         loc.address.trim(),
         loc.lat != null && loc.lng != null ? { lat: loc.lat, lng: loc.lng } : null,
+        phone,
       );
       if (result.session) {
         navigate("/dashboard", { replace: true });
@@ -144,6 +197,62 @@ export default function GetStarted() {
                     <div>
                       <label htmlFor="password" className={label}>Password</label>
                       <input id="password" type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 8 characters" className={input} />
+                    </div>
+                    <div>
+                      <label htmlFor="phone" className={label}>Phone number</label>
+                      <div className="flex gap-2">
+                        <div className="flex-1">
+                          <PhoneNumberInput value={phone} onChange={changePhone} />
+                        </div>
+                        {!phoneVerified && (
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="md"
+                            disabled={!phone.trim() || otpLoading}
+                            onClick={sendOtp}
+                            className="shrink-0 rounded-md px-3 text-[13px] font-medium disabled:opacity-60"
+                          >
+                            {otpLoading && !otpSent ? "Sending…" : otpSent ? "Resend" : "Send code"}
+                          </Button>
+                        )}
+                      </div>
+                      <p className="mt-1 text-[12px] text-muted">
+                        We'll text a code to confirm it's yours — this becomes your SMS alert number.
+                      </p>
+
+                      {phoneVerified ? (
+                        <p className="mt-2 flex items-center gap-1 text-[13px] font-medium text-emerald-600">
+                          ✓ Phone verified
+                        </p>
+                      ) : otpSent ? (
+                        <div className="mt-2 flex gap-2">
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            maxLength={6}
+                            value={otpCode}
+                            onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
+                            placeholder="6-digit code"
+                            className={`${input} flex-1`}
+                          />
+                          <Button
+                            type="button"
+                            variant="primary"
+                            size="md"
+                            disabled={otpCode.length !== 6 || otpLoading}
+                            onClick={confirmOtp}
+                            className="shrink-0 rounded-md bg-brand px-4 text-[13px] font-medium text-paper disabled:opacity-60"
+                          >
+                            {otpLoading ? "Checking…" : "Verify"}
+                          </Button>
+                        </div>
+                      ) : null}
+
+                      {devCode && !phoneVerified && (
+                        <p className="mt-1 text-[12px] text-amber-600">Dev mode — code is {devCode}</p>
+                      )}
+                      {otpError && <p className="mt-1 text-[12px] font-medium text-red-600">{otpError}</p>}
                     </div>
                     <Button type="submit" variant="primary" size="md" className="w-full rounded-md bg-brand py-2 text-[14px] font-medium text-paper transition-transform hover:scale-[1.01]">
                       Continue

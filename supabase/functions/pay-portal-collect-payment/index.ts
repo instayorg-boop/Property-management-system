@@ -230,6 +230,46 @@ Deno.serve(async (req) => {
     lineItems.push({ id: entry.id, label: entry.label, amount: applied });
     remaining = round2(remaining - applied);
   }
+  // Manual charges the landlord adds (event_type "adjustment", a positive one-off amount, see
+  // TenantsContext.tsx addAdjustment) raise owed_amount but never get a legacy status, so the loop above never
+  // finds them, and any payment that was really settling one of these used to fall straight into
+  // the generic "Rent paid in advance" line below with no sign it was ever for that charge. Same
+  // FIFO idea as above, just against adjustment/credit rows instead of status-tracked ones, and
+  // "already settled" is whether this row's id shows up in any of this tenant's own past
+  // successful collections (adjustments have no paid_amount to check partial progress against, so
+  // this is all-or-nothing per row rather than true partial allocation).
+  if (remaining > 0) {
+    const { data: adjustmentEntries } = await supabase
+      .from("ledger_entries")
+      .select("id, label, amount, created_at")
+      .eq("tenant_id", tenantId)
+      .in("event_type", ["adjustment", "credit"])
+      .gt("amount", 0)
+      .eq("affects_balance", true)
+      .is("voided_at", null)
+      .order("created_at", { ascending: true });
+
+    if (adjustmentEntries && adjustmentEntries.length > 0) {
+      const { data: pastCollections } = await supabase
+        .from("collections")
+        .select("line_items")
+        .eq("tenant_id", tenantId)
+        .eq("status", "successful");
+      const alreadySettledIds = new Set(
+        (pastCollections ?? []).flatMap((c: { line_items: unknown }) =>
+          Array.isArray(c.line_items) ? (c.line_items as { id: string | null }[]).map((item) => item.id) : []
+        )
+      );
+      for (const entry of adjustmentEntries) {
+        if (remaining <= 0) break;
+        if (alreadySettledIds.has(entry.id)) continue;
+        const applied = Math.min(Number(entry.amount), remaining);
+        lineItems.push({ id: entry.id, label: entry.label, amount: applied });
+        remaining = round2(remaining - applied);
+      }
+    }
+  }
+
   if (remaining > 0) {
     lineItems.push({ id: null, label: "Rent paid in advance", amount: remaining });
   }

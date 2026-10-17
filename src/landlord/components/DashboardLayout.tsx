@@ -18,6 +18,7 @@ import { AssistantUiProvider } from "../AssistantUiContext";
 import SyncToast from "./SyncToast";
 import { SyncStatusBadge } from "./SyncStatus";
 import AssistantPanel from "../../components/AssistantPanel";
+import ProductTour from "./ProductTour";
 import { SkeletonPage } from "./Skeleton";
 
 function Shell() {
@@ -32,7 +33,7 @@ function Shell() {
   }, [location.pathname]);
 
   return (
-    <div className={`flex h-screen flex-col overflow-hidden ${isDark ? "theme-dark" : ""}`}>
+    <div className={`flex h-dvh flex-col overflow-hidden ${isDark ? "theme-dark" : ""}`}>
       {/* Full-width header spans the whole viewport, above both the sidebar and the content —
           logo, search and account all live here rather than being boxed into the sidebar column. */}
       <Header />
@@ -51,7 +52,8 @@ function Shell() {
             (including anything mid-animation, like the Settings tab bar's sliding underline). */}
         <main
           ref={mainRef}
-          className="flex-1 overflow-y-auto bg-mist"
+          data-tour="tour-content"
+          className="flex-1 overflow-y-auto bg-canvas"
           style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)", scrollbarGutter: "stable" }}
         >
           {/*
@@ -83,6 +85,10 @@ function Shell() {
           trigger is visible at every width now that there's no bottom tab bar reserving that
           corner's real estate for a "Chat" tab. */}
       <AssistantPanel />
+      {/* Mounted once here, not per page, so the sidebar's data-tour targets (nav-rent,
+          nav-tenants, etc.) are always present in the DOM regardless of which page the tour
+          started on or navigates to next. */}
+      <ProductTour />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useTheme } from "../ThemeContext";
 import {
   X as CloseIcon,
   Archive,
@@ -124,6 +125,7 @@ export default function Modal({
   const cardRef = useRef<HTMLDivElement>(null);
   const downOnBackdrop = useRef(false);
   const isDesktop = useIsDesktop();
+  const { isDark } = useTheme();
   const autoIcon = headerIcon(title ?? "");
 
   const sizeKey = LEGACY[maxWidth] ?? (maxWidth in SIZE ? maxWidth : null);
@@ -170,7 +172,7 @@ export default function Modal({
   // animation), since a transformed ancestor becomes the containing block for its fixed descendants.
   return createPortal(
     <div
-      className={`fixed inset-0 z-50 flex ${centeredOnMobile ? "items-center justify-center p-5 md:p-6" : "flex-col md:items-center md:justify-center md:p-6"}`}
+      className={`fixed inset-0 z-50 flex ${isDark ? "theme-dark" : ""} ${centeredOnMobile ? "items-center justify-center p-5 md:p-6" : "flex-col md:items-center md:justify-center md:p-6"}`}
     >
       <motion.div
         initial={{ opacity: 0 }}

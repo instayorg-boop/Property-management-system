@@ -1,0 +1,1362 @@
+﻿import { useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { AnimatePresence, motion } from "framer-motion";
+
+import PageHeader from "../components/PageHeader";
+import MonthSwitcher from "../components/MonthSwitcher";
+import Modal from "../components/Modal";
+import ExpenseFormDrawer from "../components/ExpenseFormDrawer";
+import Lightbox from "../components/Lightbox";
+
+import {
+  useExpenses,
+  type Expense,
+  type Category,
+} from "../ExpensesContext";
+import { useSettings } from "../SettingsContext";
+import { supabase } from "../../lib/supabaseClient";
+
+import {
+  Paperclip,
+  GearSix,
+  DownloadSimple,
+  Plus,
+  Tag,
+  PencilSimple,
+  Trash,
+  ArrowCounterClockwise,
+  Archive,
+  Sparkle,
+  Check,
+  X as XIcon,
+  Receipt,
+} from "@phosphor-icons/react";
+
+import { Skeleton, SkeletonRow } from "../components/Skeleton";
+import Button from "../components/Button";
+import Select from "../components/Select";
+import SearchInput from "../components/SearchInput";
+import Pagination, { DEFAULT_PAGE_SIZE } from "../components/Pagination";
+import { TableCard, TableCardHeader, DataTable, DataTableHead, DataTableBody, Th, Td } from "../components/DataTable";
+import { useToast } from "../ToastContext";
+
+
+import Expensephoto from "../../assets/Expenses Empty State Ui.png";
+
+/* -------------------------------------------------------------------------- */
+/* Constants                                                                  */
+/* -------------------------------------------------------------------------- */
+
+const SUGGESTED_CATEGORIES = [
+  "Utilities",
+  "Repairs",
+  "HOA Fees",
+  "Insurance",
+  "Property Taxes",
+  "Management Fees",
+  "Advertising",
+  "Cleaning",
+  "Landscaping",
+  "Pest Control",
+];
+
+const CATEGORY_BADGE_COLORS = [
+  "bg-blue-50 text-blue-600",
+  "bg-orange-50 text-orange-600",
+  "bg-emerald-50 text-emerald-600",
+  "bg-amber-50 text-amber-600",
+  "bg-pink-50 text-pink-600",
+  "bg-teal-50 text-teal-600",
+  "bg-violet-50 text-violet-600",
+  "bg-red-50 text-red-600",
+];
+
+const CATEGORY_DOT_COLORS = [
+  "bg-blue-500",
+  "bg-orange-500",
+  "bg-emerald-500",
+  "bg-amber-500",
+  "bg-pink-500",
+  "bg-teal-500",
+  "bg-violet-500",
+  "bg-red-500",
+];
+
+/* -------------------------------------------------------------------------- */
+/* Helpers                                                                    */
+/* -------------------------------------------------------------------------- */
+
+function categoryColorIndex(
+  categories: Category[],
+  categoryId: string
+): number {
+  const index = categories.findIndex((c) => c.id === categoryId);
+
+  return index >= 0
+    ? index % CATEGORY_BADGE_COLORS.length
+    : 0;
+}
+
+function categoryBadgeStyle(categories: Category[], categoryId: string): string {
+  return CATEGORY_BADGE_COLORS[categoryColorIndex(categories, categoryId)];
+}
+
+function categoryDotStyle(
+  categories: Category[],
+  categoryId: string
+): string {
+  return CATEGORY_DOT_COLORS[
+    categoryColorIndex(categories, categoryId)
+  ];
+}
+
+function formatK(n: number) {
+  return `K${n.toLocaleString()}`;
+}
+
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function monthLabel(date: Date) {
+  return date.toLocaleDateString("en-GB", {
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function isInMonth(iso: string, label: string) {
+  return monthLabel(new Date(iso)) === label;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Small icons                                                                */
+/* -------------------------------------------------------------------------- */
+
+function PaperclipIcon() {
+  return (
+    <Paperclip
+      size={14}
+      weight="duotone"
+    />
+  );
+}
+
+function SettingsIcon() {
+  return (
+    <GearSix
+      size={16}
+      weight="duotone"
+    />
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Animated value                                                             */
+/* -------------------------------------------------------------------------- */
+
+function AnimatedValue({
+  value,
+}: {
+  value: string;
+}) {
+  return (
+    <AnimatePresence mode="wait">
+      <motion.span
+        key={value}
+        initial={{
+          opacity: 0,
+          y: -4,
+        }}
+        animate={{
+          opacity: 1,
+          y: 0,
+        }}
+        exit={{
+          opacity: 0,
+          y: 4,
+        }}
+        transition={{
+          duration: 0.18,
+          ease: [0.22, 1, 0.36, 1],
+        }}
+        className="inline-block"
+      >
+        {value}
+      </motion.span>
+    </AnimatePresence>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Category management                                                        */
+/* -------------------------------------------------------------------------- */
+
+function SuggestionChip({
+  name,
+  onAdd,
+  disabled,
+}: {
+  name: string;
+  onAdd: () => void;
+  disabled: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onAdd}
+      disabled={disabled}
+      className={`flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm font-medium transition active:scale-95 ${
+        disabled
+          ? "cursor-default border-line bg-mist text-muted"
+          : "border-line bg-paper text-ink hover:border-brand hover:bg-brand-soft hover:text-brand"
+      }`}
+    >
+      {disabled ? (
+        <Check
+          size={14}
+          weight="bold"
+        />
+      ) : (
+        <Plus
+          size={14}
+          weight="bold"
+        />
+      )}
+
+      {name}
+    </button>
+  );
+}
+
+function CategoriesEmptyState({
+  existingNames,
+  onAdd,
+}: {
+  existingNames: string[];
+  onAdd: (name: string) => void;
+}) {
+  const existing = new Set(
+    existingNames.map((n) => n.toLowerCase())
+  );
+
+  return (
+    <div className="flex flex-col items-center gap-5 py-8 text-center">
+      <span className="flex h-14 w-14 items-center justify-center rounded-full bg-brand-soft text-brand">
+        <Tag
+          size={26}
+          weight="duotone"
+        />
+      </span>
+
+      <div className="max-w-xs">
+        <p className="font-display text-lg font-semibold tracking-tight text-ink">
+          Organize your property expenses
+        </p>
+
+        <p className="mt-1.5 text-sm text-muted">
+          Labels help you track cash flow and simplify tax season —
+          group repairs, bills, and fees so you always know where the
+          money's going.
+        </p>
+      </div>
+
+      <div className="w-full">
+        <p className="mb-2.5 flex items-center justify-center gap-1.5 text-xs font-medium text-muted">
+          <Sparkle
+            size={13}
+            weight="fill"
+            className="text-brand"
+          />
+          Smart suggestions
+        </p>
+
+        <div className="flex flex-wrap justify-center gap-2">
+          {SUGGESTED_CATEGORIES.map((name) => (
+            <SuggestionChip
+              key={name}
+              name={name}
+              disabled={existing.has(name.toLowerCase())}
+              onAdd={() => onAdd(name)}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CategoryRow({
+  category,
+  badgeClassName,
+  count,
+  inUse,
+  isRenaming,
+  renameValue,
+  onRenameValueChange,
+  onStartRename,
+  onCommitRename,
+  onCancelRename,
+  onToggleActive,
+  onRequestDelete,
+}: {
+  category: Category;
+  badgeClassName: string;
+  count: number;
+  inUse: boolean;
+  isRenaming: boolean;
+  renameValue: string;
+  onRenameValueChange: (v: string) => void;
+  onStartRename: () => void;
+  onCommitRename: () => void;
+  onCancelRename: () => void;
+  onToggleActive: () => void;
+  onRequestDelete: () => void;
+}) {
+  const iconBtn =
+    "flex h-8 w-8 items-center justify-center rounded-lg border border-line text-muted transition-colors hover:bg-mist hover:text-ink";
+  return (
+    <div className="flex items-center gap-3 px-4 py-3">
+      <div className="min-w-0 flex-1">
+        {isRenaming ? (
+          <input
+            autoFocus
+            value={renameValue}
+            onChange={(e) => onRenameValueChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && renameValue.trim()) onCommitRename();
+              if (e.key === "Escape") onCancelRename();
+            }}
+            onBlur={() => (renameValue.trim() ? onCommitRename() : onCancelRename())}
+            className="w-full rounded-lg border border-line bg-paper px-2.5 py-1.5 text-sm outline-none focus:border-brand"
+          />
+        ) : (
+          <div className="flex items-center gap-2.5">
+            <span
+              className={`inline-flex max-w-full items-center truncate rounded-md px-2 py-0.5 text-xs font-semibold whitespace-nowrap ${
+                category.active ? badgeClassName : "bg-mist text-muted"
+              }`}
+            >
+              {category.name}
+            </span>
+            <span className="shrink-0 text-xs text-muted">
+              {count === 0 ? "Not used yet" : `${count} expense${count === 1 ? "" : "s"}`}
+            </span>
+          </div>
+        )}
+      </div>
+
+      <div className="flex shrink-0 items-center gap-1.5">
+        <button type="button" onClick={onStartRename} aria-label={`Rename ${category.name}`} title="Rename" className={iconBtn}>
+          <PencilSimple size={16} />
+        </button>
+
+        <button
+          type="button"
+          onClick={onToggleActive}
+          aria-label={`${category.active ? "Archive" : "Restore"} ${category.name}`}
+          title={category.active ? "Archive: hides it from new expenses, keeps past ones" : "Restore to active categories"}
+          className={iconBtn}
+        >
+          {category.active ? <Archive size={16} /> : <ArrowCounterClockwise size={16} />}
+        </button>
+
+        <button
+          type="button"
+          onClick={onRequestDelete}
+          disabled={inUse}
+          aria-label={`Delete ${category.name}`}
+          title={inUse ? "Used on existing expenses, archive it instead" : "Delete permanently"}
+          className="flex h-8 w-8 items-center justify-center rounded-lg border border-line text-muted transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-line disabled:hover:bg-transparent disabled:hover:text-muted"
+        >
+          <Trash size={16} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ManageCategoriesModal({
+  onClose,
+}: {
+  onClose: () => void;
+}) {
+  const {
+    categories,
+    expenses,
+    addCategory,
+    renameCategory,
+    setCategoryActive,
+    deleteCategory,
+  } = useExpenses();
+
+  const { showToast } = useToast();
+
+  const [query, setQuery] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState("");
+
+  const [renamingId, setRenamingId] =
+    useState<string | null>(null);
+
+  const [renameValue, setRenameValue] = useState("");
+
+  const [deletingCategory, setDeletingCategory] =
+    useState<Category | null>(null);
+
+  const usageCount = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    for (const expense of expenses) {
+      counts.set(
+        expense.categoryId,
+        (counts.get(expense.categoryId) ?? 0) + 1
+      );
+    }
+
+    return counts;
+  }, [expenses]);
+
+  const addAndAnnounce = (name: string) => {
+    const trimmed = name.trim();
+
+    if (!trimmed) return;
+
+    if (
+      categories.some(
+        (c) =>
+          c.name.toLowerCase() ===
+          trimmed.toLowerCase()
+      )
+    ) {
+      showToast(
+        `${trimmed} is already a category`,
+        "info"
+      );
+
+      return;
+    }
+
+    addCategory(trimmed);
+
+    showToast(`${trimmed} added`, "success");
+  };
+
+  const submitNew = () => {
+    if (!newName.trim()) return;
+
+    addAndAnnounce(newName);
+
+    setNewName("");
+    setAdding(false);
+  };
+
+  const commitRename = () => {
+    if (
+      renamingId &&
+      renameValue.trim()
+    ) {
+      renameCategory(
+        renamingId,
+        renameValue.trim()
+      );
+    }
+
+    setRenamingId(null);
+  };
+
+  const filtered = categories.filter((c) =>
+    c.name
+      .toLowerCase()
+      .includes(query.toLowerCase())
+  );
+
+  const activeCategories =
+    filtered.filter((c) => c.active);
+
+  const archivedCategories =
+    filtered.filter((c) => !c.active);
+
+  const rowProps = (c: Category) => ({
+    category: c,
+    badgeClassName: categoryBadgeStyle(categories, c.id),
+    count: usageCount.get(c.id) ?? 0,
+    inUse:
+      (usageCount.get(c.id) ?? 0) > 0,
+    isRenaming: renamingId === c.id,
+    renameValue,
+    onRenameValueChange: setRenameValue,
+
+    onStartRename: () => {
+      setRenamingId(c.id);
+      setRenameValue(c.name);
+    },
+
+    onCommitRename: commitRename,
+
+    onCancelRename: () =>
+      setRenamingId(null),
+
+    onToggleActive: () =>
+      setCategoryActive(
+        c.id,
+        !c.active
+      ),
+
+    onRequestDelete: () =>
+      setDeletingCategory(c),
+  });
+
+  return (
+    <Modal
+      onClose={onClose}
+      title="Categories"
+      description="How your expenses are grouped."
+      maxWidth="max-w-md"
+      footer={
+        categories.length > 0 ? (
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs text-muted">Archive keeps past expenses and hides it from new ones.</p>
+            <Button variant="primary" className="shrink-0 gap-1.5" onClick={() => setAdding(true)}>
+              <Plus size={14} weight="bold" />
+              Add category
+            </Button>
+          </div>
+        ) : undefined
+      }
+    >
+      {categories.length === 0 ? (
+        <CategoriesEmptyState
+          existingNames={[]}
+          onAdd={addAndAnnounce}
+        />
+      ) : (
+        <>
+          <SearchInput value={query} onChange={setQuery} placeholder="Search categories" className="w-full" />
+
+          {adding && (
+            <div className="mt-3 flex items-center gap-2 rounded-lg border border-brand/30 bg-brand-soft/40 p-2.5">
+              <input
+                autoFocus
+                value={newName}
+                onChange={(e) =>
+                  setNewName(e.target.value)
+                }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    submitNew();
+                  }
+
+                  if (e.key === "Escape") {
+                    setAdding(false);
+                    setNewName("");
+                  }
+                }}
+                placeholder="e.g. Landscaping"
+                className="flex-1 rounded-lg border border-transparent bg-mist px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand/30"
+              />
+
+              <Button
+                variant="primary"
+                className="shrink-0"
+                disabled={!newName.trim()}
+                onClick={submitNew}
+              >
+                Add
+              </Button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setAdding(false);
+                  setNewName("");
+                }}
+                aria-label="Cancel"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted transition active:scale-90 hover:bg-mist hover:text-ink"
+              >
+                <XIcon size={16} />
+              </button>
+            </div>
+          )}
+
+          {filtered.length === 0 ? (
+            <p className="mt-6 py-6 text-center text-sm text-muted">
+              No categories match "{query}".
+            </p>
+          ) : (
+            <div className="mt-4 h-[320px] space-y-5 overflow-y-auto pr-0.5">
+              {activeCategories.length > 0 && (
+                <div className="divide-y divide-line rounded-lg border border-line">
+                  {activeCategories.map((c) => (
+                    <CategoryRow key={c.id} {...rowProps(c)} />
+                  ))}
+                </div>
+              )}
+
+              {archivedCategories.length > 0 && (
+                <div>
+                  <p className="mb-2 text-[10.5px] font-bold uppercase tracking-[0.08em] text-muted">
+                    Archived ({archivedCategories.length})
+                  </p>
+                  <div className="divide-y divide-line rounded-lg border border-line">
+                    {archivedCategories.map((c) => (
+                      <CategoryRow key={c.id} {...rowProps(c)} />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {deletingCategory && (
+        <Modal
+          onClose={() =>
+            setDeletingCategory(null)
+          }
+          maxWidth="max-w-sm"
+          title="Delete category?"
+          footer={
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  setDeletingCategory(null)
+                }
+              >
+                Cancel
+              </Button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  deleteCategory(
+                    deletingCategory.id
+                  );
+
+                  showToast(
+                    `${deletingCategory.name} deleted`,
+                    "success"
+                  );
+
+                  setDeletingCategory(null);
+                }}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-paper transition-colors hover:bg-red-700"
+              >
+                Delete
+              </button>
+            </div>
+          }
+        >
+          <p className="text-sm text-muted">
+            This will permanently remove{" "}
+            <span className="font-medium text-ink">
+              {deletingCategory.name}
+            </span>
+            . This can't be undone.
+          </p>
+        </Modal>
+      )}
+    </Modal>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Accounting page                                                            */
+/* -------------------------------------------------------------------------- */
+
+export default function Accounting() {
+  const {
+    expenses,
+    categories,
+    categoryName,
+    isReady,
+    deleteExpense,
+  } = useExpenses();
+
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { propertyId } = useSettings();
+
+  // Who recorded each expense — fetched once per property so expense rows with a `created_by`
+  // can show "Recorded by X" (pre-existing rows have no created_by and show nothing).
+  const [peopleById, setPeopleById] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    if (!propertyId) return;
+    let cancelled = false;
+    supabase
+      .rpc("property_people", { p_property: propertyId })
+      .then(({ data, error }) => {
+        if (cancelled || error || !data) return;
+        const map = new Map<string, string>();
+        for (const person of data as { user_id: string; full_name: string; status: string }[]) {
+          map.set(person.user_id, person.status === "revoked" ? `${person.full_name} (removed)` : person.full_name);
+        }
+        setPeopleById(map);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [propertyId]);
+
+  const [monthOffset, setMonthOffset] =
+    useState(0);
+
+  const monthDate = useMemo(() => {
+    const d = new Date();
+
+    d.setDate(1);
+    d.setMonth(
+      d.getMonth() + monthOffset
+    );
+
+    return d;
+  }, [monthOffset]);
+
+  const month = monthLabel(monthDate);
+
+  const [query, setQuery] =
+    useState("");
+
+  // Deep-linked here from elsewhere (the dashboard's expense-breakdown donut links a category
+  // straight into its filtered list) — same idea as expensePrefill below, read once on mount.
+  const [categoryFilter, setCategoryFilter] = useState<string>(
+    () => (location.state as { categoryFilter?: string } | null)?.categoryFilter ?? "all"
+  );
+
+  const [page, setPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(DEFAULT_PAGE_SIZE);
+
+  const [showForm, setShowForm] =
+    useState(false);
+
+  // Picked up when the global Create launcher (Header.tsx) navigates here with ?action=add-expense
+  // instead of clicking this page's own "+ Add expense" button — cleared immediately after so a
+  // refresh or back/forward doesn't reopen the form.
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get("action") === "add-expense") {
+      setEditing(null);
+      setPrefill(undefined);
+      setShowForm(true);
+      navigate(location.pathname, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search]);
+
+  const [editing, setEditing] =
+    useState<Expense | null>(null);
+
+  const [prefill, setPrefill] =
+    useState<
+      Partial<
+        Pick<
+          Expense,
+          "name" |
+            "description" |
+            "categoryId"
+        >
+      >
+    >();
+
+  const [showCategories, setShowCategories] =
+    useState(false);
+
+  const [viewingReceipt, setViewingReceipt] =
+    useState<string | null>(null);
+
+  const [deletingExpense, setDeletingExpense] =
+    useState<Expense | null>(null);
+
+  /* ---------------------------------------------------------------------- */
+  /* Maintenance → Add expense prefill                                     */
+  /* ---------------------------------------------------------------------- */
+
+  useEffect(() => {
+    const state = location.state as {
+      expensePrefill?: typeof prefill;
+      categoryFilter?: string;
+    } | null;
+
+    if (state?.expensePrefill) {
+      setEditing(null);
+      setPrefill(
+        state.expensePrefill
+      );
+      setShowForm(true);
+    }
+
+    // Either kind of incoming state is one-shot — already applied (categoryFilter read straight
+    // into useState's initializer above, expensePrefill just above) — so it's cleared the same way
+    // either way, or a back-navigation / refresh would silently re-apply it.
+    if (state?.expensePrefill || state?.categoryFilter) {
+      navigate(location.pathname, {
+        replace: true,
+        state: null,
+      });
+    }
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
+
+  /* ---------------------------------------------------------------------- */
+  /* Month data                                                              */
+  /* ---------------------------------------------------------------------- */
+
+  const monthExpenses = useMemo(
+    () =>
+      expenses.filter((e) =>
+        isInMonth(e.date, month)
+      ),
+    [expenses, month]
+  );
+
+  /* ---------------------------------------------------------------------- */
+  /* Search + filters                                                        */
+  /* ---------------------------------------------------------------------- */
+
+  const filtered = useMemo(() => {
+    return monthExpenses
+      .filter(
+        (e) =>
+          categoryFilter === "all" ||
+          e.categoryId === categoryFilter
+      )
+      .filter((e) => {
+        const search =
+          query.toLowerCase();
+
+        return (
+          e.name
+            .toLowerCase()
+            .includes(search) ||
+          (e.description ?? "")
+            .toLowerCase()
+            .includes(search)
+        );
+      })
+      .sort((a, b) =>
+        a.date < b.date ? 1 : -1
+      );
+  }, [
+    monthExpenses,
+    categoryFilter,
+    query,
+  ]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
+  const currentPage = Math.min(page, pageCount);
+  const pageRows = filtered.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
+
+  // The intro/empty illustration is only for a landlord who has never logged an expense. An empty
+  // month for someone with history still shows the normal page (stats, filters, month picker).
+  const hasExpenses =
+    expenses.length > 0;
+
+  /* ---------------------------------------------------------------------- */
+  /* Metrics                                                                 */
+  /* ---------------------------------------------------------------------- */
+
+  const total = useMemo(
+    () =>
+      monthExpenses.reduce(
+        (sum, e) =>
+          sum + e.amount,
+        0
+      ),
+    [monthExpenses]
+  );
+
+  const byCategory = useMemo(() => {
+    return categories
+      .map((c) => ({
+        category: c,
+        total: monthExpenses
+          .filter(
+            (e) =>
+              e.categoryId === c.id
+          )
+          .reduce(
+            (sum, e) =>
+              sum + e.amount,
+            0
+          ),
+      }))
+      .filter(
+        (c) =>
+          c.category.active ||
+          c.total > 0
+      )
+      .sort(
+        (a, b) =>
+          b.total - a.total
+      );
+  }, [
+    categories,
+    monthExpenses,
+  ]);
+
+  const prevMonthLabel = useMemo(() => {
+    const d = new Date(monthDate);
+    d.setMonth(d.getMonth() - 1);
+    return monthLabel(d);
+  }, [monthDate]);
+
+  const prevMonthTotal = useMemo(
+    () =>
+      expenses
+        .filter((e) => isInMonth(e.date, prevMonthLabel))
+        .reduce((sum, e) => sum + e.amount, 0),
+    [expenses, prevMonthLabel]
+  );
+
+  // null when there's nothing to compare against yet (no spend last month) — a 0% or
+  // fabricated-looking delta would be misleading, so the UI just omits the trend chip then.
+  const trendPct =
+    prevMonthTotal > 0
+      ? ((total - prevMonthTotal) / prevMonthTotal) * 100
+      : null;
+
+  /* ---------------------------------------------------------------------- */
+  /* Page                                                                    */
+  /* ---------------------------------------------------------------------- */
+
+  const openNew = () => {
+    setEditing(null);
+    setPrefill(undefined);
+    setShowForm(true);
+  };
+
+  const categoryOptions = [
+    { value: "all", label: "All categories" },
+    ...byCategory.map(({ category }) => ({ value: category.id, label: category.name })),
+  ];
+
+  return (
+    <>
+      <PageHeader
+        title="Expenses"
+        description="Everything you spend on your property: log costs, attach receipts and see where the money goes by category."
+        actions={
+          <Button variant="primary" className="gap-1.5" onClick={openNew}>
+            <Plus size={14} weight="bold" />
+            Add expense
+          </Button>
+        }
+      />
+
+      <div className="space-y-6 px-4 pb-10 sm:px-8">
+
+        {!isReady || hasExpenses ? (
+          <>
+            {/* Month + actions */}
+            <div className="flex flex-wrap items-center gap-3">
+              <MonthSwitcher
+                month={month}
+                monthOffset={monthOffset}
+                onPrev={() => {
+                  setMonthOffset((o) => o - 1);
+                  setPage(1);
+                }}
+                onNext={() => {
+                  setMonthOffset((o) => Math.min(0, o + 1));
+                  setPage(1);
+                }}
+                onJumpToNow={() => {
+                  setMonthOffset(0);
+                  setPage(1);
+                }}
+              />
+
+              <div className="ml-auto flex items-center gap-2">
+                {hasExpenses && (
+                  <Button
+                    variant="secondary"
+                    className="gap-1.5"
+                    onClick={() => navigate("/reports/income-expenses/generate")}
+                  >
+                    <DownloadSimple size={14} weight="bold" />
+                    Export
+                  </Button>
+                )}
+                <Button variant="secondary" className="gap-1.5" onClick={() => setShowCategories(true)}>
+                  <SettingsIcon />
+                  Categories
+                </Button>
+              </div>
+
+            </div>
+
+            {/* Total + category bar */}
+            <div key={`total-${month}`} className="pay-step">
+              {!isReady ? (
+                <div className="space-y-3">
+                  <Skeleton className="h-3 w-28" />
+                  <Skeleton className="h-10 w-48" />
+                  <Skeleton className="h-2 w-full" />
+                </div>
+              ) : (
+                <>
+                  <p className="text-[13px] text-muted">Spent in {month}</p>
+                  <p className="mt-1 font-display text-[44px] font-bold leading-[1.1] tracking-[-0.02em] text-ink">
+                    <AnimatedValue value={formatK(total)} />
+                  </p>
+                  {trendPct !== null && trendPct !== 0 && (
+                    <p className="mt-1.5 text-[13px] text-muted">
+                      {Math.abs(trendPct).toFixed(0)}% {trendPct > 0 ? "more" : "less"} than last month
+                    </p>
+                  )}
+
+                  {total > 0 && (
+                    <>
+                      <div className="mt-5 flex h-2 gap-0.5 overflow-hidden rounded-full">
+                        {byCategory
+                          .filter((c) => c.total > 0)
+                          .map(({ category, total: catTotal }) => (
+                            <div
+                              key={category.id}
+                              style={{ flex: catTotal }}
+                              className={`${categoryDotStyle(categories, category.id)} transition-opacity ${
+                                categoryFilter !== "all" && categoryFilter !== category.id ? "opacity-25" : ""
+                              }`}
+                            />
+                          ))}
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5">
+                        {byCategory
+                          .filter((c) => c.total > 0)
+                          .map(({ category, total: catTotal }) => {
+                            const active = categoryFilter === category.id;
+                            return (
+                              <button
+                                key={category.id}
+                                type="button"
+                                onClick={() => {
+                                  setCategoryFilter(active ? "all" : category.id);
+                                  setPage(1);
+                                }}
+                                title={active ? "Show all categories" : `Show only ${category.name}`}
+                                className={`inline-flex items-center gap-1.5 rounded text-xs transition-colors hover:text-ink ${
+                                  active ? "font-semibold text-ink" : "text-muted"
+                                }`}
+                              >
+                                <span className={`h-2 w-2 shrink-0 rounded-full ${categoryDotStyle(categories, category.id)}`} />
+                                {category.name} {formatK(catTotal)}
+                              </button>
+                            );
+                          })}
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+
+            {isReady && monthExpenses.length === 0 && !query && categoryFilter === "all" ? (
+              <div key={`empty-${month}`} className="pay-step flex flex-col items-center rounded-lg border border-dashed border-line px-6 py-12 text-center">
+                <span className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-soft text-brand">
+                  <Receipt size={28} weight="duotone" />
+                  <span className="absolute -bottom-1.5 -right-1.5 flex h-6 w-6 items-center justify-center rounded-full border-2 border-paper bg-brand text-white">
+                    <Plus size={12} weight="bold" />
+                  </span>
+                </span>
+                <p className="mt-4 text-sm font-semibold text-ink">No expenses in {month}</p>
+                <p className="mt-1 max-w-xs text-[13px] text-muted">
+                  Nothing has been logged for this month yet. Add repairs, bills or salaries as they happen.
+                </p>
+                <Button variant="primary" className="mt-5 gap-1.5" onClick={openNew}>
+                  <Plus size={14} weight="bold" />
+                  Add expense
+                </Button>
+              </div>
+            ) : (
+              <>
+            {/* Expenses table */}
+            <TableCard key={`table-${month}`} className="pay-step">
+              <TableCardHeader>
+                <p className="text-sm font-semibold text-ink">
+                  Expenses
+                  {isReady && <span className="ml-2 text-xs font-medium text-muted">{filtered.length}</span>}
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <SearchInput
+                    value={query}
+                    onChange={(v) => {
+                      setQuery(v);
+                      setPage(1);
+                    }}
+                    placeholder="Search expenses"
+                    className="w-full sm:w-64"
+                  />
+                  <Select
+                    value={categoryFilter}
+                    onChange={(v) => {
+                      setCategoryFilter(v);
+                      setPage(1);
+                    }}
+                    options={categoryOptions}
+                    className="min-w-[170px] py-2 text-[13px]"
+                  />
+                </div>
+              </TableCardHeader>
+
+              <div className="hidden md:block">
+                <DataTable>
+                  <DataTableHead>
+                    <Th>Expense</Th>
+                    <Th>Category</Th>
+                    <Th>Date</Th>
+                    <Th align="right">Amount</Th>
+                    <Th className="w-36" />
+                  </DataTableHead>
+                  <DataTableBody>
+                    {!isReady && Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={5} />)}
+
+                    {isReady &&
+                      pageRows.map((e) => (
+                        <tr
+                          key={e.id}
+                          onClick={() => {
+                            setEditing(e);
+                            setShowForm(true);
+                          }}
+                          className="group cursor-pointer"
+                        >
+                          <Td>
+                            <div className="max-w-[420px]">
+                              <p className="text-sm font-semibold text-ink">
+                                {e.name}
+                                {e.source === "payroll" && (
+                                  <span className="ml-2 rounded-md bg-violet-50 px-2 py-0.5 text-xs font-semibold text-violet-600">
+                                    Auto
+                                  </span>
+                                )}
+                              </p>
+                              {e.description && <p className="mt-0.5 text-[13px] leading-[1.3] text-muted">{e.description}</p>}
+                              {e.createdBy && peopleById.get(e.createdBy) && (
+                                <p className="mt-0.5 text-[11px] text-muted">Recorded by {peopleById.get(e.createdBy)}</p>
+                              )}
+                            </div>
+                          </Td>
+                          <Td>
+                            <span
+                              className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold whitespace-nowrap ${categoryBadgeStyle(categories, e.categoryId)}`}
+                            >
+                              {categoryName(e.categoryId)}
+                            </span>
+                          </Td>
+                          <Td className="whitespace-nowrap text-sm text-muted">{formatDate(e.date)}</Td>
+                          <Td align="right" className="whitespace-nowrap font-display font-semibold text-ink">
+                            {formatK(e.amount)}
+                          </Td>
+                          <Td>
+                            <div className="flex items-center justify-end gap-1.5">
+                              {e.photoUrl && (
+                                <button
+                                  type="button"
+                                  onClick={(ev) => {
+                                    ev.stopPropagation();
+                                    setViewingReceipt(e.photoUrl!);
+                                  }}
+                                  aria-label="View receipt"
+                                  title="View receipt"
+                                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-line text-muted transition-colors hover:border-brand/40 hover:bg-brand-soft hover:text-brand"
+                                >
+                                  <Paperclip size={16} weight="regular" />
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={(ev) => {
+                                  ev.stopPropagation();
+                                  setEditing(e);
+                                  setShowForm(true);
+                                }}
+                                aria-label="Edit expense"
+                                title="Edit expense"
+                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-line text-muted transition-colors hover:bg-mist hover:text-ink"
+                              >
+                                <PencilSimple size={16} weight="regular" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(ev) => {
+                                  ev.stopPropagation();
+                                  setDeletingExpense(e);
+                                }}
+                                aria-label="Delete expense"
+                                title="Delete expense"
+                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-line text-muted transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                              >
+                                <Trash size={16} weight="regular" />
+                              </button>
+                            </div>
+                          </Td>
+                        </tr>
+                      ))}
+
+                    {isReady && pageRows.length === 0 && (
+                      <tr className="hover:bg-transparent">
+                        <Td colSpan={5} className="py-12">
+                          <div className="text-center">
+                            <p className="text-sm font-semibold text-ink">
+                              {monthExpenses.length === 0 ? `No expenses in ${month}` : "No expenses found"}
+                            </p>
+                            <p className="mt-1 text-[13px] text-muted">
+                              {monthExpenses.length === 0
+                                ? "Nothing was logged for this month. Use Add expense to record one."
+                                : "Try a different search or category."}
+                            </p>
+                          </div>
+                        </Td>
+                      </tr>
+                    )}
+                  </DataTableBody>
+                </DataTable>
+              </div>
+
+              {/* Mobile list */}
+              <div className="divide-y divide-line md:hidden">
+                {!isReady &&
+                  Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="space-y-2 px-4 py-4">
+                      <Skeleton className="h-4 w-1/2" />
+                      <Skeleton className="h-3 w-1/3" />
+                    </div>
+                  ))}
+                {isReady &&
+                  pageRows.map((e) => (
+                    <div
+                      key={e.id}
+                      onClick={() => {
+                        setEditing(e);
+                        setShowForm(true);
+                      }}
+                      className="cursor-pointer px-4 py-4 transition-colors active:bg-mist/60"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-ink">{e.name}</p>
+                          {e.description && <p className="mt-0.5 truncate text-[13px] text-muted">{e.description}</p>}
+                          {e.createdBy && peopleById.get(e.createdBy) && (
+                            <p className="mt-0.5 truncate text-[11px] text-muted">Recorded by {peopleById.get(e.createdBy)}</p>
+                          )}
+                        </div>
+                        <p className="shrink-0 font-display text-sm font-semibold text-ink">{formatK(e.amount)}</p>
+                      </div>
+                      <div className="mt-2 flex items-center gap-2 text-xs text-muted">
+                        <span
+                          className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold ${categoryBadgeStyle(categories, e.categoryId)}`}
+                        >
+                          {categoryName(e.categoryId)}
+                        </span>
+                        <span aria-hidden="true">·</span>
+                        <span>{formatDate(e.date)}</span>
+                        {e.photoUrl && (
+                          <button
+                            type="button"
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              setViewingReceipt(e.photoUrl!);
+                            }}
+                            className="ml-auto text-muted hover:text-brand"
+                            aria-label="View receipt"
+                          >
+                            <PaperclipIcon />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                {isReady && pageRows.length === 0 && (
+                  <div className="px-4 py-12 text-center text-sm text-muted">
+                    {monthExpenses.length === 0 ? `No expenses in ${month}` : "No expenses found"}
+                  </div>
+                )}
+              </div>
+            </TableCard>
+
+            {isReady && filtered.length > 0 && (
+              <Pagination
+                page={currentPage}
+                pageCount={pageCount}
+                pageSize={rowsPerPage}
+                totalItems={filtered.length}
+                onPageChange={setPage}
+                onPageSizeChange={(size) => {
+                  setRowsPerPage(size);
+                  setPage(1);
+                }}
+              />
+            )}
+
+              </>
+            )}
+
+            {viewingReceipt && (
+              <Lightbox photos={[viewingReceipt]} startIndex={0} onClose={() => setViewingReceipt(null)} />
+            )}
+
+            {deletingExpense && (
+              <Modal
+                onClose={() => setDeletingExpense(null)}
+                maxWidth="max-w-sm"
+                title="Delete expense?"
+                footer={
+                  <div className="flex justify-end gap-2">
+                    <Button variant="secondary" onClick={() => setDeletingExpense(null)}>
+                      Cancel
+                    </Button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        deleteExpense(deletingExpense.id);
+                        setDeletingExpense(null);
+                      }}
+                      className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-paper transition-colors hover:bg-red-700"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                }
+              >
+                <p className="text-sm text-muted">
+                  This will permanently remove <span className="font-medium text-ink">{deletingExpense.name}</span>.
+                  This can't be undone.
+                </p>
+              </Modal>
+            )}
+          </>
+        ) : (
+          <div className="flex flex-col items-center justify-center gap-3 py-4 text-center">
+            <span className="flex w-full max-w-md items-center justify-center text-muted">
+              <img src={Expensephoto} alt="" className="h-auto w-full object-contain" />
+            </span>
+            <div>
+              <p className="font-display text-xl font-bold tracking-tight text-brand">
+                Start tracking every rental expense
+              </p>
+              <p className="mt-0.5 max-w-lg text-sm text-muted">
+                Keep full control over your property finances by monitoring every outgoing cost across your rentals
+                in one simple, organized view.
+              </p>
+            </div>
+            <Button variant="primary" onClick={openNew}>
+              + Add expense
+            </Button>
+          </div>
+        )}
+      </div>
+
+      <AnimatePresence>
+        {showForm && <ExpenseFormDrawer editing={editing} prefill={prefill} onClose={() => setShowForm(false)} />}
+
+        {showCategories && <ManageCategoriesModal onClose={() => setShowCategories(false)} />}
+      </AnimatePresence>
+    </>
+  );
+}

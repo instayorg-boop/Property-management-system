@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import LocationPicker from "../../components/LocationPicker";
-import { Camera, UserCircle, Minus, Plus, ArrowRight, Buildings, IdentificationCard, CalendarBlank, Coins, BellRinging, Lightning, ListChecks, ChatCircleText, EnvelopeSimple, PaintBrush, CreditCard, ClockCounterClockwise, type Icon } from "@phosphor-icons/react";
+import { Camera, UserCircle, Minus, Plus, ArrowRight, Buildings, IdentificationCard, CalendarBlank, Coins, BellRinging, Lightning, ListChecks, ChatCircleText, EnvelopeSimple, PaintBrush, CreditCard, ClockCounterClockwise, Compass, UsersThree, type Icon } from "@phosphor-icons/react";
 import { useNavigate, useParams } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
 import PageHeader from "../components/PageHeader";
@@ -14,7 +14,9 @@ import { useSettings, type SmsNotificationPrefs, type PaymentSmsMode } from "../
 import type { LateFeeMode } from "../invoiceUtils";
 import { getPlanTier, tierFromStoredLabel } from "../../lib/plans";
 import TierBadge from "../components/TierBadge";
+import { startProductTour } from "../components/ProductTour";
 import PhoneNumberInput from "../components/PhoneNumberInput";
+import { useAccess } from "../AccessContext";
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -127,8 +129,9 @@ function cardFromSlug(slug: string | undefined): CardKey | null {
 // opening a section modal here — used for Billing and the Activity log, which already live on
 // routes of their own (moved out of the main sidebar into Settings, see Task #12/billing cleanup).
 type SettingsCard =
-  | { key: CardKey; title: string; desc: string; icon: Icon; to?: undefined }
-  | { key: "billing" | "activitylog"; title: string; desc: string; icon: Icon; to: string };
+  | { key: CardKey; title: string; desc: string; icon: Icon; to?: undefined; action?: undefined }
+  | { key: "billing" | "activitylog" | "team"; title: string; desc: string; icon: Icon; to: string; action?: undefined }
+  | { key: "tour"; title: string; desc: string; icon: Icon; to?: undefined; action: "tour" };
 
 const cardGroups: { label: string; cards: SettingsCard[] }[] = [
   {
@@ -136,6 +139,7 @@ const cardGroups: { label: string; cards: SettingsCard[] }[] = [
     cards: [
       { key: "property", title: "Property profile", desc: "Your property's photo, name and address as they appear on invoices and receipts.", icon: Buildings },
       { key: "account", title: "Account & plan", desc: "Your sign-in email, password and current subscription plan.", icon: IdentificationCard },
+      { key: "team", title: "Team", desc: "Invite managers and viewers, and control what each of them can see and do.", icon: UsersThree, to: "/settings/team" },
     ],
   },
   {
@@ -162,7 +166,10 @@ const cardGroups: { label: string; cards: SettingsCard[] }[] = [
   },
   {
     label: "Preferences",
-    cards: [{ key: "appearance", title: "Appearance & sign out", desc: "Light, dark or device theme, and signing out of this device.", icon: PaintBrush }],
+    cards: [
+      { key: "appearance", title: "Appearance & sign out", desc: "Light, dark or device theme, and signing out of this device.", icon: PaintBrush },
+      { key: "tour", title: "Take a tour", desc: "Replay the guided walkthrough of rent, tenants, online payments, expenses and maintenance.", icon: Compass, action: "tour" },
+    ],
   },
   {
     label: "More",
@@ -189,14 +196,16 @@ const paymentSmsModes: { value: PaymentSmsMode; label: string }[] = [
 
 export default function Settings() {
   const navigate = useNavigate();
-  // /settings/:section deep-links straight into a card's modal; closing it returns to /settings.
+  // /settings/:section still deep-links straight into a card's modal (other pages navigate here,
+  // e.g. AutopilotBadge, NotificationsPanel, SetupChecklist) — read once on mount as the initial
+  // state below. Switching cards from here on is local state, not a route change: this is all one
+  // page, and routing between cards was making DashboardLayout's page-transition fade (keyed on
+  // location.pathname) replay on every open/close, which read as the whole page glitching.
   const { section } = useParams<{ section?: string }>();
-  const openKey = cardFromSlug(section);
-  const openCard = (k: CardKey) => navigate(`/settings/${k}`);
-  const closeCard = () => navigate("/settings");
-  // Lives in the URL (/settings/password) rather than component state: the page remounts when the
-  // route changes, which wiped a state flag the moment the Account card closed.
-  const changingPassword = section === "password";
+  const [openKey, setOpenKey] = useState<CardKey | null>(() => cardFromSlug(section));
+  const openCard = (k: CardKey) => setOpenKey(k);
+  const closeCard = () => setOpenKey(null);
+  const [changingPassword, setChangingPassword] = useState(section === "password");
 
   const {
     // invoicesOn, setInvoicesOn, // MVP: invoicing toggle is commented out — see the note above.
@@ -228,6 +237,10 @@ export default function Settings() {
     smsNotificationPrefs: liveSmsPrefs, setSmsNotificationPref: commitSmsPref,
     sendOnboardingSms: liveSendOnboardingSms, setSendOnboardingSms: commitSendOnboardingSms,
     sendPaymentReceiptSms: liveSendPaymentReceiptSms, setSendPaymentReceiptSms: commitSendPaymentReceiptSms,
+    reportWeeklyEnabled: liveReportWeeklyEnabled, setReportWeeklyEnabled: commitReportWeeklyEnabled,
+    reportMonthlyEnabled: liveReportMonthlyEnabled, setReportMonthlyEnabled: commitReportMonthlyEnabled,
+    opsSmsOwnerCopy: liveOpsSmsOwnerCopy, setOpsSmsOwnerCopy: commitOpsSmsOwnerCopy,
+    payoutSmsEnabled: livePayoutSmsEnabled, setPayoutSmsEnabled: commitPayoutSmsEnabled,
     accountEmail, setAccountEmail,
     subscriptionPlan, subscriptionRenewsAt,
     // napsaInsurableEarningsCeiling, setNapsaInsurableEarningsCeiling, // MVP: Statutory tab is commented out.
@@ -235,6 +248,11 @@ export default function Settings() {
   } = useSettings();
 
   const { showToast } = useToast();
+  const { can, isOwner: isPropertyOwner } = useAccess();
+  const canSeeTeam = isPropertyOwner || can("team.invite");
+  const visibleCardGroups = cardGroups
+    .map((g) => ({ ...g, cards: g.cards.filter((c) => c.key !== "team" || canSeeTeam) }))
+    .filter((g) => g.cards.length > 0);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
@@ -288,6 +306,14 @@ export default function Settings() {
   const setSendOnboardingSms = (v: typeof liveSendOnboardingSms) => stage("sendOnboardingSms", v);
   const sendPaymentReceiptSms = pick("sendPaymentReceiptSms", liveSendPaymentReceiptSms);
   const setSendPaymentReceiptSms = (v: typeof liveSendPaymentReceiptSms) => stage("sendPaymentReceiptSms", v);
+  const reportWeeklyEnabled = pick("reportWeeklyEnabled", liveReportWeeklyEnabled);
+  const setReportWeeklyEnabled = (v: typeof liveReportWeeklyEnabled) => stage("reportWeeklyEnabled", v);
+  const reportMonthlyEnabled = pick("reportMonthlyEnabled", liveReportMonthlyEnabled);
+  const setReportMonthlyEnabled = (v: typeof liveReportMonthlyEnabled) => stage("reportMonthlyEnabled", v);
+  const opsSmsOwnerCopy = pick("opsSmsOwnerCopy", liveOpsSmsOwnerCopy);
+  const setOpsSmsOwnerCopy = (v: typeof liveOpsSmsOwnerCopy) => stage("opsSmsOwnerCopy", v);
+  const payoutSmsEnabled = pick("payoutSmsEnabled", livePayoutSmsEnabled);
+  const setPayoutSmsEnabled = (v: typeof livePayoutSmsEnabled) => stage("payoutSmsEnabled", v);
   const propertyAddress = pick("propertyAddress", livePropertyAddress);
   const setPropertyAddress = (v: typeof livePropertyAddress) => stage("propertyAddress", v);
   const propertyCoords = pick("propertyCoords", livePropertyCoords);
@@ -345,6 +371,10 @@ export default function Settings() {
         paymentSmsMode: commitPaymentSmsMode,
         sendOnboardingSms: commitSendOnboardingSms,
         sendPaymentReceiptSms: commitSendPaymentReceiptSms,
+        reportWeeklyEnabled: commitReportWeeklyEnabled,
+        reportMonthlyEnabled: commitReportMonthlyEnabled,
+        opsSmsOwnerCopy: commitOpsSmsOwnerCopy,
+        payoutSmsEnabled: commitPayoutSmsEnabled,
         propertyAddress: commitPropertyAddress,
         propertyCoords: commitPropertyCoords,
       };
@@ -466,7 +496,7 @@ export default function Settings() {
                 />
               </Row>
               <Row label="Password" desc="Use at least 8 characters with letters and numbers.">
-                <Button variant="secondary" size="sm" onClick={() => navigate("/settings/password")}>
+                <Button variant="secondary" size="sm" onClick={() => setChangingPassword(true)}>
                   Change password
                 </Button>
               </Row>
@@ -698,7 +728,50 @@ export default function Settings() {
                 ))}
               </div>
 
-              
+              {isPropertyOwner && (
+                <>
+                  <p className="pt-5 text-sm font-semibold text-ink">Reports and alerts</p>
+                  <div className="mt-2 space-y-2">
+                    <div className="flex items-start justify-between gap-3 rounded-lg bg-mist px-4 py-3">
+                      <div className="min-w-0">
+                        <p className="text-[14px] font-semibold text-ink">Weekly report</p>
+                        <p className="mt-1 text-xs text-muted">Every Monday at 08:00 we text you a short summary with a link to the full report.</p>
+                      </div>
+                      <Toggle checked={reportWeeklyEnabled} onChange={(v) => { setReportWeeklyEnabled(v); }} />
+                    </div>
+                    <div className="flex items-start justify-between gap-3 rounded-lg bg-mist px-4 py-3">
+                      <div className="min-w-0">
+                        <p className="text-[14px] font-semibold text-ink">Monthly report</p>
+                        <p className="mt-1 text-xs text-muted">On the last day of each month we text you and email you the full report.</p>
+                      </div>
+                      <Toggle checked={reportMonthlyEnabled} onChange={(v) => { setReportMonthlyEnabled(v); }} />
+                    </div>
+                    <div className="flex items-start justify-between gap-3 rounded-lg bg-mist px-4 py-3">
+                      <div className="min-w-0">
+                        <p className="text-[14px] font-semibold text-ink">Also text me every maintenance request</p>
+                        <p className="mt-1 text-xs text-muted">
+                          Your manager gets these first. Turn this on to get a copy too. If you have no manager with a phone, you always get them.
+                        </p>
+                      </div>
+                      <Toggle checked={opsSmsOwnerCopy} onChange={(v) => { setOpsSmsOwnerCopy(v); }} />
+                    </div>
+                    <div className="flex items-start justify-between gap-3 rounded-lg bg-mist px-4 py-3">
+                      <div className="min-w-0">
+                        <p className="text-[14px] font-semibold text-ink">Text me about payouts</p>
+                        <p className="mt-1 text-xs text-muted">
+                          We text you when a team member requests a payout, and when any payout completes or fails. Emails are always sent.
+                        </p>
+                      </div>
+                      <Toggle checked={payoutSmsEnabled} onChange={(v) => { setPayoutSmsEnabled(v); }} />
+                    </div>
+                  </div>
+                  {!notificationPhone.trim() && (
+                    <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-900">
+                      Add an alert phone number above, otherwise no texts can be sent.
+                    </p>
+                  )}
+                </>
+              )}
       </>
     ),
     tenantmsgs: <SettingsPanel>
@@ -722,13 +795,16 @@ export default function Settings() {
   };
 
   const openMeta = openKey ? cardGroups.flatMap((g) => g.cards).find((c) => c.key === openKey)! : null;
+  // Team manages its own API calls per action (invite/edit/resend/remove) rather than the
+  // stage-then-Save-changes draft pattern every other card uses, so it gets a single "Done" footer.
+  const selfManagedCards: CardKey[] = ["appearance"];
 
   return (
     <>
       <PageHeader title="Settings" description="Manage your property, billing, and account preferences." />
 
       <div className="space-y-8 px-4 pt-6 pb-10 sm:px-8">
-        {cardGroups.map((g) => (
+        {visibleCardGroups.map((g) => (
           <section key={g.label}>
             <SectionLabel>{g.label}</SectionLabel>
             <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -755,6 +831,28 @@ export default function Settings() {
                         </span>
                         <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-white opacity-0 transition-opacity group-hover:opacity-100">
                           Edit
+                          <ArrowRight size={12} weight="bold" />
+                        </span>
+                      </span>
+                    </button>
+                  );
+                }
+                if (c.key === "tour") {
+                  return (
+                    <button
+                      key={c.key}
+                      type="button"
+                      onClick={() => startProductTour()}
+                      className="group flex h-full flex-col rounded-lg border border-line bg-paper p-5 text-left transition-colors hover:border-ink/20 hover:bg-mist/30"
+                    >
+                      <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-soft text-brand">
+                        <CardIcon size={20} weight="duotone" />
+                      </span>
+                      <p className="mt-3 text-sm font-semibold text-ink">{c.title}</p>
+                      <p className="mt-1 text-xs leading-5 text-muted">{c.desc}</p>
+                      <span className="mt-auto flex items-center justify-end gap-2 pt-3">
+                        <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand opacity-0 transition-opacity group-hover:opacity-100">
+                          Start
                           <ArrowRight size={12} weight="bold" />
                         </span>
                       </span>
@@ -818,9 +916,9 @@ export default function Settings() {
       <AnimatePresence>
         {changingPassword && (
           <ChangePasswordModal
-            onClose={closeCard}
+            onClose={() => setChangingPassword(false)}
             onDone={() => {
-              closeCard();
+              setChangingPassword(false);
               showToast("Password updated", "success");
             }}
           />
@@ -837,7 +935,7 @@ export default function Settings() {
             icon={<openMeta.icon size={20} weight="duotone" />}
             maxWidth="max-w-md"
             footer={
-              openKey === "appearance" ? (
+              selfManagedCards.includes(openKey) ? (
                 <Button variant="primary" onClick={closeCard} className="w-full py-2.5 text-[14px]">
                   Done
                 </Button>

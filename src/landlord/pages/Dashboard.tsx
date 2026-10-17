@@ -12,7 +12,10 @@ import { Skeleton } from "../components/Skeleton";
 import { useTenants, useCollectedRent, formatCurrency, type Tenant } from "../TenantsContext";
 import { useRoomsView } from "../RoomsContext";
 import { useSettings } from "../SettingsContext";
-import { getLencoBalance, listCollections, type CollectionRecord } from "../../lib/payoutApi";
+import { useAuth } from "../AuthContext";
+import { useIsOwner } from "../useIsOwner";
+import { useAccess } from "../AccessContext";
+import { getLencoBalance, listCollections, listPayoutRecipients, type CollectionRecord } from "../../lib/payoutApi";
 import { supabase } from "../../lib/supabaseClient";
 import { calcTotalOwed } from "../invoiceUtils";
 import TodaysTasks from "../components/TodaysTasks";
@@ -49,11 +52,23 @@ function Greeting({ onAction }: { propertyId: string | null; onAction: (action: 
 
   const [sheetOpen, setSheetOpen] = useState(false);
 
+  const { user } = useAuth();
+  const { landlordName } = useSettings();
+  const isOwner = useIsOwner();
+
+  // Fallback chain: the user's own full name (first word), then — owners only — the property's
+  // landlord name, then the local part of their email. Never undefined: every account has an email.
+  const fullName = (user?.user_metadata as { full_name?: string } | undefined)?.full_name;
+  const firstName =
+    fullName?.trim().split(/\s+/)[0] ||
+    (isOwner ? landlordName?.trim().split(/\s+/)[0] : undefined) ||
+    user?.email?.split("@")[0];
+
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 px-4 pt-5 pb-6 sm:px-8">
       <div>
         <h1 className="font-display text-2xl font-semibold tracking-tighter text-ink">
-          Good {part} 👋🏼
+          Good {part}{firstName ? `, ${firstName}` : ""} 👋🏼
         </h1>
         <p className="mt-0.5 text-sm text-muted">
           {today} · {time}
@@ -137,6 +152,12 @@ export default function Dashboard() {
   const totalCollected = useCollectedRent();
   const navigate = useNavigate();
   const dataReady = tenantsReady && settingsReady;
+  const { can, isOwner: canAccessOwner } = useAccess();
+  // The balance widget (view + fetches) is for payouts.view/payouts.request holders (and owners);
+  // payout_methods.manage alone doesn't earn a spot on the dashboard, per the payouts permission
+  // spec — that permission only covers managing payout methods, not seeing the balance.
+  const canViewPayoutWidget = canAccessOwner || can("payouts.view") || can("payouts.request");
+  const canRequestPayout = canAccessOwner || can("payouts.request");
 
   const roomsOccupied = useMemo(
     () => ({ occupied: rooms.filter((r) => r.status === "occupied").length, total: rooms.length }),
@@ -155,7 +176,7 @@ export default function Dashboard() {
   // expense deduction — this figure is just "how much money can I actually pull out right now."
   const [lencoAvailable, setLencoAvailable] = useState<number | null>(null);
   useEffect(() => {
-    if (!propertyId) return;
+    if (!propertyId || !canViewPayoutWidget) return;
     let cancelled = false;
     getLencoBalance(propertyId)
       .then(({ available }) => {
@@ -165,7 +186,7 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [propertyId]);
+  }, [propertyId, canViewPayoutWidget]);
 
   // Live updates — a mobile-money collection landing (lenco-webhook) or a payout going out changes
   // this figure, and the card should reflect that without the landlord having to reload the whole
@@ -173,7 +194,7 @@ export default function Dashboard() {
   // its downstream writes can fire a short burst of change events for one real event, and each one
   // triggering its own immediate refetch would flicker the balance between intermediate states.
   useEffect(() => {
-    if (!propertyId) return;
+    if (!propertyId || !canViewPayoutWidget) return;
     let cancelled = false;
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const refetch = () => {
@@ -196,7 +217,7 @@ export default function Dashboard() {
       if (debounceTimer) clearTimeout(debounceTimer);
       void supabase.removeChannel(channel);
     };
-  }, [propertyId]);
+  }, [propertyId, canViewPayoutWidget]);
 
   // The last few rent payments that actually landed via mobile money (not cash logged by the
   // landlord): gives the Online payments card real content instead of sitting mostly empty next
@@ -204,7 +225,7 @@ export default function Dashboard() {
   const [recentCollections, setRecentCollections] = useState<CollectionRecord[]>([]);
   const [collectionsReady, setCollectionsReady] = useState(false);
   useEffect(() => {
-    if (!propertyId) return;
+    if (!propertyId || !canViewPayoutWidget) return;
     let cancelled = false;
     listCollections(propertyId, { limit: 5, status: ["successful"] })
       .then((rows) => {
@@ -217,7 +238,26 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [propertyId]);
+  }, [propertyId, canViewPayoutWidget]);
+
+  // `lencoConnected` comes from the `settings` table, which non-owners can't read (it's always
+  // false for them regardless of reality) — same gap Payouts.tsx works around. Whether a payout
+  // recipient already exists is the real, RLS-correct signal, so fall back to it here too rather
+  // than showing "Connect a bank account" to someone who's already fully set up.
+  const [hasPayoutRecipient, setHasPayoutRecipient] = useState(false);
+  useEffect(() => {
+    if (!propertyId || !canViewPayoutWidget) return;
+    let cancelled = false;
+    listPayoutRecipients(propertyId)
+      .then((rows) => {
+        if (!cancelled) setHasPayoutRecipient(rows.length > 0);
+      })
+      .catch((e) => console.error("Failed to load payout recipients", e));
+    return () => {
+      cancelled = true;
+    };
+  }, [propertyId, canViewPayoutWidget]);
+  const isPayoutConnected = lencoConnected || hasPayoutRecipient;
 
   const payout = useMemo<UpcomingPayout | null>(() => {
     if (!lencoAvailable || lencoAvailable <= 0) return null;
@@ -227,11 +267,11 @@ export default function Dashboard() {
       rawAmount: lencoAvailable,
       propertyId,
       date: `As of ${now.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`,
-      status: lencoConnected ? "Ready to transfer" : "Connect a bank account to receive this",
-      bankAccount: lencoConnected && bankName ? `${bankName}${accountNumber ? ` · •••• ${accountNumber.slice(-4)}` : ""}` : "Not connected",
-      schedule: lencoConnected ? "Automatic online collection" : "Not set up yet",
+      status: isPayoutConnected ? "Ready to transfer" : "Connect a bank account to receive this",
+      bankAccount: isPayoutConnected && bankName ? `${bankName}${accountNumber ? ` · •••• ${accountNumber.slice(-4)}` : ""}` : "Not connected",
+      schedule: isPayoutConnected ? "Automatic online collection" : "Not set up yet",
     };
-  }, [lencoAvailable, lencoConnected, bankName, accountNumber, propertyId]);
+  }, [lencoAvailable, isPayoutConnected, bankName, accountNumber, propertyId]);
 
   const [paymentStep, setPaymentStep] = useState<PaymentStep | null>(null);
   const [payingTenant, setPayingTenant] = useState<Tenant | null>(null);
@@ -329,7 +369,10 @@ export default function Dashboard() {
         {/* Online payments balance — a wallet-card treatment (icon + title header, a distinct
             shaded balance panel, one full-width primary action) rather than a plain stat tile,
             since this is the one number on the page that's actually sitting in a payment
-            gateway, ready to be moved, not just a reporting figure. */}
+            gateway, ready to be moved, not just a reporting figure. Hidden entirely (not just the
+            button) for anyone without payouts.view/payouts.request — payout_methods.manage alone
+            doesn't earn a spot here. */}
+        {canViewPayoutWidget && (
         <div className="rounded-lg border border-line bg-paper p-4">
           <p className="text-xl font-semibold font-display tracking-tight text-ink">Online payments</p>
 
@@ -358,14 +401,16 @@ export default function Dashboard() {
                 {payout.status}
               </p>
 
-              <Button
-                variant="primary"
-                onClick={() => navigate("/online-payments")}
-                className="mt-5 flex w-full items-center justify-center gap-1.5"
-              >
-                Transfer to bank
-                <ArrowIcon size={14} weight="bold" />
-              </Button>
+              {canRequestPayout && (
+                <Button
+                  variant="primary"
+                  onClick={() => navigate("/online-payments")}
+                  className="mt-5 flex w-full items-center justify-center gap-1.5"
+                >
+                  Transfer to bank
+                  <ArrowIcon size={14} weight="bold" />
+                </Button>
+              )}
             </div>
           ) : (
             <div className="mt-4 flex flex-col items-center justify-center gap-2 rounded-md bg-mist p-6 text-center">
@@ -400,22 +445,35 @@ export default function Dashboard() {
             ) : recentCollections.length === 0 ? (
               <p className="py-6 text-center text-xs text-muted">No online payments yet.</p>
             ) : (
-              <div className="mt-1 divide-y divide-line/70">
-                {recentCollections.map((c) => (
-                  <div key={c.id} className="flex items-center justify-between gap-3 py-2.5">
-                    <div className="min-w-0">
-                      <p className="truncate text-[13px] font-medium text-ink">{c.tenantName ?? c.phone}</p>
-                      <p className="text-[11px] text-muted">
-                        {timeAgo(c.createdAt)} · {c.operator.toUpperCase()}
-                      </p>
+              <>
+                <div className="mt-1 divide-y divide-line/70">
+                  {recentCollections.slice(0, 3).map((c) => (
+                    <div key={c.id} className="flex items-center justify-between gap-3 py-2.5">
+                      <div className="min-w-0">
+                        <p className="truncate text-[13px] font-medium text-ink">{c.tenantName ?? c.phone}</p>
+                        <p className="text-[11px] text-muted">
+                          {timeAgo(c.createdAt)} · {c.operator.toUpperCase()}
+                        </p>
+                      </div>
+                      <p className="shrink-0 text-[13px] font-semibold text-emerald-600">+K{c.amount.toLocaleString()}</p>
                     </div>
-                    <p className="shrink-0 text-[13px] font-semibold text-emerald-600">+K{c.amount.toLocaleString()}</p>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+                {recentCollections.length > 4 && (
+                  <button
+                    type="button"
+                    onClick={() => navigate("/online-payments")}
+                    className="mt-2 flex w-full items-center justify-center gap-1 py-1.5 text-xs font-medium text-brand hover:underline"
+                  >
+                    View all online payments
+                    <ArrowIcon size={12} weight="bold" />
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>
+        )}
 
         {/* Recent activity, now the exact same component as the bell dropdown (header, day
             grouping, bundled rows, footer) inside a plain card shell instead of a floating

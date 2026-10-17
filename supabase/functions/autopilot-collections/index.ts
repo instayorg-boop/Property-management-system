@@ -38,7 +38,13 @@ function findGuardian(c: unknown): EmergencyContact | null {
   if (!Array.isArray(c)) return null;
   return (c as EmergencyContact[]).find((x) => x?.relation === "Guardian") ?? null;
 }
-const first = (n: string) => n.trim().split(/\s+/)[0] || n;
+// Drops a title prefix (see PREFIX_OPTIONS in AddTenant.tsx) before taking the first word,
+// otherwise a tenant stored as "Mr Chanda Mwansa" gets greeted as "Hi Mr".
+const first = (n: string) => {
+  const parts = n.trim().split(/\s+/);
+  while (parts.length > 1 && /^(mr|mrs|ms|dr)\.?$/i.test(parts[0])) parts.shift();
+  return parts[0] || n;
+};
 const money = (n: number) => `K${Number(n).toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 const portal = (t: string) => `https://portal.instayhomes.com/p/${t}`;
 
@@ -65,22 +71,23 @@ async function deliver(supabase: SupabaseClient, propertyId: string, phone: stri
   return { sent: r.ok, detail: r.ok ? undefined : r.detail };
 }
 
-function tenantMessage(stage: string, name: string, owed: number, link: string, landlord: string): string {
+function tenantMessage(stage: string, name: string, owed: number, link: string, landlord: string, room?: string | null): string {
   const n = first(name);
   const who = landlord ? first(landlord) : "your landlord";
+  const roomSuffix = room ? ` for Room ${room}` : "";
   switch (stage) {
     case "ap_due":
-      return `Hi ${n}, your rent of ${money(owed)} is due today. Pay in under a minute: ${link} Thank you!`;
+      return `Hi ${n}, your rent of ${money(owed)}${roomSuffix} is due today. Pay in under a minute: ${link} Thank you!`;
     case "ap_late_1":
-      return `Hi ${n}, we haven't received your rent of ${money(owed)} yet. If you've already paid, please ignore this. Otherwise pay here: ${link}`;
+      return `Hi ${n}, we haven't received your rent of ${money(owed)}${roomSuffix} yet. If you've already paid, please ignore this. Otherwise pay here: ${link}`;
     case "ap_late_3":
-      return `Hi ${n}, your rent of ${money(owed)} is now overdue. Late fees may apply. Please pay now to avoid extra charges: ${link}`;
+      return `Hi ${n}, your rent of ${money(owed)}${roomSuffix} is now overdue. Late fees may apply. Please pay now to avoid extra charges: ${link}`;
     case "ap_late_7":
-      return `Hi ${n}, your rent of ${money(owed)} is 7 days overdue and late fees are adding up. Please pay today or contact ${who} to talk about a plan: ${link}`;
+      return `Hi ${n}, your rent of ${money(owed)}${roomSuffix} is 7 days overdue and late fees are adding up. Please pay today or contact ${who} to talk about a plan: ${link}`;
     case "ap_late_14":
-      return `Hi ${n}, FINAL NOTICE: your rent of ${money(owed)} is seriously overdue. Please pay within 48 hours or contact ${who} today: ${link}`;
+      return `Hi ${n}, FINAL NOTICE: your rent of ${money(owed)}${roomSuffix} is seriously overdue. Please pay within 48 hours or contact ${who} today: ${link}`;
     default:
-      return `Hi ${n}, your rent of ${money(owed)} is still unpaid. Please pay today: ${link}`;
+      return `Hi ${n}, your rent of ${money(owed)}${roomSuffix} is still unpaid. Please pay today: ${link}`;
   }
 }
 
@@ -161,7 +168,7 @@ Deno.serve(async (req) => {
       // 1. Tenant ladder: one stage per run.
       const stage = pickStage(cfg, daysOverdue, dueDate === today);
       if (stage) {
-        const message = tenantMessage(stage, t.name, owed, portal(t.portal_token), s.landlord_name ?? "");
+        const message = tenantMessage(stage, t.name, owed, portal(t.portal_token), s.landlord_name ?? "", t.rooms?.number ?? null);
         if (!phone) {
           results.push({ tenant: t.name, stage, sent: false, detail: "no phone on file" });
         } else if (dryRun) {
@@ -236,10 +243,58 @@ Deno.serve(async (req) => {
       const period = `${periodDate.getFullYear()}-${String(periodDate.getMonth() + 1).padStart(2, "0")}`;
       const { data: existing } = await supabase.from("notifications").select("id").eq("property_id", s.property_id).eq("type", "collectionComplete").contains("metadata", { period }).limit(1);
       if (!existing || existing.length === 0) {
-        const count = (tenants ?? []).length;
-        const total = (tenants ?? []).reduce((sum: number, t: { rent_amount: number }) => sum + Number(t.rent_amount ?? 0), 0);
+        const monthStart = `${period}-01`;
+        const monthEnd = `${periodDate.getFullYear()}-${String(periodDate.getMonth() + 1).padStart(2, "0")}-${String(new Date(periodDate.getFullYear(), periodDate.getMonth() + 1, 0).getDate()).padStart(2, "0")}T23:59:59`;
+        const tenantIds = (tenants ?? []).map((t: { id: string }) => t.id);
+        // What was actually RECEIVED this period, not every active tenant's full rent_amount — a
+        // waived tenant has owed_amount <= 0 too, but $0 changed hands for them, so counting their
+        // full rent in "collected" overstates what the landlord actually got paid.
+        const { data: paidRows } = tenantIds.length
+          ? await supabase
+              .from("ledger_entries")
+              .select("tenant_id, amount, paid_amount")
+              .in("tenant_id", tenantIds)
+              .eq("status", "paid")
+              .is("voided_at", null)
+              .gte("created_at", monthStart)
+              .lte("created_at", monthEnd)
+          : { data: [] };
+        const paidTenantIds = new Set<string>();
+        const waivedTenantIds = new Set<string>();
+        let total = 0;
+        for (const row of paidRows ?? []) {
+          const amt = Number(row.paid_amount ?? row.amount ?? 0);
+          if (amt > 0) {
+            total += amt;
+            paidTenantIds.add(row.tenant_id);
+          } else {
+            waivedTenantIds.add(row.tenant_id);
+          }
+        }
+        const count = paidTenantIds.size;
+        const waivedCount = [...waivedTenantIds].filter((id) => !paidTenantIds.has(id)).length;
         const monthName = periodDate.toLocaleDateString("en-GB", { month: "long" });
-        const message = `${monthName} rent complete. ${money(total)} collected from ${count} tenant${count === 1 ? "" : "s"}. Report: ${APP_URL}/reports`;
+        const waivedSuffix = waivedCount > 0 ? ` (${waivedCount} waived)` : "";
+
+        // Same as send-notification-digests' 100%-paid milestone for non-Autopilot properties: build
+        // the month's income vs expenses report and link straight to it — a no-login page the
+        // landlord can read or download from, instead of dropping them on the generic /reports page
+        // and making them find the right month themselves.
+        let reportLink = `${APP_URL}/reports`;
+        try {
+          const reportRes = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/generate-auto-report`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-cron-secret": cronSecret },
+            body: JSON.stringify({ property_id: s.property_id }),
+          });
+          const reportJson = await reportRes.json();
+          if (reportRes.ok && reportJson?.token) reportLink = `${APP_URL}/report/${reportJson.token}`;
+          else console.error("[autopilot-collections] generate-auto-report failed", s.property_id, reportJson);
+        } catch (e) {
+          console.error("[autopilot-collections] auto report failed", s.property_id, String(e));
+        }
+
+        const message = `${monthName} rent complete — ${money(total)} collected from ${count} tenant${count === 1 ? "" : "s"}${waivedSuffix}. See who paid what, no login needed: ${reportLink}`;
         if (dryRun) {
           results.push({ property: s.property_id, collectionComplete: true, message });
         } else {
@@ -248,8 +303,8 @@ Deno.serve(async (req) => {
             category: "system",
             type: "collectionComplete",
             title: `${monthName} rent complete`,
-            body: `${money(total)} collected from ${count} tenant${count === 1 ? "" : "s"}. Open Reports to see the breakdown.`,
-            metadata: { period, total, count },
+            body: `${money(total)} collected from ${count} tenant${count === 1 ? "" : "s"}${waivedSuffix}. View the full breakdown: ${reportLink}`,
+            metadata: { period, total, count, waivedCount, reportLink },
           });
           if (s.notification_phone) await deliver(supabase, s.property_id, s.notification_phone, "autopilot_report", message);
           results.push({ property: s.property_id, collectionComplete: true });

@@ -1,14 +1,57 @@
 import { supabase } from "./supabaseClient";
 import { logAuditEvent } from "./auditLog";
+import { edgeFunctionErrorMessage } from "./functionsError";
 import type { Session, User } from "@supabase/supabase-js";
 
 export type { Session, User };
 
-export async function signUp(email: string, password: string, fullName: string, propertyName: string, propertyAddress = "", coords?: { lat: number; lng: number } | null) {
+/** Sends a 6-digit SMS code to `phone` during sign-up, before any account exists — see
+ * request-signup-otp. Phone verification happens up front at sign-up (rather than leaving it to
+ * Settings > SMS, which nobody finds unprompted) precisely so the alert number landlords end up
+ * with is already proven to be theirs. */
+export async function requestSignupOtp(phone: string): Promise<{ maskedPhone: string; devCode?: string }> {
+  const { data, error } = await supabase.functions.invoke<{ ok?: boolean; maskedPhone?: string; devCode?: string; error?: string }>(
+    "request-signup-otp",
+    { body: { phone } }
+  );
+  if (error || !data?.ok || !data?.maskedPhone) {
+    throw new Error(await edgeFunctionErrorMessage(error, "Failed to send a code. Try again."));
+  }
+  return { maskedPhone: data.maskedPhone, devCode: data.devCode };
+}
+
+export async function verifySignupOtp(phone: string, code: string): Promise<void> {
+  const { data, error } = await supabase.functions.invoke<{ ok?: boolean; error?: string }>(
+    "verify-signup-otp",
+    { body: { phone, code } }
+  );
+  if (error || !data?.ok) {
+    throw new Error(await edgeFunctionErrorMessage(error, "Incorrect code."));
+  }
+}
+
+export async function signUp(
+  email: string,
+  password: string,
+  fullName: string,
+  propertyName: string,
+  propertyAddress = "",
+  coords?: { lat: number; lng: number } | null,
+  phone = "",
+) {
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
-    options: { data: { full_name: fullName, property_name: propertyName, property_address: propertyAddress, property_lat: coords?.lat ?? null, property_lng: coords?.lng ?? null } },
+    options: {
+      data: {
+        full_name: fullName,
+        property_name: propertyName,
+        property_address: propertyAddress,
+        property_lat: coords?.lat ?? null,
+        property_lng: coords?.lng ?? null,
+        phone,
+      },
+    },
   });
   if (error) throw error;
   return data;

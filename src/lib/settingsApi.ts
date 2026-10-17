@@ -24,6 +24,10 @@ export async function getOrCreateSettings(propertyId: string): Promise<SettingsR
   }
 
   const landlordName = (userData.user?.user_metadata?.full_name as string | undefined)?.trim() ?? "";
+  // Verified at sign-up (GetStarted.tsx's OTP step, see request-signup-otp/verify-signup-otp) —
+  // pre-fills both the landlord's own contact number and the SMS alert number so there's no
+  // separate "go find Settings > SMS and set this up" step for a number we already proved is theirs.
+  const signupPhone = (userData.user?.user_metadata?.phone as string | undefined)?.trim() ?? "";
 
   const { data: created, error: insertError } = await supabase
     .from("settings")
@@ -32,7 +36,7 @@ export async function getOrCreateSettings(propertyId: string): Promise<SettingsR
       invoices_on: false,
       collection_target_pct: 90,
       landlord_name: landlordName,
-      landlord_phone: "",
+      landlord_phone: signupPhone,
       payment_methods: [{ type: "cash" }],
       management_fee_rate: 0,
       billing_period: "Monthly",
@@ -52,7 +56,7 @@ export async function getOrCreateSettings(propertyId: string): Promise<SettingsR
       task_stale_maintenance_enabled: true,
       task_collections_target_enabled: true,
       contact_order: "student",
-      notification_phone: "",
+      notification_phone: signupPhone,
       payment_sms_mode: "daily_digest",
       sms_notification_prefs: { newMaintenanceReport: true, overdueEscalated: true, upcomingPayout: true },
       send_onboarding_sms: true,

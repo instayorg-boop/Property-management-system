@@ -141,8 +141,11 @@ Deno.serve(async (req) => {
   });
 });
 
-/** First word of the tenant's full name — see send-rent-reminders' identical helper for why this
- * isn't a real first_name/last_name column. */
+/** First word of the tenant's full name, skipping a title prefix (see PREFIX_OPTIONS in
+ * AddTenant.tsx) so "Mr Chanda Mwansa" greets as "Chanda", not "Mr". See send-rent-reminders'
+ * identical helper for why this isn't a real first_name/last_name column. */
 function firstName(fullName: string): string {
-  return fullName.trim().split(/\s+/)[0] || fullName;
+  const parts = fullName.trim().split(/\s+/);
+  while (parts.length > 1 && /^(mr|mrs|ms|dr)\.?$/i.test(parts[0])) parts.shift();
+  return parts[0] || fullName;
 }

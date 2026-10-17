@@ -6,7 +6,7 @@ import { ArrowLeft } from "@phosphor-icons/react";
  * (the logo) and get them back to the app (the dashboard link). */
 export default function HelpTopBar() {
   return (
-    <div className="sticky top-0 z-20 flex items-center justify-between border-b border-line bg-white px-4 py-3 sm:px-8">
+    <div className="sticky top-0 z-20 flex items-center justify-between border-b border-line bg-paper px-4 py-3 sm:px-8">
       <img
         src="https://rlmcuhejgfftcdshbrbe.supabase.co/storage/v1/object/public/Company%20assets/Instay%20Manage%20Logo.png"
         alt="Instay Manage"

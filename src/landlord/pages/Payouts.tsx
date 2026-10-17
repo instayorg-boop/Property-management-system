@@ -33,7 +33,7 @@ import Button from "../components/Button";
 import BankSelect from "../components/BankSelect";
 import { useSettings } from "../SettingsContext";
 import { formatCurrency } from "../TenantsContext";
-import { useIsOwner } from "../useIsOwner";
+import { useAccess } from "../AccessContext";
 import { useWithdrawFlow, recipientLabel, recipientKey, dedupeRecipients } from "../useWithdrawFlow";
 import { usePayoutSummary } from "../usePayoutSummary";
 import { MOBILE_MONEY_LOGO } from "../../lib/mobileMoneyProviders";
@@ -336,6 +336,7 @@ function TransferFundsPanel({
   recipients,
   onClose,
   onRecipientAdded,
+  canManageMethods,
 }: {
   propertyId: string;
   recipients: PayoutRecipient[];
@@ -344,6 +345,10 @@ function TransferFundsPanel({
    * its own form/OTP/saving states), so this is only ever called to refresh the recipients list
    * afterward, never to navigate anywhere. */
   onRecipientAdded: () => void;
+  /** Adding a new payout method is a payout_methods.manage action, independent of the
+   * payouts.request permission that gets someone into this panel at all — hide the "Add a mobile
+   * money number" entry point here when they only hold the latter. */
+  canManageMethods: boolean;
 }) {
   const {
     payout,
@@ -364,8 +369,9 @@ function TransferFundsPanel({
   // usePayoutSummary's own `payout` is null both while the balance is still loading AND once it's
   // confirmed there's nothing to withdraw — those need different UI (a loading state vs. an actual
   // empty state), so this reads lencoAvailable separately to tell the two apart.
-  const { lencoAvailable } = usePayoutSummary();
+  const { lencoAvailable, availableBalance } = usePayoutSummary();
   const balanceLoading = lencoAvailable === null;
+  const belowPayoutMinimum = availableBalance !== null && availableBalance < 100;
 
   // The modal always opens straight into method-selection — "idle" is only meaningful for the
   // inline Settings block, which has its own separate "Withdraw" button to get there.
@@ -382,7 +388,12 @@ function TransferFundsPanel({
     ? undefined
     : step === "confirm"
       ? (
-          <Button variant="primary" className="w-full py-2.5" disabled={!selectedRecipient} onClick={startConfirmation}>
+          <Button
+            variant="primary"
+            className="w-full py-2.5"
+            disabled={!selectedRecipient || belowPayoutMinimum}
+            onClick={startConfirmation}
+          >
             Confirm and send code
           </Button>
         )
@@ -426,11 +437,13 @@ function TransferFundsPanel({
       <PageHeader
         title="Transfer funds"
         description={
-          payout
-            ? `Send ${payout.amount} to one of your saved payout methods.`
-            : balanceLoading
-              ? "Checking your available balance…"
-              : "Nothing available to transfer yet."
+          belowPayoutMinimum
+            ? `You need at least K100 available to pay out. Available now: ${formatCurrency(availableBalance ?? 0)}`
+            : payout
+              ? `Send ${payout.amount} to one of your saved payout methods.`
+              : balanceLoading
+                ? "Checking your available balance…"
+                : "Nothing available to transfer yet."
         }
       />
 
@@ -623,9 +636,15 @@ function TransferFundsPanel({
               {recipients.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-line px-4 py-4 text-center">
                   <p className="text-xs text-muted">No payout methods saved yet.</p>
-                  <div className="mt-1.5 flex justify-center">
-                    <AddMobileMoneyRecipient propertyId={propertyId} existing={recipients} onAdded={onRecipientAdded} />
-                  </div>
+                  {canManageMethods ? (
+                    <div className="mt-1.5 flex justify-center">
+                      <AddMobileMoneyRecipient propertyId={propertyId} existing={recipients} onAdded={onRecipientAdded} />
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-muted" title="Your role can't do this">
+                      Ask an owner or manager to add a payout method.
+                    </p>
+                  )}
                 </div>
               ) : (
                 <>
@@ -644,9 +663,11 @@ function TransferFundsPanel({
                       the one payout method type a landlord can actually have several of. Same
                       component Payout methods' modal uses, so it matches that flow exactly rather
                       than reimplementing a second version of it here. */}
-                  <div className="mt-3">
-                    <AddMobileMoneyRecipient propertyId={propertyId} existing={recipients} onAdded={onRecipientAdded} />
-                  </div>
+                  {canManageMethods && (
+                    <div className="mt-3">
+                      <AddMobileMoneyRecipient propertyId={propertyId} existing={recipients} onAdded={onRecipientAdded} />
+                    </div>
+                  )}
                 </>
               )}
             </motion.div>
@@ -960,6 +981,7 @@ function PayoutMethodsModal({
   onEditBank,
   autoOpenAdd,
   onAutoOpenAddHandled,
+  peopleLabels,
 }: {
   propertyId: string;
   recipients: PayoutRecipient[];
@@ -970,6 +992,8 @@ function PayoutMethodsModal({
    * set when the global Create launcher (Header.tsx) sent the user here via ?action=add-recipient. */
   autoOpenAdd?: boolean;
   onAutoOpenAddHandled?: () => void;
+  /** user_id -> display name, for each method's "Added by {name}" line. */
+  peopleLabels: Map<string, string>;
 }) {
   const { showToast } = useToast();
   const [removing, setRemoving] = useState<PayoutRecipient | null>(null);
@@ -1103,6 +1127,9 @@ function PayoutMethodsModal({
                         {r.is_default && defaultBadge}
                       </div>
                       <p className="mt-0.5 text-xs text-muted">Bank account ending {last4(r.account_number)}</p>
+                      {r.created_by && peopleLabels.get(r.created_by) && (
+                        <p className="mt-0.5 text-[11px] text-muted/80">Added by {peopleLabels.get(r.created_by)}</p>
+                      )}
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
                       {!r.is_default && (
@@ -1150,6 +1177,9 @@ function PayoutMethodsModal({
                           {r.is_default && defaultBadge}
                         </div>
                         <p className="mt-0.5 text-xs text-muted">Number ending {last4(r.phone_number)}</p>
+                        {r.created_by && peopleLabels.get(r.created_by) && (
+                          <p className="mt-0.5 text-[11px] text-muted/80">Added by {peopleLabels.get(r.created_by)}</p>
+                        )}
                       </div>
                       <div className="flex shrink-0 items-center gap-1">
                         {!r.is_default && (
@@ -1747,8 +1777,17 @@ export default function Payouts() {
     setAccountNumber,
     setAccountHolderName,
   } = useSettings();
-  const isOwner = useIsOwner();
-  const { payout, lencoAvailable } = usePayoutSummary();
+  const { can, isOwner } = useAccess();
+  // Three independent gates, per the payouts permission spec: `payouts.view` (or request/manage,
+  // which both imply being able to see the page's content) gets you balance + history read-only;
+  // `payouts.request` gates the withdraw flow; `payout_methods.manage` gates adding/editing/
+  // removing payout methods. An owner's `can()` already returns true for everything, so these stay
+  // correct without a separate owner check.
+  const canViewPayouts = isOwner || can("payouts.view") || can("payouts.request") || can("payout_methods.manage");
+  const canRequestPayout = isOwner || can("payouts.request");
+  const canManageMethods = isOwner || can("payout_methods.manage");
+  const { payout, lencoAvailable, availableBalance } = usePayoutSummary();
+  const belowPayoutMinimum = availableBalance !== null && availableBalance < 100;
 
   const [recipients, setRecipients] = useState<PayoutRecipient[]>([]);
   const [historyTab, setHistoryTab] = useState<"sent" | "received">("received");
@@ -1758,6 +1797,10 @@ export default function Payouts() {
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [collectionRows, setCollectionRows] = useState<CollectionRecord[] | null>(null);
   const [lifetimeCollected, setLifetimeCollected] = useState<number | null>(null);
+  // Set when listCollections fails or comes back RLS-blocked for a payout-only user without
+  // rent.view — lets the "Collected via payment link" stat show "Unavailable" instead of a
+  // skeleton that would otherwise spin forever (the fetch never throws a user-facing error here).
+  const [lifetimeCollectedUnavailable, setLifetimeCollectedUnavailable] = useState(false);
   const [lifetimePaidOut, setLifetimePaidOut] = useState<number | null>(null);
   const [collectionsLoading, setCollectionsLoading] = useState(true);
   const [collectionPage, setCollectionPage] = useState(1);
@@ -1768,6 +1811,10 @@ export default function Payouts() {
   const [toast, setToast] = useState<string | null>(null);
   const [autoOpenAddRecipient, setAutoOpenAddRecipient] = useState(false);
   const [exportModalOpen, setExportModalOpen] = useState(false);
+  // user_id -> display label, for "Requested by {name}" / "Added by {name}" attribution lines.
+  // Fetched once per property; "(removed)" is appended for anyone whose membership has since been
+  // revoked, so an old attribution line still makes sense after that person loses access.
+  const [peopleLabels, setPeopleLabels] = useState<Map<string, string>>(new Map());
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -1780,7 +1827,7 @@ export default function Payouts() {
   // ?action=add-recipient instead of clicking this page's own "Add a payout method" button —
   // cleared immediately after so a refresh or back/forward doesn't reopen the modal.
   useEffect(() => {
-    if (new URLSearchParams(location.search).get("action") === "add-recipient") {
+    if (new URLSearchParams(location.search).get("action") === "add-recipient" && canManageMethods) {
       setMethodsModalOpen(true);
       setAutoOpenAddRecipient(true);
       navigate(location.pathname, { replace: true });
@@ -1801,13 +1848,35 @@ export default function Payouts() {
   };
 
   useEffect(() => {
-    if (!propertyId || !isOwner) return;
+    if (!propertyId || !canViewPayouts) return;
     // eslint-disable-next-line react-hooks/exhaustive-deps
     refreshRecipients();
-  }, [propertyId, isOwner]);
+  }, [propertyId, canViewPayouts]);
 
   useEffect(() => {
-    if (!propertyId || !isOwner) return;
+    if (!propertyId || !canViewPayouts) return;
+    let cancelled = false;
+    supabase
+      .rpc("property_people", { p_property: propertyId })
+      .then(({ data, error }) => {
+        if (error) {
+          console.error("Failed to load property people", error.message);
+          return;
+        }
+        if (cancelled) return;
+        const map = new Map<string, string>();
+        for (const row of data ?? []) {
+          map.set(row.user_id, row.status === "revoked" ? `${row.full_name} (removed)` : row.full_name);
+        }
+        setPeopleLabels(map);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [propertyId, canViewPayouts]);
+
+  useEffect(() => {
+    if (!propertyId || !canViewPayouts) return;
     let cancelled = false;
     setLoading(true);
     listPayouts(propertyId, {})
@@ -1821,18 +1890,27 @@ export default function Payouts() {
     return () => {
       cancelled = true;
     };
-  }, [propertyId, isOwner]);
+  }, [propertyId, canViewPayouts]);
 
   // Lifetime total money received — independent of the history table's own date/status filters,
   // so the stat card keeps showing the all-time figure no matter what the landlord filters below.
+  // listCollections is gated server-side by rent.view, not a payout permission — a finance officer
+  // or other payout-only user without rent.view gets an RLS-empty (or erroring) result here, which
+  // must never surface as an error toast/state; it just means "lifetime collected" stays
+  // unavailable (null, same skeleton state) for them instead of showing a wrong or scary number.
+  // Owners/managers (who do have rent.view) are unaffected either way.
   useEffect(() => {
-    if (!propertyId || !isOwner) return;
+    if (!propertyId || !canViewPayouts) return;
     let cancelled = false;
     listCollections(propertyId, { status: ["successful"] })
       .then((data) => {
         if (!cancelled) setLifetimeCollected(data.filter((r) => !r.isTest).reduce((sum, r) => sum + r.amount, 0));
       })
-      .catch((e) => console.error("Failed to load lifetime collections total", e));
+      .catch(() => {
+        // Softened on purpose — see comment above. Leave lifetimeCollected as null, but mark it
+        // unavailable so the stat card stops showing a loading skeleton for it.
+        if (!cancelled) setLifetimeCollectedUnavailable(true);
+      });
     listPayouts(propertyId, { status: ["successful"] })
       .then((data) => {
         if (!cancelled) setLifetimePaidOut(data.reduce((sum, r) => sum + r.amount, 0));
@@ -1841,24 +1919,28 @@ export default function Payouts() {
     return () => {
       cancelled = true;
     };
-  }, [propertyId, isOwner]);
+  }, [propertyId, canViewPayouts]);
 
   useEffect(() => {
-    if (!propertyId || !isOwner) return;
+    if (!propertyId || !canViewPayouts) return;
     let cancelled = false;
     setCollectionsLoading(true);
     listCollections(propertyId, { status: ["successful"] })
       .then((data) => {
         if (!cancelled) setCollectionRows(data);
       })
-      .catch((e) => console.error("Failed to load payments received", e))
+      .catch(() => {
+        // Softened the same way as the lifetime-total fetch above: a payout-only user without
+        // rent.view never sees an error here, just an empty "Payments received" tab.
+        if (!cancelled) setCollectionRows([]);
+      })
       .finally(() => {
         if (!cancelled) setCollectionsLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [propertyId, isOwner]);
+  }, [propertyId, canViewPayouts]);
 
   const pageCount = Math.max(1, Math.ceil((rows?.length ?? 0) / pageSize));
   const pageRows = useMemo(() => (rows ?? []).slice((page - 1) * pageSize, page * pageSize), [rows, page, pageSize]);
@@ -1867,7 +1949,7 @@ export default function Payouts() {
     () => (collectionRows ?? []).slice((collectionPage - 1) * pageSize, collectionPage * pageSize),
     [collectionRows, collectionPage, pageSize]
   );
-  if (!isOwner) {
+  if (!canViewPayouts) {
     return (
       <div className="px-4 py-10 text-center sm:px-8">
         <p className="text-sm text-muted">You don't have access to this page.</p>
@@ -1875,7 +1957,24 @@ export default function Payouts() {
     );
   }
 
-  const wizardActive = propertyId && (!lencoConnected || editingBank || wizardHold);
+  // `lencoConnected` comes from the `settings` table, which non-owners can't read (it's always
+  // false for them regardless of reality). Whether a recipient already exists is the real,
+  // RLS-correct signal for "is this property set up" for anyone with a payout permission — fall
+  // back to it so a manager/finance officer with existing payout methods doesn't see a false
+  // "not set up yet" screen just because they aren't the owner.
+  const isPayoutConnected = lencoConnected || recipients.length > 0;
+  const wizardActive = propertyId && (!isPayoutConnected || editingBank || wizardHold);
+
+  if (transferActive && propertyId && !canRequestPayout) {
+    return (
+      <div className="px-4 py-10 text-center sm:px-8">
+        <p className="text-sm text-muted">Your role can't do this.</p>
+        <Button variant="secondary" className="mt-4" onClick={() => navigate("/online-payments")}>
+          Back to Online payments
+        </Button>
+      </div>
+    );
+  }
 
   if (transferActive && propertyId) {
     return (
@@ -1884,6 +1983,7 @@ export default function Payouts() {
         recipients={recipients}
         onClose={() => navigate("/online-payments")}
         onRecipientAdded={refreshRecipients}
+        canManageMethods={canManageMethods}
       />
     );
   }
@@ -1895,21 +1995,50 @@ export default function Payouts() {
         description="Your balance, payout methods, and every transfer to your bank or mobile money."
         actions={
           !wizardActive ? (
-            <div className="flex w-full gap-2 sm:w-auto">
-              <Button variant="outline" className="flex-1 sm:flex-none" onClick={() => setMethodsModalOpen(true)}>
-                Manage
-              </Button>
-              <Button variant="primary" className="flex-1 gap-1.5 sm:flex-none" onClick={() => navigate("/online-payments/transfer")}>
-                <ArrowsLeftRight size={14} weight="bold" />
-                Transfer funds
-              </Button>
-            </div>
+            canManageMethods || canRequestPayout ? (
+              <div className="flex w-full gap-2 sm:w-auto">
+                {canManageMethods && (
+                  <Button variant="outline" className="flex-1 sm:flex-none" onClick={() => setMethodsModalOpen(true)}>
+                    Manage
+                  </Button>
+                )}
+                {canRequestPayout && (
+                  <Button
+                    variant="primary"
+                    className="flex-1 gap-1.5 sm:flex-none"
+                    disabled={belowPayoutMinimum}
+                    title={belowPayoutMinimum ? `You need at least K100 available to pay out. Available now: ${formatCurrency(availableBalance ?? 0)}` : undefined}
+                    onClick={() => navigate("/online-payments/transfer")}
+                  >
+                    <ArrowsLeftRight size={14} weight="bold" />
+                    Transfer funds
+                  </Button>
+                )}
+              </div>
+            ) : (
+              // View-only (payouts.view alone) — a quiet indicator rather than silently showing no
+              // actions at all, same wording used throughout this change wherever a role lacks the
+              // permission for an action.
+              <span className="rounded-full bg-mist px-2.5 py-1 text-xs font-medium text-muted" title="Your role can't do this">
+                Read only
+              </span>
+            )
           ) : undefined
         }
       />
 
       <div className="space-y-5 px-4 pb-10 sm:px-8">
-        {wizardActive ? (
+        {wizardActive && !canManageMethods ? (
+          // Setting up online payments (connecting a bank/mobile money for the first time) is a
+          // payout_methods.manage action — a payouts.view/payouts.request-only user hitting this
+          // before a bank/mobile money is connected gets a plain message, not the setup wizard.
+          <div className="rounded-lg border border-dashed border-line px-4 py-10 text-center">
+            <p className="text-sm text-muted">Online payments isn't set up for this property yet.</p>
+            <p className="mt-1 text-xs text-muted" title="Your role can't do this">
+              Ask an owner or manager to connect a bank account or mobile money number.
+            </p>
+          </div>
+        ) : wizardActive ? (
           <BankConnectWizard
             propertyId={propertyId!}
             editingBank={editingBank}
@@ -1942,12 +2071,19 @@ export default function Payouts() {
                 label="Available balance"
                 value={payout ? payout.amount : lencoAvailable === null ? <Skeleton className="h-8 w-24" /> : formatCurrency(0)}
                 valueClassName="text-emerald-600"
+                caption={belowPayoutMinimum ? `You need at least K100 available to pay out. Available now: ${formatCurrency(availableBalance ?? 0)}` : undefined}
               />
               <StatCard
                 wide
                 icon={<CoinsIcon size={13} weight="bold" />}
                 label="Collected via payment link"
-                value={lifetimeCollected === null ? <Skeleton className="h-8 w-24" /> : formatCurrency(lifetimeCollected)}
+                value={
+                  lifetimeCollected !== null
+                    ? formatCurrency(lifetimeCollected)
+                    : lifetimeCollectedUnavailable
+                      ? <span className="text-muted">Unavailable</span>
+                      : <Skeleton className="h-8 w-24" />
+                }
                 to="/rent"
                 caption="See who's paid, who hasn't"
               />
@@ -1960,8 +2096,8 @@ export default function Payouts() {
               <StatCard
                 icon={<CheckCircle size={13} weight="bold" />}
                 label="Online payments"
-                value={lencoConnected ? "Connected" : "Not connected"}
-                valueClassName={lencoConnected ? "text-brand" : "text-amber-600"}
+                value={isPayoutConnected ? "Connected" : "Not connected"}
+                valueClassName={isPayoutConnected ? "text-brand" : "text-amber-600"}
               />
             </div>
           </>
@@ -2055,6 +2191,9 @@ export default function Payouts() {
                               ) : (
                                 "-"
                               ))}
+                            {r.requestedBy && peopleLabels.get(r.requestedBy) && (
+                              <p className="mt-0.5 text-[11px] text-muted/80">Requested by {peopleLabels.get(r.requestedBy)}</p>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -2113,6 +2252,9 @@ export default function Payouts() {
                         <p className="mt-2 text-xs text-muted">
                           {r.failureReason ?? `Fee ${formatCurrency(r.feeAmount!)} · Net ${formatCurrency(r.netAmount!)}`}
                         </p>
+                      )}
+                      {r.requestedBy && peopleLabels.get(r.requestedBy) && (
+                        <p className="mt-1 text-[11px] text-muted/80">Requested by {peopleLabels.get(r.requestedBy)}</p>
                       )}
                     </div>
                   ))}
@@ -2287,6 +2429,7 @@ export default function Payouts() {
           }}
           autoOpenAdd={autoOpenAddRecipient}
           onAutoOpenAddHandled={() => setAutoOpenAddRecipient(false)}
+          peopleLabels={peopleLabels}
         />
       )}
       {exportModalOpen && propertyId && (

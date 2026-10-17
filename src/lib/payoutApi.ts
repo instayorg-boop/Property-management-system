@@ -39,14 +39,16 @@ export async function listPayoutRecipients(propertyId: string): Promise<PayoutRe
   return data ?? [];
 }
 
-/** Switches which recipient a withdrawal defaults to — two plain updates rather than a stored
- * procedure; a rare double-click racing this isn't worth the extra moving part for what's a
- * low-frequency settings action. */
+/** Switches which recipient a withdrawal defaults to — routed through manage-payout-recipient so
+ * the server (not direct table writes) enforces who's allowed to change payout methods, now that
+ * a team member can hold payout_methods.manage without being the owner. */
 export async function setDefaultPayoutRecipient(propertyId: string, recipientId: string): Promise<void> {
-  const { error: clearError } = await supabase.from("payout_recipients").update({ is_default: false }).eq("property_id", propertyId);
-  if (clearError) throw clearError;
-  const { error: setError } = await supabase.from("payout_recipients").update({ is_default: true }).eq("id", recipientId);
-  if (setError) throw setError;
+  const { data, error } = await supabase.functions.invoke<{ ok?: boolean; error?: string }>("manage-payout-recipient", {
+    body: { action: "set_default", propertyId, recipientId },
+  });
+  if (error || !data?.ok) {
+    throw new Error(await edgeFunctionErrorMessage(error, "Couldn't update the default method, please try again."));
+  }
   void logAuditEvent({
     propertyId,
     action: "payout_recipient.added",
@@ -56,9 +58,16 @@ export async function setDefaultPayoutRecipient(propertyId: string, recipientId:
   });
 }
 
+/** A 409 from the server means this method has past payouts and can't be removed — the server's
+ * own `error` text explains that, so it's surfaced as-is rather than replaced with a generic
+ * message here. */
 export async function deletePayoutRecipient(id: string, propertyId?: string): Promise<void> {
-  const { error } = await supabase.from("payout_recipients").delete().eq("id", id);
-  if (error) throw error;
+  const { data, error } = await supabase.functions.invoke<{ ok?: boolean; error?: string }>("manage-payout-recipient", {
+    body: { action: "remove", propertyId, recipientId: id },
+  });
+  if (error || !data?.ok) {
+    throw new Error(await edgeFunctionErrorMessage(error, "Couldn't remove that method, please try again."));
+  }
   if (propertyId) {
     void logAuditEvent({
       propertyId,
@@ -285,6 +294,10 @@ export type PayoutRecord = {
   /** The recipient this payout was sent to, for the "Method" column — null for older rows created
    * before a recipient could be deleted independently, or if the join comes back empty. */
   recipient: Pick<PayoutRecipient, "type" | "provider" | "account_name" | "account_number" | "phone_number"> | null;
+  /** auth.users id of whoever requested this payout — null on older rows recorded before this
+   * column existed. Resolve to a name via property_people, and render nothing (not "Unknown")
+   * when it's null. */
+  requestedBy: string | null;
 };
 
 /** Payout history for one property, newest first — used by PayoutDetailDrawer's "Recent payouts"
@@ -298,7 +311,7 @@ export async function listPayouts(
   let query = supabase
     .from("payouts")
     .select(
-      "id, amount, fee_amount, net_amount, narration, status, created_at, failure_reason, payout_recipients(type, provider, account_name, account_number, phone_number)"
+      "id, amount, fee_amount, net_amount, narration, status, created_at, failure_reason, requested_by, payout_recipients(type, provider, account_name, account_number, phone_number)"
     )
     .eq("property_id", propertyId)
     .order("created_at", { ascending: false });
@@ -318,6 +331,7 @@ export async function listPayouts(
     createdAt: row.created_at,
     failureReason: row.failure_reason,
     recipient: Array.isArray(row.payout_recipients) ? (row.payout_recipients[0] ?? null) : row.payout_recipients,
+    requestedBy: row.requested_by ?? null,
   }));
 }
 

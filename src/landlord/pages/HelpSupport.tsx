@@ -144,7 +144,7 @@ export default function HelpSupport() {
   }
 
   return (
-    <div  className=" bg-white">
+    <div  className=" bg-canvas">
     <div className="max-w-5xl mx-auto ">
       <HelpTopBar />
       
@@ -186,7 +186,7 @@ export default function HelpSupport() {
               <div
                 id="help-search-results"
                 role="listbox"
-                className="absolute left-0 right-0 top-[calc(100%+8px)] z-20 max-h-96 overflow-y-auto rounded-lg border border-line bg-white text-left shadow-xl"
+                className="absolute left-0 right-0 top-[calc(100%+8px)] z-20 max-h-96 overflow-y-auto rounded-lg border border-line bg-paper text-left shadow-xl"
               >
                 {searching && <p className="px-4 py-3 text-xs text-muted">Searching...</p>}
                 {!searching && results.length === 0 && (

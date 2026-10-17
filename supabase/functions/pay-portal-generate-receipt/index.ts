@@ -7,15 +7,18 @@
 // isn't available here without paying for a third-party rendering API. jsPDF runs natively in Deno
 // and is the standard approach for generating invoices/receipts server-side.
 //
-// Layout (v3, Stripe/Anthropic-invoice style): "Receipt" title top-left, small IPM brand mark
-// top-right (icon only, aspect-correct — see fitImage), receipt number (short display code) + date
-// paid, a bill-from (landlord/property, unmasked landlord phone) / bill-to (tenant, room + room
-// type, unmasked tenant phone) pair, a bold "K2,500.00 paid on <date>" line with a partial-payment
-// note underneath when the payment didn't clear the balance owed, an itemized table sourced from
-// collections.line_items with a separate "Processing fee" row, Total + Amount paid (no subtotal,
-// there's no tax/discount to separate it from total), a paid-via line, and a centered "Powered by
-// Instay Manage" footer lockup (icon + wordmark, vertically centered against each other). No stamp
-// graphic, no amount-in-words, no payment-history table (a receipt is generated per payment, so
+// Layout (v4): "Rent receipt" title top-left (no brand mark up here, the brand only appears once,
+// in the footer lockup), receipt number + date paid, a bill-from (landlord/property, unmasked
+// landlord phone) / bill-to (tenant, room + room type, unmasked tenant phone) pair, a bold
+// "K2,500.00 paid on <date>" line with a small outlined status mark set directly against it
+// (drawStatusPill, green for "Paid in full", amber for "Partly paid", the one accent color on
+// the page) and a partial-payment note underneath when the payment didn't clear the balance owed,
+// an itemized table sourced from collections.line_items with a separate "Processing fee" row, a
+// Total / Amount paid / Balance band set apart with a tint instead of a pair of rules, a paid-via
+// line with the Lenco reference underneath it (moved down from the header info block, where it
+// used to sit next to a plain "Status" row that the pill above now replaces), and a centered
+// "Powered by Instay Manage" footer lockup (icon + wordmark, vertically centered against each
+// other). No amount-in-words, no payment-history table (a receipt is generated per payment, so
 // history would only ever have shown the one row already above it).
 //
 // Logo aspect ratio: jsPDF stretches addImage to whatever width/height you pass, so a non-square
@@ -50,6 +53,8 @@ const COLOR = {
   inkMuted: [91, 102, 95] as [number, number, number],
   rule: [229, 229, 224] as [number, number, number],
   band: [244, 245, 242] as [number, number, number],
+  paid: [31, 122, 77] as [number, number, number],
+  amber: [180, 83, 9] as [number, number, number],
 };
 
 function formatMoney(amount: number): string {
@@ -110,6 +115,36 @@ function fitImage(
   } catch {
     return null;
   }
+}
+
+// Draws a small outlined status mark (check + label), right-aligned at rightEdgeX and vertically
+// centered on centerY, set directly against the amount it confirms rather than filed away in the
+// header info block as plain text.
+function drawStatusPill(
+  doc: jsPDF,
+  label: string,
+  rightEdgeX: number,
+  centerY: number,
+  color: [number, number, number]
+): void {
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  const textWidth = doc.getTextWidth(label);
+  const padX = 2.5;
+  const checkW = 4.5;
+  const height = 5.5;
+  const width = textWidth + padX * 2 + checkW;
+  const x = rightEdgeX - width;
+  const boxY = centerY - height / 2;
+  doc.setDrawColor(...color);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(x, boxY, width, height, 1, 1);
+  const checkX = x + padX;
+  doc.setLineWidth(0.5);
+  doc.line(checkX, centerY, checkX + 1.1, centerY + 1.2);
+  doc.line(checkX + 1.1, centerY + 1.2, checkX + 2.6, centerY - 1.3);
+  doc.setTextColor(...color);
+  doc.text(label, checkX + checkW, centerY + 1.1);
 }
 
 Deno.serve(async (req) => {
@@ -276,14 +311,11 @@ Deno.serve(async (req) => {
   const contentWidth = pageWidth - margin * 2;
   let y = 26;
 
-  // Header: "Receipt" title left, brand mark (icon only, aspect-correct) right
+  // Header: "Rent receipt" title, alone, the brand mark only shows once further down in the footer
   doc.setFont("helvetica", "bold");
   doc.setFontSize(18);
   doc.setTextColor(...COLOR.ink);
-  doc.text("Receipt", margin, y);
-  if (logoDataUrl) {
-    fitImage(doc, logoDataUrl, pageWidth - margin - 4.5, y - 3.5, 9, 9);
-  }
+  doc.text("Rent receipt", margin, y);
 
   y += 6;
   doc.setDrawColor(...COLOR.ink);
@@ -305,22 +337,6 @@ Deno.serve(async (req) => {
   doc.setFont("helvetica", "normal");
   doc.setTextColor(...COLOR.inkMuted);
   doc.text(paidOnLabel, margin + 32, y);
-  y += 6;
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(...COLOR.ink);
-  doc.text("Status", margin, y);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(...COLOR.inkMuted);
-  doc.text(isPartial ? "Partly paid" : "Paid in full", margin + 32, y);
-  if (collection.lenco_collection_id) {
-    y += 6;
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(...COLOR.ink);
-    doc.text("Reference", margin, y);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(...COLOR.inkMuted);
-    doc.text(String(collection.lenco_collection_id), margin + 32, y);
-  }
 
   // Bill from / bill to
   y += 12;
@@ -365,11 +381,18 @@ Deno.serve(async (req) => {
 
   y = Math.max(yFrom, yTo) + 10;
 
-  // Paid line
+  // Paid line, with a status mark set directly against it instead of a plain "Status" row above
   doc.setFont("helvetica", "bold");
   doc.setFontSize(13);
   doc.setTextColor(...COLOR.ink);
   doc.text(`${formatMoney(collection.amount)} paid on ${paidOnLabel}`, margin, y);
+  drawStatusPill(
+    doc,
+    isPartial ? "Partly paid" : "Paid in full",
+    pageWidth - margin,
+    y - 3.5,
+    isPartial ? COLOR.amber : COLOR.paid
+  );
   if (isPartial) {
     y += 5;
     doc.setFont("helvetica", "normal");
@@ -408,12 +431,18 @@ Deno.serve(async (req) => {
     doc.setFontSize(9.5);
   }
 
-  // Total / amount paid — no subtotal row, there's no tax or discount to separate it from total
+  // Total / amount paid / balance, set apart with a tinted band sized to the rows that actually
+  // apply (no subtotal row, there's no tax or discount to separate it from total) rather than the
+  // old pair of rules around just the Total line.
   y += 6;
-  doc.setDrawColor(...COLOR.rule);
-  doc.setLineWidth(0.2);
-  doc.line(margin, y, pageWidth - margin, y);
-  y += 5;
+  const totalsRows = 2 + (balanceAfter != null ? 1 : 0);
+  const rowH = 6;
+  const bandPad = 4;
+  const bandTop = y - bandPad;
+  const bandHeight = (totalsRows - 1) * rowH + bandPad * 2 + 3;
+  doc.setFillColor(...COLOR.band);
+  doc.rect(margin - 4, bandTop, contentWidth + 8, bandHeight, "F");
+
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   doc.setTextColor(...COLOR.inkMuted);
@@ -421,35 +450,43 @@ Deno.serve(async (req) => {
   doc.setTextColor(...COLOR.ink);
   doc.text(formatMoney(collection.amount), pageWidth - margin, y, { align: "right" });
 
-  y += 4;
-  doc.line(margin, y, pageWidth - margin, y);
-  y += 5;
+  y += rowH;
   doc.setFont("helvetica", "bold");
   doc.setTextColor(...COLOR.ink);
   doc.text("Amount paid", margin, y);
   doc.text(formatMoney(collection.amount), pageWidth - margin, y, { align: "right" });
 
   if (balanceAfter != null) {
-    y += 6;
+    y += rowH;
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
     doc.setTextColor(...COLOR.inkMuted);
     doc.text("Balance after this payment", margin, y);
+    doc.setTextColor(...COLOR.ink);
     doc.text(formatMoney(balanceAfter), pageWidth - margin, y, { align: "right" });
   }
+
+  y = bandTop + bandHeight + 4;
   if (coversAdvance) {
-    y += 6;
+    doc.setFont("helvetica", "normal");
     doc.setFontSize(8.5);
+    doc.setTextColor(...COLOR.inkMuted);
     doc.text(`This payment is credited towards ${advanceLabel} rent.`, margin, y);
+    y += 6;
   }
 
-  // Paid via
-  y += 10;
+  // Paid via, with the Lenco reference set underneath it now that Reference has moved out of the
+  // header info block, reading more naturally beside how the payment was made than up top.
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
   doc.setTextColor(...COLOR.inkMuted);
   const operatorLabel = OPERATOR_LABEL[collection.operator ?? ""] ?? collection.operator ?? "Mobile money";
   doc.text(`Paid via ${operatorLabel} mobile money ···${lastDigits(collection.phone ?? "", 3)}`, margin, y);
+  if (collection.lenco_collection_id) {
+    y += 4.5;
+    doc.setFontSize(7.5);
+    doc.text(`Reference ${collection.lenco_collection_id}`, margin, y);
+  }
 
   // Footer: "Powered by Instay Manage" lockup, centered as one group — icon and wordmark share a
   // vertical center line instead of being placed independently (the fix for the stretched/

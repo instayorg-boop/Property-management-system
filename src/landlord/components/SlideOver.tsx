@@ -3,6 +3,7 @@ import { useEffect, useId, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { X as CloseIcon } from "@phosphor-icons/react";
 import { matchHeaderIcon } from "./Modal";
+import { useTheme } from "../ThemeContext";
 
 /** Right-hand panel for longer, denser work than a modal fits (a tenant's payment, a request's
  * details, a payout balance). It shares the modal's frame so the two read as one family: the same
@@ -36,6 +37,7 @@ export default function SlideOver({
   const downOnBackdrop = useRef(false);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const { isDark } = useTheme();
 
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
@@ -73,7 +75,7 @@ export default function SlideOver({
   // that sets a CSS transform (e.g. Sidebar.tsx's translate-x-0/-translate-x-full open/close
   // animation), since a transformed ancestor becomes the containing block for its fixed descendants.
   return createPortal(
-    <div className="fixed inset-0 z-50 flex justify-end">
+    <div className={`fixed inset-0 z-50 flex justify-end ${isDark ? "theme-dark" : ""}`}>
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}

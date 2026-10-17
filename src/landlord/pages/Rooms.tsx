@@ -884,7 +884,7 @@ function RoomStatusFilterMenu({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: -4 }}
             transition={{ duration: 0.12 }}
-            className="absolute right-0 z-30 mt-1 w-44 overflow-hidden rounded-lg border border-line bg-white py-1 shadow-lg"
+            className="absolute right-0 z-30 mt-1 w-44 overflow-hidden rounded-lg border border-line bg-paper py-1 shadow-lg"
           >
             {statusFilters.map((f) => (
               <button

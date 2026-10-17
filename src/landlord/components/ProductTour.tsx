@@ -15,37 +15,51 @@ const STEPS: Step[] = [
   {
     target: "",
     title: "Welcome to your dashboard.",
-    body: "This is your daily view — rent collected, what's outstanding, and anything that needs your attention today.",
-  },
-  {
-    target: "setup-checklist",
-    title: "Pick up where you left off.",
-    body: "This checklist tracks what's left to set up. Nothing here is required to use the app — it's just a reminder, and it disappears once you're done (or you can dismiss it any time).",
+    body: "This is your daily view, rent collected, what's outstanding, and anything that needs your attention today.",
     to: "/dashboard",
-  },
-  {
-    target: "nav-rooms",
-    title: "Set up your rooms.",
-    body: "Add room types with their rent and deposit terms, then the individual rooms fill in underneath.",
-  },
-  {
-    target: "nav-tenants",
-    title: "Add your tenants.",
-    body: "One at a time, or import a whole spreadsheet at once.",
   },
   {
     target: "nav-rent",
     title: "Track rent here.",
     body: "See who's paid, who's overdue, and log payments as they come in.",
+    to: "/rent",
   },
   {
-    target: "nav-settings",
-    title: "Configure the details.",
-    body: "Late fees, payout accounts, invoicing — all the fine print lives here whenever you're ready for it.",
+    target: "nav-tenants",
+    title: "Your tenants.",
+    body: "Add tenants one at a time or import a spreadsheet, then open any tenant to see their full ledger, due dates and details.",
+    to: "/tenants",
+  },
+  {
+    target: "nav-onlinePayments",
+    title: "Online payments.",
+    body: "Tenants can pay rent by mobile money through their own payment link. Collections land here automatically, nothing to enter by hand.",
+    to: "/online-payments",
+  },
+  {
+    target: "nav-accounting",
+    title: "Log your expenses.",
+    body: "Keep property expenses in one place here, so your numbers are accurate whenever you need a report.",
+    to: "/expense-tracker",
+  },
+  {
+    target: "nav-maintenance",
+    title: "Maintenance requests.",
+    body: "Tenants report issues through their own portal, and you track and resolve them from this page.",
+    to: "/maintenance",
   },
 ];
 
 const STORAGE_PREFIX = "instay-tour-seen-";
+
+// Settings' "Take a tour" button lives well outside this component, so it signals a restart
+// through a plain window event rather than threading state/context down just for this one
+// button, ProductTour is mounted once, globally, in DashboardLayout.
+const RESTART_EVENT = "instay:start-tour";
+
+export function startProductTour() {
+  window.dispatchEvent(new Event(RESTART_EVENT));
+}
 
 function useTargetRect(selector: string) {
   const [rect, setRect] = useState<DOMRect | null>(null);
@@ -100,9 +114,46 @@ function TourStep({ step, index, total, onNext, onBack, onSkip }: {
         left: Math.min(Math.max(rect!.left, 16), window.innerWidth - 336),
       };
 
+  // On desktop the sidebar is its own persistent column, so the content panel beside it is
+  // genuinely visible and worth widening the hole for (see below). Below the `lg` breakpoint
+  // the sidebar is instead a full-screen drawer (Sidebar.tsx's `lg:hidden` block, z-50) sitting
+  // in front of that same content, so widening the hole there would cut a hole the size of the
+  // whole screen and light up every other item in the list along with it, not just this one.
+  const isDesktopLayout = window.innerWidth >= 1024;
+
+  // Every real step navigates to a page (see STEPS' `to`), so on desktop the thing worth showing
+  // isn't just the nav link that got clicked, it's the page itself. tour-content (DashboardLayout's
+  // <main>) marks that whole panel so the hole can grow to cover it too, instead of lighting up a
+  // label that points at a page the overlay is still hiding.
+  const contentRect = useTargetRect(step.target && isDesktopLayout ? "tour-content" : "");
+
+  // The ring and tooltip stay anchored to the nav link alone (rect) so the explanation still
+  // reads as being about that one link, but the dimmed-out hole is the union of the nav link and
+  // the content panel, so both are lit: four strips framing that combined box, instead of one
+  // sheet over everything, so what the tour is actually talking about shows through at full
+  // brightness and only the surrounding chrome dims.
+  const hole = rect
+    ? (() => {
+        const top = Math.min(rect.top, contentRect?.top ?? rect.top) - 4;
+        const left = Math.min(rect.left, contentRect?.left ?? rect.left) - 4;
+        const right = Math.max(rect.right, contentRect?.right ?? rect.right) + 4;
+        const bottom = Math.max(rect.bottom, contentRect?.bottom ?? rect.bottom) + 4;
+        return { top, left, width: right - left, height: bottom - top };
+      })()
+    : null;
+
   return (
     <>
-      <div className="fixed inset-0 z-[100] bg-ink/30" onClick={onSkip} aria-hidden="true" />
+      {hole ? (
+        <>
+          <div className="fixed inset-x-0 top-0 z-[100] bg-ink/70" style={{ height: Math.max(0, hole.top) }} onClick={onSkip} aria-hidden="true" />
+          <div className="fixed inset-x-0 bottom-0 z-[100] bg-ink/70" style={{ top: hole.top + hole.height }} onClick={onSkip} aria-hidden="true" />
+          <div className="fixed left-0 z-[100] bg-ink/70" style={{ top: hole.top, height: hole.height, width: Math.max(0, hole.left) }} onClick={onSkip} aria-hidden="true" />
+          <div className="fixed right-0 z-[100] bg-ink/70" style={{ top: hole.top, height: hole.height, left: hole.left + hole.width }} onClick={onSkip} aria-hidden="true" />
+        </>
+      ) : (
+        <div className="fixed inset-0 z-[100] bg-ink/70" onClick={onSkip} aria-hidden="true" />
+      )}
 
       {rect && (
         <motion.div
@@ -174,6 +225,19 @@ export default function ProductTour() {
     const id = window.setTimeout(() => setStepIndex(0), 600);
     return () => window.clearTimeout(id);
   }, [user]);
+
+  // The Settings "Take a tour" button (see startProductTour above) restarts regardless of
+  // whether this account has already seen it, the localStorage check above only guards the
+  // automatic first-visit trigger, never an explicit request to see it again.
+  useEffect(() => {
+    const handler = () => {
+      const target = STEPS[0];
+      if (target.to) navigate(target.to);
+      setStepIndex(0);
+    };
+    window.addEventListener(RESTART_EVENT, handler);
+    return () => window.removeEventListener(RESTART_EVENT, handler);
+  }, [navigate]);
 
   const finish = () => {
     if (user) window.localStorage.setItem(STORAGE_PREFIX + user.id, "1");

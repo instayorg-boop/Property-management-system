@@ -106,3 +106,11 @@ export function invalidatePortal(token: string, tenantId?: string) {
     invalidate(`documents:${tenantId}`);
   }
 }
+
+/** Narrower than invalidatePortal: for actions (like filing a maintenance report) that don't change
+ * the tenant's core/ledger data, so the success screen doesn't get stuck behind a refetch of data
+ * that never changed — busting `core:${token}` there made usePortal's `loading` flip back to true
+ * right as the success screen was about to render, since this page checks `loading` before `sent`. */
+export function invalidatePortalMaintenance(tenantId: string) {
+  invalidate(`maintenance:${tenantId}`);
+}

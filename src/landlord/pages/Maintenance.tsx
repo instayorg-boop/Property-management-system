@@ -346,7 +346,7 @@ function RowActionsMenu({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: -4 }}
             transition={{ duration: 0.12 }}
-            className="absolute right-0 z-30 mt-1 w-44 overflow-hidden rounded-lg border border-line bg-white py-1 shadow-lg"
+            className="absolute right-0 z-30 mt-1 w-44 overflow-hidden rounded-lg border border-line bg-paper py-1 shadow-lg"
           >
             <button
               type="button"
@@ -424,7 +424,7 @@ function FilterMenu({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: -4 }}
             transition={{ duration: 0.12 }}
-            className="absolute left-0 z-30 mt-1 w-40 overflow-hidden rounded-lg border border-line bg-white py-1 shadow-lg"
+            className="absolute left-0 z-30 mt-1 w-40 overflow-hidden rounded-lg border border-line bg-paper py-1 shadow-lg"
           >
             {statusFilterOptions.map((o) => (
               <button
@@ -625,7 +625,7 @@ function DetailOverflowMenu({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: -4 }}
             transition={{ duration: 0.12 }}
-            className="absolute right-0 z-30 mt-1 w-48 overflow-hidden rounded-lg border border-line bg-white py-1 shadow-lg"
+            className="absolute right-0 z-30 mt-1 w-48 overflow-hidden rounded-lg border border-line bg-paper py-1 shadow-lg"
           >
             <button
               type="button"
@@ -1054,7 +1054,7 @@ export default function Maintenance() {
 
       <div className="space-y-5 px-4 pb-24 sm:px-8">
         {reports.length !== 0 && (
-          <div className="flex flex-wrap divide-x divide-line rounded-lg border border-line bg-white max-sm:divide-x-0 max-sm:divide-y">
+          <div className="flex flex-wrap divide-x divide-line rounded-lg border border-line bg-paper max-sm:divide-x-0 max-sm:divide-y">
             <StatCard label="Open" value={openCount} />
             <StatCard label="Urgent" value={urgentCount} valueClassName={urgentCount > 0 ? "text-red-600" : undefined} />
             <StatCard label="In progress" value={inProgressCount} />
@@ -1073,7 +1073,7 @@ export default function Maintenance() {
         {!isReady ? (
           <div className="space-y-3">
             {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="rounded-lg border border-line bg-white p-4">
+              <div key={i} className="rounded-lg border border-line bg-paper p-4">
                 <Skeleton className="h-4 w-32" />
                 <div className="mt-4 space-y-2">
                   <Skeleton className="h-3 w-full" />

@@ -309,6 +309,22 @@ function daysInMonth(year: number, monthIndex0: number): number {
   return new Date(year, monthIndex0 + 1, 0).getDate();
 }
 
+/** "17" -> "17th", for describing which day of the month a due day falls on. */
+function ordinal(n: number): string {
+  const v = n % 100;
+  if (v >= 11 && v <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1:
+      return `${n}st`;
+    case 2:
+      return `${n}nd`;
+    case 3:
+      return `${n}rd`;
+    default:
+      return `${n}th`;
+  }
+}
+
 /** Pro-rata for a mid-cycle move-in: the agreed rent split across however many days are actually in
  * that calendar month, charged only for the days from move-in through month end (inclusive). */
 function computeProrata(rentAmount: number, moveIn: Date) {
@@ -655,7 +671,7 @@ type AddTenantDraft = {
   depositAmount: number;
   depositCollectedToday: "yes" | "no" | null;
   depositCollectMethod: "mobile" | "cash";
-  prorataChoice: "charge" | "waive";
+  prorataChoice: "charge" | "waive" | "full";
   prorataCollectedToday: "yes" | "no" | null;
   rentCollectedToday: "yes" | "no" | null;
   rentAmountCollected: number;
@@ -811,9 +827,9 @@ export default function AddTenant() {
   const [depositCollectMethod, setDepositCollectMethod] =
     useState<DepositMethod>(editingTenant?.depositMethod ?? "mobile");
 
-  const [prorataChoice, setProrataChoice] = useState<"charge" | "waive">(
-    "charge",
-  );
+  const [prorataChoice, setProrataChoice] = useState<
+    "charge" | "waive" | "full"
+  >("charge");
   const [prorataCollectedToday, setProrataCollectedToday] = useState<
     "yes" | "no" | null
   >(null);
@@ -1091,13 +1107,18 @@ export default function AddTenant() {
     const rentDue = isMidCycle
       ? prorataChoice === "charge"
         ? Math.round(prorata!.amount)
-        : 0
+        : prorataChoice === "full"
+          ? selectedRoom.rent
+          : 0
       : selectedRoom.rent;
     const rentPaidNow = isMidCycle
-      ? prorataChoice === "charge" && prorataCollectedToday === "yes"
+      ? (prorataChoice === "charge" || prorataChoice === "full") &&
+        prorataCollectedToday === "yes"
       : rentCollectedToday === "yes";
     const rentAmountToLog = isMidCycle
-      ? Math.round(prorata!.amount)
+      ? prorataChoice === "full"
+        ? selectedRoom.rent
+        : Math.round(prorata!.amount)
       : Math.round(rentAmountCollected);
     // The rent collected at setup is for the move-in month when the tenant moves in later, not
     // for whatever month the landlord happens to be filling in the form.
@@ -1105,7 +1126,9 @@ export default function AddTenant() {
     const rentPeriodDate =
       moveInDateObj > todayForLabel ? moveInDateObj : todayForLabel;
     const rentLedgerLabel = isMidCycle
-      ? `${moveInDateObj.toLocaleDateString("en-US", { month: "long", year: "numeric" })} rent, partial month`
+      ? prorataChoice === "full"
+        ? `${moveInDateObj.toLocaleDateString("en-US", { month: "long", year: "numeric" })} rent`
+        : `${moveInDateObj.toLocaleDateString("en-US", { month: "long", year: "numeric" })} rent, partial month`
       : `${rentPeriodDate.toLocaleDateString("en-US", { month: "long", year: "numeric" })} rent`;
 
     const depositWasCollected =
@@ -1182,6 +1205,31 @@ export default function AddTenant() {
             source: "manual",
           },
           ...created.ledger,
+        ],
+      });
+    }
+
+    // "Waive partial month" promises the tenant nothing is due until next cycle, but that
+    // promise lived only in the owedAmount field passed to addTenant above, nothing was ever
+    // written to the ledger, so Tenant Profile's synthetic current-period row (which only looks
+    // at real ledger entries, not this form's choices) had no way to know the move-in month was
+    // settled, and kept showing a full-rent "due now" row anyway. A real $0 "paid" row for the
+    // move-in month closes that gap: furthestPaidMonth() picks it up like any other paid month,
+    // so the current-period row disappears and the next-due-date calculation rolls forward onto
+    // the property's normal due day, same as it would after a real payment.
+    if (isMidCycle && prorataChoice === "waive") {
+      updateTenant(created.id, {
+        status: "paid",
+        owedAmount: 0,
+        ledger: [
+          {
+            id: crypto.randomUUID(),
+            label: `${moveInDateObj.toLocaleDateString("en-US", { month: "long", year: "numeric" })} rent, waived`,
+            amount: 0,
+            status: "paid",
+            createdAt: new Date().toISOString(),
+            source: "manual",
+          },
         ],
       });
     }
@@ -1778,22 +1826,37 @@ export default function AddTenant() {
                     {formatCurrency(prorata.dailyRate)}/day.
                   </p>
 
-                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
                     <ChoiceCard
                       selected={prorataChoice === "charge"}
-                      onClick={() => setProrataChoice("charge")}
+                      onClick={() => {
+                        setProrataChoice("charge");
+                        setTenantDueDay(dueDay);
+                      }}
                       title="Charge for partial month"
                       description={`${formatCurrency(prorata.amount)} for the partial month`}
                     />
                     <ChoiceCard
                       selected={prorataChoice === "waive"}
-                      onClick={() => setProrataChoice("waive")}
+                      onClick={() => {
+                        setProrataChoice("waive");
+                        setTenantDueDay(dueDay);
+                      }}
                       title="Waive partial month"
                       description="First payment starts next month"
                     />
+                    <ChoiceCard
+                      selected={prorataChoice === "full"}
+                      onClick={() => {
+                        setProrataChoice("full");
+                        setTenantDueDay(moveInDateObj.getDate());
+                      }}
+                      title="Charge full month"
+                      description={`${formatCurrency(selectedRoom.rent)} now; due day moves to the ${ordinal(moveInDateObj.getDate())} of each month`}
+                    />
                   </div>
 
-                  {prorataChoice === "charge" && (
+                  {(prorataChoice === "charge" || prorataChoice === "full") && (
                     <div className="mt-3">
                       <p className="text-xs font-medium text-muted">
                         Has the tenant already paid this?

@@ -3,7 +3,7 @@ import { useParams } from "react-router-dom";
 import { CheckCircle, Camera, X } from "@phosphor-icons/react";
 import { submitPortalMaintenanceReport } from "../../lib/payPortal";
 import { uploadPhoto } from "../../lib/storage";
-import { usePortal, usePortalMaintenance, invalidatePortal } from "./portalData";
+import { usePortal, usePortalMaintenance, invalidatePortalMaintenance } from "./portalData";
 import { Card, Pill, PortalButton, PortalTopBar, PoweredByInstay, Shimmer, formatDate, type ToneName } from "./portalUi";
 
 type Photo = { id: string; dataUrl: string; file: File };
@@ -57,7 +57,7 @@ export default function PortalMaintenance() {
       await submitPortalMaintenanceReport(identity.propertySlug, tenant.id, location.trim(), description.trim(), photoUrls);
       // The list below this form is cached — drop it so the request the tenant just filed is in it
       // when they come back to this page.
-      invalidatePortal(token!, tenant.id);
+      invalidatePortalMaintenance(tenant.id);
       setSent(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "We couldn't send the request. Try again.");

@@ -21,6 +21,7 @@ export type Database = {
           property_id: string
           title: string | null
           updated_at: string
+          user_id: string | null
         }
         Insert: {
           created_at?: string
@@ -28,6 +29,7 @@ export type Database = {
           property_id: string
           title?: string | null
           updated_at?: string
+          user_id?: string | null
         }
         Update: {
           created_at?: string
@@ -35,6 +37,7 @@ export type Database = {
           property_id?: string
           title?: string | null
           updated_at?: string
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -83,6 +86,53 @@ export type Database = {
             columns: ["conversation_id"]
             isOneToOne: false
             referencedRelation: "assistant_conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      audit_log: {
+        Row: {
+          action: string
+          actor_id: string | null
+          actor_label: string
+          created_at: string
+          id: string
+          metadata: Json
+          property_id: string
+          summary: string
+          target_id: string | null
+          target_type: string | null
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          actor_label?: string
+          created_at?: string
+          id?: string
+          metadata?: Json
+          property_id: string
+          summary: string
+          target_id?: string | null
+          target_type?: string | null
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          actor_label?: string
+          created_at?: string
+          id?: string
+          metadata?: Json
+          property_id?: string
+          summary?: string
+          target_id?: string | null
+          target_type?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_log_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
             referencedColumns: ["id"]
           },
         ]
@@ -168,6 +218,7 @@ export type Database = {
           phone: string
           property_id: string
           status: string
+          swept_at: string | null
           tenant_id: string
           updated_at: string
         }
@@ -185,6 +236,7 @@ export type Database = {
           phone: string
           property_id: string
           status?: string
+          swept_at?: string | null
           tenant_id: string
           updated_at?: string
         }
@@ -202,6 +254,7 @@ export type Database = {
           phone?: string
           property_id?: string
           status?: string
+          swept_at?: string | null
           tenant_id?: string
           updated_at?: string
         }
@@ -235,6 +288,72 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      company_payout_recipient: {
+        Row: {
+          account_name: string
+          account_number: string
+          bank_code: string
+          created_at: string
+          id: boolean
+          lenco_recipient_id: string
+        }
+        Insert: {
+          account_name: string
+          account_number: string
+          bank_code: string
+          created_at?: string
+          id?: boolean
+          lenco_recipient_id: string
+        }
+        Update: {
+          account_name?: string
+          account_number?: string
+          bank_code?: string
+          created_at?: string
+          id?: boolean
+          lenco_recipient_id?: string
+        }
+        Relationships: []
+      }
+      company_revenue_sweeps: {
+        Row: {
+          amount: number
+          collection_ids: string[]
+          created_at: string
+          failure_reason: string | null
+          id: string
+          lenco_transaction_id: string | null
+          payout_ids: string[]
+          status: string
+          subscription_payment_ids: string[]
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          collection_ids?: string[]
+          created_at?: string
+          failure_reason?: string | null
+          id?: string
+          lenco_transaction_id?: string | null
+          payout_ids?: string[]
+          status?: string
+          subscription_payment_ids?: string[]
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          collection_ids?: string[]
+          created_at?: string
+          failure_reason?: string | null
+          id?: string
+          lenco_transaction_id?: string | null
+          payout_ids?: string[]
+          status?: string
+          subscription_payment_ids?: string[]
+          updated_at?: string
+        }
+        Relationships: []
       }
       employees: {
         Row: {
@@ -383,6 +502,7 @@ export type Database = {
           amount: number
           category_id: string | null
           created_at: string
+          created_by: string | null
           date: string
           description: string | null
           id: string
@@ -395,6 +515,7 @@ export type Database = {
           amount?: number
           category_id?: string | null
           created_at?: string
+          created_by?: string | null
           date: string
           description?: string | null
           id?: string
@@ -407,6 +528,7 @@ export type Database = {
           amount?: number
           category_id?: string | null
           created_at?: string
+          created_by?: string | null
           date?: string
           description?: string | null
           id?: string
@@ -465,6 +587,157 @@ export type Database = {
           penalty_cap_pct?: number
           tenant_fee_pct?: number
           updated_at?: string
+        }
+        Relationships: []
+      }
+      help_articles: {
+        Row: {
+          created_at: string
+          group_id: string
+          id: string
+          search_vector: unknown
+          slug: string
+          sort_order: number
+          summary: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          group_id: string
+          id?: string
+          search_vector?: unknown
+          slug: string
+          sort_order?: number
+          summary?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          group_id?: string
+          id?: string
+          search_vector?: unknown
+          slug?: string
+          sort_order?: number
+          summary?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "help_articles_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "help_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      help_blocks: {
+        Row: {
+          article_id: string
+          body: string
+          heading: string
+          id: string
+          image_url: string | null
+          sort_order: number
+          video_url: string | null
+        }
+        Insert: {
+          article_id: string
+          body: string
+          heading: string
+          id?: string
+          image_url?: string | null
+          sort_order?: number
+          video_url?: string | null
+        }
+        Update: {
+          article_id?: string
+          body?: string
+          heading?: string
+          id?: string
+          image_url?: string | null
+          sort_order?: number
+          video_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "help_blocks_article_id_fkey"
+            columns: ["article_id"]
+            isOneToOne: false
+            referencedRelation: "help_articles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      help_groups: {
+        Row: {
+          created_at: string
+          description: string
+          icon: string | null
+          id: string
+          slug: string
+          sort_order: number
+          title: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string
+          icon?: string | null
+          id?: string
+          slug: string
+          sort_order?: number
+          title: string
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          icon?: string | null
+          id?: string
+          slug?: string
+          sort_order?: number
+          title?: string
+        }
+        Relationships: []
+      }
+      help_sections: {
+        Row: {
+          body: string
+          category: string
+          created_at: string
+          heading: string
+          id: string
+          image_url: string | null
+          sort_order: number
+          tier: string
+          updated_at: string
+          video_url: string | null
+        }
+        Insert: {
+          body: string
+          category: string
+          created_at?: string
+          heading: string
+          id?: string
+          image_url?: string | null
+          sort_order?: number
+          tier?: string
+          updated_at?: string
+          video_url?: string | null
+        }
+        Update: {
+          body?: string
+          category?: string
+          created_at?: string
+          heading?: string
+          id?: string
+          image_url?: string | null
+          sort_order?: number
+          tier?: string
+          updated_at?: string
+          video_url?: string | null
         }
         Relationships: []
       }
@@ -615,6 +888,7 @@ export type Database = {
           billing_period_id: string | null
           charge_id: string | null
           created_at: string
+          created_by: string | null
           due_date: string | null
           event_type: string | null
           grace_period_end: string | null
@@ -637,6 +911,7 @@ export type Database = {
           billing_period_id?: string | null
           charge_id?: string | null
           created_at?: string
+          created_by?: string | null
           due_date?: string | null
           event_type?: string | null
           grace_period_end?: string | null
@@ -659,6 +934,7 @@ export type Database = {
           billing_period_id?: string | null
           charge_id?: string | null
           created_at?: string
+          created_by?: string | null
           due_date?: string | null
           event_type?: string | null
           grace_period_end?: string | null
@@ -981,6 +1257,7 @@ export type Database = {
           priority: string
           property_id: string
           resolved_at: string | null
+          source: string
           status: string
           submitted_at: string
           tenant: string | null
@@ -998,6 +1275,7 @@ export type Database = {
           priority?: string
           property_id: string
           resolved_at?: string | null
+          source?: string
           status?: string
           submitted_at?: string
           tenant?: string | null
@@ -1015,6 +1293,7 @@ export type Database = {
           priority?: string
           property_id?: string
           resolved_at?: string | null
+          source?: string
           status?: string
           submitted_at?: string
           tenant?: string | null
@@ -1146,6 +1425,7 @@ export type Database = {
           account_number: string | null
           bank_code: string | null
           created_at: string
+          created_by: string | null
           id: string
           is_default: boolean
           lenco_recipient_id: string | null
@@ -1159,6 +1439,7 @@ export type Database = {
           account_number?: string | null
           bank_code?: string | null
           created_at?: string
+          created_by?: string | null
           id?: string
           is_default?: boolean
           lenco_recipient_id?: string | null
@@ -1172,6 +1453,7 @@ export type Database = {
           account_number?: string | null
           bank_code?: string | null
           created_at?: string
+          created_by?: string | null
           id?: string
           is_default?: boolean
           lenco_recipient_id?: string | null
@@ -1209,6 +1491,7 @@ export type Database = {
           id: string
           property_id: string
           purpose: string
+          user_id: string | null
         }
         Insert: {
           attempt_count?: number
@@ -1221,6 +1504,7 @@ export type Database = {
           id?: string
           property_id: string
           purpose?: string
+          user_id?: string | null
         }
         Update: {
           attempt_count?: number
@@ -1233,6 +1517,7 @@ export type Database = {
           id?: string
           property_id?: string
           purpose?: string
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -1257,7 +1542,9 @@ export type Database = {
           net_amount: number | null
           payout_recipient_id: string
           property_id: string
+          requested_by: string | null
           status: string
+          swept_at: string | null
           updated_at: string
         }
         Insert: {
@@ -1272,7 +1559,9 @@ export type Database = {
           net_amount?: number | null
           payout_recipient_id: string
           property_id: string
+          requested_by?: string | null
           status?: string
+          swept_at?: string | null
           updated_at?: string
         }
         Update: {
@@ -1287,7 +1576,9 @@ export type Database = {
           net_amount?: number | null
           payout_recipient_id?: string
           property_id?: string
+          requested_by?: string | null
           status?: string
+          swept_at?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -1383,6 +1674,21 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      plan_limits: {
+        Row: {
+          max_team_seats: number
+          plan: string
+        }
+        Insert: {
+          max_team_seats: number
+          plan: string
+        }
+        Update: {
+          max_team_seats?: number
+          plan?: string
+        }
+        Relationships: []
       }
       plan_upgrade_requests: {
         Row: {
@@ -1591,35 +1897,6 @@ export type Database = {
           },
         ]
       }
-      property_managers: {
-        Row: {
-          created_at: string
-          id: string
-          manager_user_id: string
-          property_id: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          manager_user_id: string
-          property_id: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          manager_user_id?: string
-          property_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "property_managers_property_id_fkey"
-            columns: ["property_id"]
-            isOneToOne: false
-            referencedRelation: "properties"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       reminder_log: {
         Row: {
           billing_period_id: string
@@ -1669,7 +1946,9 @@ export type Database = {
           format: string
           id: string
           property_id: string
+          public_token: string | null
           report_type: string
+          source: string
         }
         Insert: {
           created_at?: string
@@ -1680,7 +1959,9 @@ export type Database = {
           format: string
           id?: string
           property_id: string
+          public_token?: string | null
           report_type: string
+          source?: string
         }
         Update: {
           created_at?: string
@@ -1691,7 +1972,9 @@ export type Database = {
           format?: string
           id?: string
           property_id?: string
+          public_token?: string | null
           report_type?: string
+          source?: string
         }
         Relationships: [
           {
@@ -1702,6 +1985,112 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      report_links: {
+        Row: {
+          breakdown: Json
+          created_at: string
+          date_from: string
+          date_to: string
+          id: string
+          kind: string
+          narrative: string | null
+          tips: Json
+          data: Json | null
+          sms_sent_at: string | null
+          emailed_at: string | null
+          net: number
+          period_label: string
+          property_id: string
+          public_token: string
+          rent_collected: number
+          total_expenses: number
+        }
+        Insert: {
+          breakdown?: Json
+          created_at?: string
+          date_from: string
+          date_to: string
+          id?: string
+          kind?: string
+          narrative?: string | null
+          tips?: Json
+          data?: Json | null
+          sms_sent_at?: string | null
+          emailed_at?: string | null
+          net?: number
+          period_label: string
+          property_id: string
+          public_token?: string
+          rent_collected?: number
+          total_expenses?: number
+        }
+        Update: {
+          breakdown?: Json
+          created_at?: string
+          date_from?: string
+          date_to?: string
+          id?: string
+          kind?: string
+          narrative?: string | null
+          tips?: Json
+          data?: Json | null
+          sms_sent_at?: string | null
+          emailed_at?: string | null
+          net?: number
+          period_label?: string
+          property_id?: string
+          public_token?: string
+          rent_collected?: number
+          total_expenses?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "report_links_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      report_link_money: {
+        Row: {
+          report_id: string
+          data: Json
+        }
+        Insert: {
+          report_id: string
+          data?: Json
+        }
+        Update: {
+          report_id?: string
+          data?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "report_link_money_report_id_fkey"
+            columns: ["report_id"]
+            isOneToOne: true
+            referencedRelation: "report_links"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      role_permissions: {
+        Row: {
+          permission: string
+          role: string
+        }
+        Insert: {
+          permission: string
+          role: string
+        }
+        Update: {
+          permission?: string
+          role?: string
+        }
+        Relationships: []
       }
       room_types: {
         Row: {
@@ -1846,12 +2235,17 @@ export type Database = {
           pre_due_reminders_enabled: boolean
           property_id: string
           reminder_lead_days: number
+          report_weekly_enabled: boolean
+          report_monthly_enabled: boolean
+          ops_sms_owner_copy: boolean
+          payout_sms_enabled: boolean
           send_onboarding_sms: boolean
           send_payment_receipt_sms: boolean
           sms_notification_prefs: Json
           subscription_autopay: boolean
           subscription_autopay_operator: string | null
           subscription_autopay_phone: string | null
+          subscription_pay_token: string
           subscription_plan: string | null
           subscription_renews_at: string | null
           task_collections_target_enabled: boolean
@@ -1898,12 +2292,17 @@ export type Database = {
           pre_due_reminders_enabled?: boolean
           property_id: string
           reminder_lead_days?: number
+          report_weekly_enabled?: boolean
+          report_monthly_enabled?: boolean
+          ops_sms_owner_copy?: boolean
+          payout_sms_enabled?: boolean
           send_onboarding_sms?: boolean
           send_payment_receipt_sms?: boolean
           sms_notification_prefs?: Json
           subscription_autopay?: boolean
           subscription_autopay_operator?: string | null
           subscription_autopay_phone?: string | null
+          subscription_pay_token?: string
           subscription_plan?: string | null
           subscription_renews_at?: string | null
           task_collections_target_enabled?: boolean
@@ -1950,12 +2349,17 @@ export type Database = {
           pre_due_reminders_enabled?: boolean
           property_id?: string
           reminder_lead_days?: number
+          report_weekly_enabled?: boolean
+          report_monthly_enabled?: boolean
+          ops_sms_owner_copy?: boolean
+          payout_sms_enabled?: boolean
           send_onboarding_sms?: boolean
           send_payment_receipt_sms?: boolean
           sms_notification_prefs?: Json
           subscription_autopay?: boolean
           subscription_autopay_operator?: string | null
           subscription_autopay_phone?: string | null
+          subscription_pay_token?: string
           subscription_plan?: string | null
           subscription_renews_at?: string | null
           task_collections_target_enabled?: boolean
@@ -1972,6 +2376,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      signup_otp_codes: {
+        Row: {
+          attempt_count: number
+          code_hash: string
+          consumed_at: string | null
+          created_at: string
+          expires_at: string
+          id: string
+          phone: string
+        }
+        Insert: {
+          attempt_count?: number
+          code_hash: string
+          consumed_at?: string | null
+          created_at?: string
+          expires_at: string
+          id?: string
+          phone: string
+        }
+        Update: {
+          attempt_count?: number
+          code_hash?: string
+          consumed_at?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          phone?: string
+        }
+        Relationships: []
       }
       sms_daily_counters: {
         Row: {
@@ -2116,6 +2550,7 @@ export type Database = {
           phone: string | null
           property_id: string
           status: string
+          swept_at: string | null
           triggered_by: string
           updated_at: string
         }
@@ -2130,6 +2565,7 @@ export type Database = {
           phone?: string | null
           property_id: string
           status?: string
+          swept_at?: string | null
           triggered_by?: string
           updated_at?: string
         }
@@ -2144,6 +2580,7 @@ export type Database = {
           phone?: string | null
           property_id?: string
           status?: string
+          swept_at?: string | null
           triggered_by?: string
           updated_at?: string
         }
@@ -2257,6 +2694,80 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      team_members: {
+        Row: {
+          accepted_at: string | null
+          created_at: string
+          id: string
+          invite_expires_at: string | null
+          invite_token_hash: string | null
+          invited_at: string
+          invited_by: string | null
+          invited_email: string
+          invited_phone: string | null
+          notification_phone: string | null
+          notification_prefs: Json
+          permissions: string[]
+          property_id: string
+          revoked_at: string | null
+          revoked_by: string | null
+          role: string
+          status: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          accepted_at?: string | null
+          created_at?: string
+          id?: string
+          invite_expires_at?: string | null
+          invite_token_hash?: string | null
+          invited_at?: string
+          invited_by?: string | null
+          invited_email: string
+          invited_phone?: string | null
+          notification_phone?: string | null
+          notification_prefs?: Json
+          permissions?: string[]
+          property_id: string
+          revoked_at?: string | null
+          revoked_by?: string | null
+          role: string
+          status?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          accepted_at?: string | null
+          created_at?: string
+          id?: string
+          invite_expires_at?: string | null
+          invite_token_hash?: string | null
+          invited_at?: string
+          invited_by?: string | null
+          invited_email?: string
+          invited_phone?: string | null
+          notification_phone?: string | null
+          notification_prefs?: Json
+          permissions?: string[]
+          property_id?: string
+          revoked_at?: string | null
+          revoked_by?: string | null
+          role?: string
+          status?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_members_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
             referencedRelation: "properties"
@@ -2489,153 +3000,6 @@ export type Database = {
             columns: ["room_type_id"]
             isOneToOne: false
             referencedRelation: "room_types"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      audit_log: {
-        Row: {
-          id: string
-          property_id: string
-          actor_id: string | null
-          actor_label: string
-          action: string
-          summary: string
-          target_type: string | null
-          target_id: string | null
-          metadata: Json
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          property_id: string
-          actor_id?: string | null
-          actor_label: string
-          action: string
-          summary: string
-          target_type?: string | null
-          target_id?: string | null
-          metadata?: Json
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          property_id?: string
-          actor_id?: string | null
-          actor_label?: string
-          action?: string
-          summary?: string
-          target_type?: string | null
-          target_id?: string | null
-          metadata?: Json
-          created_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "audit_log_property_id_fkey"
-            columns: ["property_id"]
-            isOneToOne: false
-            referencedRelation: "properties"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      help_groups: {
-        Row: {
-          id: string
-          slug: string
-          title: string
-          description: string
-          icon: string | null
-          sort_order: number
-        }
-        Insert: {
-          id?: string
-          slug: string
-          title: string
-          description?: string
-          icon?: string | null
-          sort_order?: number
-        }
-        Update: {
-          id?: string
-          slug?: string
-          title?: string
-          description?: string
-          icon?: string | null
-          sort_order?: number
-        }
-        Relationships: []
-      }
-      help_articles: {
-        Row: {
-          id: string
-          group_id: string
-          slug: string
-          title: string
-          summary: string
-          sort_order: number
-        }
-        Insert: {
-          id?: string
-          group_id: string
-          slug: string
-          title: string
-          summary?: string
-          sort_order?: number
-        }
-        Update: {
-          id?: string
-          group_id?: string
-          slug?: string
-          title?: string
-          summary?: string
-          sort_order?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "help_articles_group_id_fkey"
-            columns: ["group_id"]
-            isOneToOne: false
-            referencedRelation: "help_groups"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      help_blocks: {
-        Row: {
-          id: string
-          article_id: string
-          heading: string
-          body: string
-          video_url: string | null
-          image_url: string | null
-          sort_order: number
-        }
-        Insert: {
-          id?: string
-          article_id: string
-          heading: string
-          body?: string
-          video_url?: string | null
-          image_url?: string | null
-          sort_order?: number
-        }
-        Update: {
-          id?: string
-          article_id?: string
-          heading?: string
-          body?: string
-          video_url?: string | null
-          image_url?: string | null
-          sort_order?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "help_blocks_article_id_fkey"
-            columns: ["article_id"]
-            isOneToOne: false
-            referencedRelation: "help_articles"
             referencedColumns: ["id"]
           },
         ]
@@ -3063,28 +3427,6 @@ export type Database = {
           tenant_name: string
         }[]
       }
-      assistant_get_collections_summary: {
-        Args: { p_property_id: string; p_period: string }
-        Returns: {
-          total_collected: number
-          total_fees: number
-          successful_count: number
-          failed_count: number
-        }[]
-      }
-      assistant_get_current_statutory_rates: {
-        Args: { p_as_of?: string }
-        Returns: {
-          effective_date: string
-          napsa_rate: number
-          napsa_monthly_cap: number
-          nhima_employee_rate: number
-          nhima_employer_rate: number
-          sdl_rate: number
-          paye_bands: Json
-          notes: string | null
-        }[]
-      }
       assistant_get_collected_rent: {
         Args: { p_property_id: string }
         Returns: {
@@ -3100,6 +3442,28 @@ export type Database = {
           method: string
           tenant_count: number
           total: number
+        }[]
+      }
+      assistant_get_collections_summary: {
+        Args: { p_period: string; p_property_id: string }
+        Returns: {
+          failed_count: number
+          successful_count: number
+          total_collected: number
+          total_fees: number
+        }[]
+      }
+      assistant_get_current_statutory_rates: {
+        Args: { p_as_of?: string }
+        Returns: {
+          effective_date: string
+          napsa_monthly_cap: number
+          napsa_rate: number
+          nhima_employee_rate: number
+          nhima_employer_rate: number
+          notes: string | null
+          paye_bands: Json
+          sdl_rate: number
         }[]
       }
       assistant_get_expenses_summary: {
@@ -3287,8 +3651,14 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      find_auth_user_id: { Args: { p_email: string }; Returns: string }
       generate_portal_token: { Args: never; Returns: string }
+      generate_settings_pay_token: { Args: never; Returns: string }
       get_all_open_tasks: { Args: { p_property_id: string }; Returns: Json }
+      get_property_settings_safe: {
+        Args: { p_property: string }
+        Returns: Json
+      }
       get_today_tasks: { Args: { p_property_id: string }; Returns: Json }
       import_tenant_opening_balance: {
         Args: { p_owing: number; p_tenant_id: string }
@@ -3367,6 +3737,17 @@ export type Database = {
         }[]
       }
       lusaka_current_period: { Args: never; Returns: string }
+      my_access: {
+        Args: never
+        Returns: {
+          is_owner: boolean
+          permissions: string[]
+          property_id: string
+          property_name: string
+          role: string
+          status: string
+        }[]
+      }
       pay_portal_claim_payout_collections: {
         Args: {
           p_max_amount?: number
@@ -3646,6 +4027,15 @@ export type Database = {
           entry_id: string
         }[]
       }
+      property_people: {
+        Args: { p_property: string }
+        Returns: {
+          full_name: string
+          role: string
+          status: string
+          user_id: string
+        }[]
+      }
       record_offline_payment: {
         Args: {
           p_amount: number
@@ -3666,24 +4056,24 @@ export type Database = {
           new_balance: number
         }[]
       }
+      search_help_articles: {
+        Args: { q: string }
+        Returns: {
+          article_id: string
+          article_slug: string
+          group_slug: string
+          group_title: string
+          rank: number
+          snippet: string
+          summary: string
+          title: string
+        }[]
+      }
       set_task_status: {
         Args: { p_snooze_days?: number; p_status: string; p_task_id: string }
         Returns: Json
       }
       sms_phone_key: { Args: { p: string }; Returns: string }
-      search_help_articles: {
-        Args: { q: string }
-        Returns: {
-          article_id: string
-          group_slug: string
-          group_title: string
-          article_slug: string
-          title: string
-          summary: string
-          rank: number
-          snippet: string
-        }[]
-      }
       sync_all_tasks: { Args: never; Returns: number }
       sync_tasks: { Args: { p_property_id: string }; Returns: number }
       sync_tenant_balance_if_new_model: {

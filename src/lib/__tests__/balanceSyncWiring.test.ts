@@ -41,7 +41,12 @@ function installFakeSupabase(opts: {
   rpcResponses?: Record<string, { data: unknown; error: { message: string } | null }>;
 }) {
   const calls: string[] = [];
-  const fake = supabase as unknown as { from: unknown; rpc: unknown };
+  const fake = supabase as unknown as { from: unknown; rpc: unknown; auth: unknown };
+  // addLedgerEntry/addLedgerEvent now read the acting user id for `created_by` before inserting —
+  // stub it here so that lookup resolves instead of throwing on the stub supabase object's
+  // missing `auth`, same spirit as `from`/`rpc` above. Not pushed onto `calls`: it's not part of
+  // the insert/sync ordering these tests assert on.
+  fake.auth = { getUser: () => Promise.resolve({ data: { user: null }, error: null }) };
   fake.from = (table: string) => ({
     insert: (_payload: unknown) => {
       calls.push(`insert:${table}`);
