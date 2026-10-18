@@ -93,6 +93,30 @@ export function useCached<T>(key: string | null, fetcher: () => Promise<T>): Cac
     void run(key, () => fetcherRef.current()).catch(() => {});
   }, [key]);
 
+  // Changes made elsewhere (the landlord logs a payment, a receipt is filed) should show up without
+  // the tenant having to reload. Revalidate quietly when they come back to the tab or regain signal,
+  // and every minute while the page is open and visible. The old value stays on screen throughout.
+  useEffect(() => {
+    if (!key) return;
+    const revalidate = () => {
+      if (document.visibilityState !== "visible" || navigator.onLine === false) return;
+      const entry = cache.get(key) as Entry<T> | undefined;
+      if (entry?.promise) return;
+      if (entry?.value !== undefined && Date.now() - entry.ts < STALE_AFTER_MS) return;
+      void run(key, () => fetcherRef.current()).catch(() => {});
+    };
+    const timer = window.setInterval(revalidate, STALE_AFTER_MS);
+    document.addEventListener("visibilitychange", revalidate);
+    window.addEventListener("focus", revalidate);
+    window.addEventListener("online", revalidate);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", revalidate);
+      window.removeEventListener("focus", revalidate);
+      window.removeEventListener("online", revalidate);
+    };
+  }, [key]);
+
   const refresh = useCallback(() => {
     if (!key) return;
     cache.delete(key);

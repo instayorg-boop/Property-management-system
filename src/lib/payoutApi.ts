@@ -242,6 +242,11 @@ export type SendPayoutResult = {
    * payouts never carry this. */
   feeAmount: number;
   netAmount: number;
+  /** How many separate transfers it went out as (more than one when the amount is above what a
+   * single transfer to this destination allows). The fee covers all of them. */
+  transfers: number;
+  /** Requested but not sent, e.g. a later transfer could not go out. Zero on a normal payout. */
+  notSent: number;
 };
 
 export async function sendPayout(
@@ -257,6 +262,8 @@ export async function sendPayout(
     amount?: number;
     feeAmount?: number;
     netAmount?: number;
+    transfers?: number;
+    notSent?: number;
     error?: string;
   }>("lenco-payout", { body: { propertyId, amount, confirmationToken, recipientId, narration } });
   if (error || !data?.ok || !data?.payoutId) {
@@ -267,6 +274,8 @@ export async function sendPayout(
     amount: data.amount ?? amount,
     feeAmount: data.feeAmount ?? 0,
     netAmount: data.netAmount ?? (data.amount ?? amount),
+    transfers: data.transfers ?? 1,
+    notSent: data.notSent ?? 0,
   };
   void logAuditEvent({
     propertyId,

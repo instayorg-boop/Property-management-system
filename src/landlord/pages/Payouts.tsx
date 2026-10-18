@@ -21,6 +21,7 @@ import {
   Plus as PlusIconBase,
   type Icon as PhosphorIcon,
   ArrowLeft,
+  Info as InfoIcon,
 } from "@phosphor-icons/react";
 import PageHeader from "../components/PageHeader";
 import Modal from "../components/Modal";
@@ -82,9 +83,18 @@ const FEE_TIERS: { upTo: number; fee: number }[] = [
 ];
 const ON_DEMAND_MARKUP = 5;
 
-function estimateTransferFee(amount: number): number {
-  const tier = FEE_TIERS.find((t) => amount <= t.upTo) ?? FEE_TIERS[FEE_TIERS.length - 1];
-  return tier.fee + ON_DEMAND_MARKUP;
+// Largest single transfer per destination (platform_money_limits). Display only: lenco-payout enforces the real limits.
+const MAX_SINGLE_TRANSFER = { "mobile-money": 50_000, bank: 100_000 } as const;
+
+function tierFee(amount: number): number {
+  return (FEE_TIERS.find((t) => amount <= t.upTo) ?? FEE_TIERS[FEE_TIERS.length - 1]).fee;
+}
+
+/** Lenco's tier fee and our K5 are both charged on every transfer; a big payout is split into several. */
+function estimateTransferFee(amount: number, recipientType?: string): number {
+  const cap = recipientType === "mobile-money" ? MAX_SINGLE_TRANSFER["mobile-money"] : MAX_SINGLE_TRANSFER.bank;
+  const parts = Math.max(1, Math.ceil(amount / cap));
+  return (tierFee(amount / parts) + ON_DEMAND_MARKUP) * parts;
 }
 
 /** Which of the 3 named steps the current useWithdrawFlow `step` maps to — that hook's states are
@@ -292,7 +302,9 @@ function StatCard({
   caption,
   wide,
   to,
+  onInfo,
 }: {
+  onInfo?: () => void;
   wide?: boolean;
   icon: ReactNode;
   label: string;
@@ -314,6 +326,19 @@ function StatCard({
       <p className="flex items-center gap-1.5 whitespace-nowrap text-[11px] font-semibold tracking-wide text-muted uppercase">
         {icon}
         {label}
+        {onInfo && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onInfo();
+            }}
+            aria-label="How payouts work"
+            className="text-muted transition-colors hover:text-ink"
+          >
+            <InfoIcon size={14} weight="bold" />
+          </button>
+        )}
       </p>
       <div className={`font-display mt-2 text-2xl font-bold tracking-tight sm:text-[28px] ${valueClassName || "text-ink"}`}>{value}</div>
       {caption && <p className="mt-0.5 text-xs text-muted">{caption}</p>}
@@ -562,6 +587,12 @@ function TransferFundsPanel({
                       <span>Requested</span>
                       <span className="font-medium text-ink">{formatCurrency(payout.rawAmount)}</span>
                     </div>
+                    {result.transfers > 1 && (
+                      <div className="flex items-center justify-between text-muted">
+                        <span>Sent as</span>
+                        <span className="font-medium text-ink">{result.transfers} transfers</span>
+                      </div>
+                    )}
                     {result.amount !== payout.rawAmount && (
                       <div className="flex items-center justify-between text-muted">
                         <span>Transferred</span>
@@ -693,7 +724,7 @@ function TransferFundsPanel({
                   ones that spring the real numbers on you at the very end. */}
               {selectedRecipient &&
                 (() => {
-                  const fee = estimateTransferFee(payout.rawAmount);
+                  const fee = estimateTransferFee(payout.rawAmount, selectedRecipient.type);
                   const net = Math.max(payout.rawAmount - fee, 0);
                   return (
                     <div className="mt-4 space-y-1.5 rounded-lg border border-line bg-mist/40 px-3 py-2.5 text-xs">
@@ -702,7 +733,7 @@ function TransferFundsPanel({
                         <span className="font-medium text-ink">{recipientLabel(selectedRecipient)}</span>
                       </div>
                       <div className="flex items-center justify-between text-muted">
-                        <span>Fee</span>
+                        <span>Fee ({payout.rawAmount > 0 ? ((fee / payout.rawAmount) * 100).toFixed(1) : "0.0"}%)</span>
                         <span className="font-medium text-ink">{formatCurrency(fee)}</span>
                       </div>
                       <div className="flex items-center justify-between border-t border-line pt-1.5 font-semibold text-ink">
@@ -1670,6 +1701,31 @@ function BankConnectWizard({
  * in this page's state — so an export can't be made to say something different from what the
  * landlord's own account actually shows, no matter what the front end here has been changed to
  * display. */
+function HowPayoutsWorkModal({ payoutDay, onClose }: { payoutDay: string; onClose: () => void }) {
+  const items: { title: string; body: string }[] = [
+    { title: "Automatic payout", body: `Every ${payoutDay}, if K500 or more is waiting, it is sent to your default payout account. Less than K500 rolls into the next ${payoutDay}.` },
+    { title: "Get it sooner", body: "Request a payout any time (K100 minimum). We email you a one-time code to confirm it." },
+    { title: "Fees", body: "Each transfer has a bank or mobile money fee plus K5. It is taken from the payout, and you see it before you confirm." },
+    { title: "Large amounts", body: "If the amount is more than one transfer allows, it is sent as several transfers. Each has its own fee." },
+    { title: "If something delays it", body: "We try again every day and email you the reason. Your money stays safe on your balance." },
+  ];
+  return (
+    <Modal onClose={onClose} title="How payouts work" description="When your money reaches you.">
+      <div className="space-y-4">
+        {items.map((it) => (
+          <div key={it.title}>
+            <p className="text-sm font-semibold text-ink">{it.title}</p>
+            <p className="mt-0.5 text-sm text-muted">{it.body}</p>
+          </div>
+        ))}
+        <div className="flex justify-end pt-1">
+          <Button onClick={onClose}>Got it</Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function ExportHistoryModal({ kind, propertyId, onClose }: { kind: "sent" | "received"; propertyId: string; onClose: () => void }) {
   const today = new Date().toISOString().slice(0, 10);
   const [startDate, setStartDate] = useState("");
@@ -1776,7 +1832,9 @@ export default function Payouts() {
     setBankName,
     setAccountNumber,
     setAccountHolderName,
+    payoutDay,
   } = useSettings();
+  const [payoutInfoOpen, setPayoutInfoOpen] = useState(false);
   const { can, isOwner } = useAccess();
   // Three independent gates, per the payouts permission spec: `payouts.view` (or request/manage,
   // which both imply being able to see the page's content) gets you balance + history read-only;
@@ -2062,6 +2120,14 @@ export default function Payouts() {
           />
         ) : (
           <>
+            <button
+              type="button"
+              onClick={() => setPayoutInfoOpen(true)}
+              className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-brand hover:underline"
+            >
+              <InfoIcon size={16} weight="bold" />
+              How payouts work
+            </button>
             {/* Stat row — same language as the Tenant Profile page's top row: big numbers, no
                 card-within-a-card, a caption line for context instead of a second metric fighting
                 for attention. */}
@@ -2432,6 +2498,7 @@ export default function Payouts() {
           peopleLabels={peopleLabels}
         />
       )}
+      {payoutInfoOpen && <HowPayoutsWorkModal payoutDay={payoutDay} onClose={() => setPayoutInfoOpen(false)} />}
       {exportModalOpen && propertyId && (
         <ExportHistoryModal kind={historyTab} propertyId={propertyId} onClose={() => setExportModalOpen(false)} />
       )}

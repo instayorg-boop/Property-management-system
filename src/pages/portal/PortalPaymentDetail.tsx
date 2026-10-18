@@ -163,21 +163,6 @@ export default function PortalPaymentDetail() {
         <div className="mt-3 flex justify-center">{status && <Pill tone={status.tone}>{status.label}</Pill>}</div>
       </div>
 
-      <SectionLabel>Breakdown</SectionLabel>
-      <Card className="px-4 py-2">
-        <MoneyRow label="Charged" amount={row.amount} />
-        <MoneyRow label="Paid" amount={paid} />
-        {outstanding > 0 && <MoneyRow label="Still owed" amount={outstanding} />}
-        <MoneyRow label={outstanding > 0 ? "Balance on this period" : "Total settled"} amount={outstanding > 0 ? outstanding : paid} strong />
-      </Card>
-
-      <SectionLabel>Details</SectionLabel>
-      <Card>
-        <Row label="Date" value={formatDate(row.createdAt)} />
-        <Row label="For" value={row.label} />
-        {tenant && <Row label="Room" value={tenant.room || "-"} />}
-      </Card>
-
       <SectionLabel>Receipt</SectionLabel>
       {docsLoading ? (
         <Shimmer className="h-16 w-full rounded-lg" />
@@ -228,6 +213,21 @@ export default function PortalPaymentDetail() {
           </p>
         </Card>
       )}
+
+      <SectionLabel>Breakdown</SectionLabel>
+      <Card className="px-4 py-2">
+        <MoneyRow label="Charged" amount={row.amount} />
+        <MoneyRow label="Paid" amount={paid} />
+        {outstanding > 0 && <MoneyRow label="Still owed" amount={outstanding} />}
+        <MoneyRow label={outstanding > 0 ? "Balance on this period" : "Total settled"} amount={outstanding > 0 ? outstanding : paid} strong />
+      </Card>
+
+      <SectionLabel>Details</SectionLabel>
+      <Card>
+        <Row label="Date" value={formatDate(row.createdAt)} />
+        <Row label="For" value={row.label} />
+        {tenant && <Row label="Room" value={tenant.room || "-"} />}
+      </Card>
 
       <div className="flex-1" />
       <PoweredByInstay />
