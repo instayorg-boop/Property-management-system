@@ -13,7 +13,9 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // 'prompt': the new build waits until the person taps "Update now" (UpdatePrompt), instead of
+      // swapping in on some later load. See src/lib/pwaUpdate.ts.
+      registerType: 'prompt',
       injectRegister: null,
       includeAssets: ['favicon-16.png', 'favicon-32.png', 'apple-touch-icon.png', 'Instay_Manage_Logo-removebg-preview.png'],
       manifest: {

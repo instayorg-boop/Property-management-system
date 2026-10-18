@@ -5,6 +5,7 @@ import RequireAuth from "./landlord/components/RequireAuth";
 import RequirePermission from "./landlord/components/RequirePermission";
 const AcceptInvite = lazy(() => import("./pages/AcceptInvite"));
 import ErrorBoundary from "./components/ErrorBoundary";
+import UpdatePrompt from "./components/UpdatePrompt";
 import LoadingScreen from "./components/LoadingScreen";
 import Landing from "./pages/Landing";
 import SignIn from "./pages/SignIn";
@@ -90,6 +91,7 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <ScrollToTop />
+        <UpdatePrompt />
         <RoutesBoundary>
         {/* Dashboard and tenant-portal pages are code-split (lazy imports above); the first visit
             to one suspends here until its chunk downloads. Public pages are bundled eagerly and

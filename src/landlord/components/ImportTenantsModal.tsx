@@ -42,7 +42,13 @@ export default function ImportTenantsModal({ onClose }: { onClose: () => void })
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [result, setResult] = useState<{ batchId: string; count: number; skipped: number; failed: { row: ImportRow; error: string }[] } | null>(null);
+  const [result, setResult] = useState<{
+    batchId: string;
+    count: number;
+    skipped: number;
+    failed: { row: ImportRow; error: string }[];
+    notSetUp: { id: string; name: string; error: string }[];
+  } | null>(null);
   // Phones already in this property, read once when the file is loaded. Frozen on purpose: if it
   // followed the live tenant list, every row would turn into "already a tenant" while the import
   // was running, because the tenants it had just added counted as duplicates of themselves.
@@ -104,7 +110,7 @@ export default function ImportTenantsModal({ onClose }: { onClose: () => void })
     try {
       const res = await runImport(propertyId, good, label, setProgress);
       if (sendTexts && res.imported.length) void sendWelcomeTexts(res.imported.map((x) => x.id));
-      setResult({ batchId: res.batchId, count: res.imported.length, skipped: bad.length, failed: res.failed });
+      setResult({ batchId: res.batchId, count: res.imported.length, skipped: bad.length, failed: res.failed, notSetUp: res.notSetUp });
       setStep("done");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Import failed");
@@ -292,6 +298,14 @@ export default function ImportTenantsModal({ onClose }: { onClose: () => void })
             <p className="max-w-xs text-sm text-muted">
               Everyone starts fully paid. First rent is due on the {firstDueText}, and reminders go out from then.
             </p>
+            {result.notSetUp.length > 0 && (
+              <p className="mt-1 max-w-sm rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                {result.notSetUp.length} tenant{result.notSetUp.length === 1 ? " was" : "s were"} added, but this month's rent could not be recorded as paid for{" "}
+                {result.notSetUp.slice(0, 3).map((n) => n.name).join(", ")}
+                {result.notSetUp.length > 3 ? ` and ${result.notSetUp.length - 3} more` : ""}. They show no payment yet. Undo this import and try again, or log their payment on their profile.
+                {result.notSetUp[0] ? ` (${result.notSetUp[0].error})` : ""}
+              </p>
+            )}
             {(result.skipped > 0 || result.failed.length > 0) && (
               <p className="mt-1 text-xs text-amber-700">
                 {result.skipped + result.failed.length} row{result.skipped + result.failed.length === 1 ? " wasn't" : "s weren't"} added.{" "}

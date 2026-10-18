@@ -211,11 +211,18 @@ export async function runImport(
   rows: ImportRow[],
   label: string,
   onProgress: (done: number) => void,
-): Promise<{ batchId: string; imported: { id: string; name: string }[]; failed: { row: ImportRow; error: string }[] }> {
+): Promise<{
+  batchId: string;
+  imported: { id: string; name: string }[];
+  failed: { row: ImportRow; error: string }[];
+  /** Tenants that were added but whose first month could not be recorded as paid. */
+  notSetUp: { id: string; name: string; error: string }[];
+}> {
   const batchId = crypto.randomUUID();
   const todo = rows.filter((r) => r.tenant);
   const imported: { id: string; name: string }[] = [];
   const failed: { row: ImportRow; error: string }[] = [];
+  const notSetUp: { id: string; name: string; error: string }[] = [];
   let done = 0;
   let cursor = 0;
   const worker = async () => {
@@ -230,7 +237,10 @@ export async function runImport(
           p_tenant_id: id,
           p_owing: row.tenant!.owedAmount,
         } as never);
-        if (openingError) console.error("[import] opening balance failed", id, openingError.message);
+        if (openingError) {
+          console.error("[import] opening balance failed", id, openingError.message);
+          notSetUp.push({ id, name: row.tenant!.name, error: openingError.message });
+        }
         imported.push({ id, name: row.tenant!.name });
       } catch (e) {
         failed.push({ row, error: e instanceof Error ? e.message : "Couldn't save" });
@@ -245,7 +255,7 @@ export async function runImport(
       .update({ import_batch_id: batchId, import_batch_label: label })
       .in("id", imported.map((x) => x.id));
   }
-  return { batchId, imported, failed };
+  return { batchId, imported, failed, notSetUp };
 }
 
 /** Removes an imported batch, but never a tenant who has since got ledger entries. */
