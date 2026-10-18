@@ -604,15 +604,8 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
             await updateTenantRow(propertyId, id, tenantPatch);
           }
 
-          // Fire-and-forget, after the balance write above has landed — send-payment-receipt-sms
-          // reads tenants.owed_amount fresh, so this must come after the sync/fallback write, not
-          // before, or the receipt would quote the tenant's pre-payment balance.
-          payments.forEach(({ amount, label }) => {
-            void supabase.functions
-              .invoke("send-payment-receipt-sms", { body: { tenantId: id, amount, label } })
-              .catch((e) => console.error("Failed to send payment receipt SMS", e));
-          });
-
+          // No tenant SMS for a payment the landlord logs by hand: logging, voiding and re-logging
+          // to fix a mistake would text the tenant every time. Only online payments send a receipt.
           showToast(newEvents.length > 1 ? "Payments logged" : "Payment logged", "success");
           const totalAmount = payments.reduce((sum, p) => sum + p.amount, 0);
           void logAuditEvent({

@@ -175,8 +175,25 @@ async function fetchFontBase64(url: string): Promise<string | null> {
   }
 }
 
-const INTER_REGULAR_URL = "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/inter/static/Inter-Regular.ttf";
-const INTER_BOLD_URL = "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/inter/static/Inter-Bold.ttf";
+// The google/fonts repo only ships Inter as a variable font, so the static paths this used to point
+// at do not exist and the body text silently fell back to Helvetica. These are the static TTFs
+// from the @expo-google-fonts/inter npm package.
+const INTER_REGULAR_URLS = [
+  "https://cdn.jsdelivr.net/npm/@expo-google-fonts/inter@0.4.2/400Regular/Inter_400Regular.ttf",
+  "https://unpkg.com/@expo-google-fonts/inter@0.4.2/400Regular/Inter_400Regular.ttf",
+];
+const INTER_BOLD_URLS = [
+  "https://cdn.jsdelivr.net/npm/@expo-google-fonts/inter@0.4.2/700Bold/Inter_700Bold.ttf",
+  "https://unpkg.com/@expo-google-fonts/inter@0.4.2/700Bold/Inter_700Bold.ttf",
+];
+
+async function fetchFirstFont(urls: string[]): Promise<string | null> {
+  for (const url of urls) {
+    const data = await fetchFontBase64(url);
+    if (data) return data;
+  }
+  return null;
+}
 // Fraunces is the app's own display face (src/index.css --font-display). The repo has moved its
 // static instances around between releases, so try the known paths in turn and fall back to the
 // variable file, which renders at its default instance rather than not at all.
@@ -192,7 +209,7 @@ const FRAUNCES_URLS = [
  * to be set in, and is most of why it read as flat next to the reports. */
 async function registerFonts(doc: jsPDF): Promise<{ sans: string; display: string }> {
   let sans = "helvetica";
-  const [regular, bold] = await Promise.all([fetchFontBase64(INTER_REGULAR_URL), fetchFontBase64(INTER_BOLD_URL)]);
+  const [regular, bold] = await Promise.all([fetchFirstFont(INTER_REGULAR_URLS), fetchFirstFont(INTER_BOLD_URLS)]);
   if (regular && bold) {
     try {
       doc.addFileToVFS("Inter-Regular.ttf", regular);
@@ -481,7 +498,9 @@ Deno.serve(async (req) => {
 
   const logoDataUrl = await fetchLogoDataUrl(IPM_LOGO_URL);
 
-  const doc = new jsPDF({ unit: "px", format: [PAGE_W, PAGE_H] });
+  // px_scaling makes one layout unit 0.75pt, so the 794 x 1123 grid is a true A4 page (595 x 842pt).
+  // Without it each unit is 1.333pt: an oversized page whose text, sized in pt, looks far too small.
+  const doc = new jsPDF({ unit: "px", format: [PAGE_W, PAGE_H], hotfixes: ["px_scaling"] });
   const faces = await registerFonts(doc);
   const ctx: Ctx = { doc, sans: faces.sans, display: faces.display };
 
@@ -501,16 +520,16 @@ Deno.serve(async (req) => {
   setFont(ctx, "display", 23, COLOR.onBrand);
   doc.text(property?.name ?? "Your property", MARGIN, 70);
   if (property?.address) {
-    setFont(ctx, "sans", 12.5, COLOR.onBrandMuted);
+    setFont(ctx, "sans", 13.5, COLOR.onBrandMuted);
     doc.text(property.address, MARGIN, 92);
   }
 
-  setFont(ctx, "sans", 11.5, COLOR.onBrandMuted);
-  doc.text("Receipt number", RIGHT, 68, { align: "right" });
-  setFont(ctx, "sansBold", 14, COLOR.onBrand);
-  doc.text(shortReceiptNumber(collection.id), RIGHT, 89, { align: "right" });
+  setFont(ctx, "display", 26, COLOR.onBrand);
+  doc.text("Receipt", RIGHT, 70, { align: "right" });
+  setFont(ctx, "sans", 13, COLOR.onBrandMuted);
+  doc.text(`No. ${shortReceiptNumber(collection.id)}`, RIGHT, 94, { align: "right" });
 
-  setFont(ctx, "sans", 12.5, COLOR.onBrandMuted);
+  setFont(ctx, "sans", 13.5, COLOR.onBrandMuted);
   doc.text(recordedFor ? "Payment recorded" : "Payment received", MARGIN, 178);
   setFont(ctx, "display", 64, COLOR.onBrand);
   doc.text(formatMoney(rentPortion), MARGIN, 240);
@@ -534,7 +553,7 @@ Deno.serve(async (req) => {
 
   // Who paid whom. "Bill from / Bill to" was invoice language on a document that proves a payment
   // already happened, and nobody is being billed by it.
-  setFont(ctx, "sans", 11.5, COLOR.muted);
+  setFont(ctx, "sans", 12.5, COLOR.muted);
   doc.text("Paid by", MARGIN, bodyTop + 50);
   doc.text("Paid to", COL2_X, bodyTop + 50);
 
@@ -553,7 +572,7 @@ Deno.serve(async (req) => {
   doc.setLineWidth(1);
   doc.line(MARGIN, bodyTop + 143, RIGHT, bodyTop + 143);
 
-  setFont(ctx, "sans", 11.5, COLOR.muted);
+  setFont(ctx, "sans", 12.5, COLOR.muted);
   doc.text("What this covers", MARGIN, bodyTop + 172);
   doc.text("Amount", RIGHT, bodyTop + 172, { align: "right" });
 
@@ -611,12 +630,12 @@ Deno.serve(async (req) => {
 
   const detailsY = bandTop + BAND_H + 42;
   const operatorLabel = OPERATOR_LABEL[collection.operator ?? ""] ?? collection.operator ?? "Mobile money";
-  setFont(ctx, "sans", 11.5, COLOR.muted);
+  setFont(ctx, "sans", 12.5, COLOR.muted);
   doc.text(recordedFor ? "Recorded by" : "Paid with", MARGIN, detailsY);
   setFont(ctx, "sans", 13.5, COLOR.ink);
   if (recordedFor) {
     doc.text(settings?.landlord_name ?? property?.name ?? "Your property manager", MARGIN, detailsY + 21);
-    setFont(ctx, "sans", 11.5, COLOR.muted);
+    setFont(ctx, "sans", 12.5, COLOR.muted);
     doc.text("Recorded on", COL2_X, detailsY);
     setFont(ctx, "sans", 13.5, COLOR.ink);
     doc.text(paidOnLabel, COL2_X, detailsY + 21);
@@ -624,7 +643,7 @@ Deno.serve(async (req) => {
     doc.text(`${operatorLabel} mobile money, number ending ${lastDigits(collection.phone ?? "", 3)}`, MARGIN, detailsY + 21);
   }
   if (collection.lenco_collection_id) {
-    setFont(ctx, "sans", 11.5, COLOR.muted);
+    setFont(ctx, "sans", 12.5, COLOR.muted);
     doc.text("Reference", COL2_X, detailsY);
     setFont(ctx, "sans", 13.5, COLOR.ink);
     doc.text(doc.splitTextToSize(collection.lenco_collection_id, CONTENT_W / 2 - 24)[0] ?? collection.lenco_collection_id, COL2_X, detailsY + 21);
@@ -635,7 +654,7 @@ Deno.serve(async (req) => {
   doc.setLineWidth(1);
   doc.line(MARGIN, 1000, RIGHT, 1000);
 
-  setFont(ctx, "sans", 11, COLOR.muted);
+  setFont(ctx, "sans", 12, COLOR.muted);
   doc.text("Powered by", PAGE_W / 2, 1022, { align: "center" });
 
   const wordmark = "Instay Manage";
@@ -647,7 +666,7 @@ Deno.serve(async (req) => {
   if (logoDataUrl) fitImage(doc, logoDataUrl, groupX + markW / 2, 1046, markW, 31);
   doc.text(wordmark, groupX + markW + markGap, 1052);
 
-  setFont(ctx, "sans", 10.5, COLOR.muted);
+  setFont(ctx, "sans", 11.5, COLOR.muted);
   doc.text(
     recordedFor
       ? "This confirms a payment recorded by your property manager. Generated automatically, no signature required."

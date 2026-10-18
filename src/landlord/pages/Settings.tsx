@@ -886,7 +886,7 @@ export default function Settings() {
 <Row label="Welcome SMS for new tenants" desc="Turn this on to automatically text a new tenant their portal link as soon as they're added.">
                   <Toggle checked={sendOnboardingSms} onChange={(v) => { setSendOnboardingSms(v); }} />
                 </Row>
-                <Row label="Payment receipt SMS" desc="Turn this on to automatically text a tenant a receipt after every payment, online or logged manually.">
+                <Row label="Payment receipt SMS" desc="Turn this on to automatically text a tenant a receipt after every online payment. Payments you log by hand never send a text.">
                   <Toggle checked={sendPaymentReceiptSms} onChange={(v) => { setSendPaymentReceiptSms(v); }} />
                 </Row>
               </SettingsPanel>,
