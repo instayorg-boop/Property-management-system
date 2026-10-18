@@ -1,34 +1,28 @@
-// Phase 5, the hourly job with three jobs bundled into it:
-//
-// 1. Payment digesting (the whole point of `payment_sms_mode` in Settings): never sends per
-//    payment, only ever a batched summary (hourly, daily or weekly), and only when there's
-//    actually new activity since the last digest. Uses notification_digest_state as a watermark
-//    per (property, digest_type) so each cadence tracks its own "already included up to here"
-//    pointer against the same `notifications` rows (which the trigger still writes one per
-//    payment, just hidden from the in-app feed via visible_in_feed=false, this job is their only
-//    consumer). This now also writes the ONE visible in-app notification for the period, so the
-//    bell shows "3 payments received this week" instead of 3 separate cards.
-// 2. 75%/100%-of-rent-paid milestone notifications, once per billing period, for properties that
-//    aren't on Autopilot (Autopilot already sends an equivalent "collection complete" notification
-//    at 100% from autopilot-collections, so this would double up there).
-// 3. Sweeping pending_instant_sms, anything the instant-alert path deferred because it landed
-//    outside the send window (see send-instant-notification-sms) goes out here, once this run
-//    lands inside the window.
-//
-// Deploy:  supabase functions deploy send-notification-digests
-// Invoke:  POST with header x-cron-secret: <CRON_SECRET> (scheduled hourly, see
-//          20260926000000_notification_digests.sql)
-
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { sendSms } from "../_shared/sms.ts";
 import { isWithinSendWindow } from "../_shared/quietHours.ts";
 import { withinDailySmsCap } from "../_shared/smsCap.ts";
+import { opsRecipients, filterByPref } from "../_shared/recipients.ts";
 
 // deno-lint-ignore no-explicit-any
 type SupabaseClient = any;
 
 const APP_URL = Deno.env.get("APP_URL") ?? "https://portal.instayhomes.com";
 
+// Sentinel used in notification_digest_state.team_member_id to mean "the property owner" — a fixed
+// nil uuid rather than NULL, because NULL can't be used as an ON CONFLICT target (Postgres allows
+// many NULLs in a unique column, so upserts against it would never find the existing row).
+const OWNER_SENTINEL = "00000000-0000-0000-0000-000000000000";
+
+type DigestType = "payment_hourly" | "payment_daily" | "payment_weekly";
+
+function digestTypeForMode(mode: string | null | undefined): DigestType {
+  return mode === "hourly_digest" ? "payment_hourly" : mode === "weekly_digest" ? "payment_weekly" : "payment_daily";
+}
+
+// Sends texts that were held back outside the send window. Routed the same way as the instant function:
+// people with alerts.operations first, the owner as fallback (or as a copy when the owner asked for one) —
+// and gated the same way too: a recipient whose own sms_notification_prefs turned this category off is skipped.
 async function sweepPendingInstantSms(supabase: SupabaseClient): Promise<number> {
   if (!isWithinSendWindow()) return 0;
 
@@ -37,17 +31,18 @@ async function sweepPendingInstantSms(supabase: SupabaseClient): Promise<number>
 
   let sent = 0;
   for (const row of pending) {
-    const { data: settings } = await supabase.from("settings").select("notification_phone").eq("property_id", row.property_id).maybeSingle();
-    const phone = settings?.notification_phone;
-    const payload = row.payload as { title?: string; body?: string };
+    const payload = row.payload as { title?: string; body?: string; category?: string };
     const message = `${payload.title ?? "Update"}: ${payload.body ?? ""}`;
-    if (phone && (await withinDailySmsCap(supabase, row.property_id))) {
-      const result = await sendSms(phone, message);
-      await supabase.from("sms_send_log").insert({ property_id: row.property_id, recipient_phone: phone, category: "deferred_instant", status: result.ok ? "sent" : "failed", message });
-      if (result.ok) sent += 1;
+    const recipients = filterByPref(await opsRecipients(supabase, row.property_id), payload.category ?? "");
+    for (const r of recipients) {
+      let status = "skipped_cap";
+      if (await withinDailySmsCap(supabase, row.property_id)) {
+        const result = await sendSms(r.phone, message);
+        status = result.ok ? "sent" : "failed";
+        if (result.ok) sent += 1;
+      }
+      await supabase.from("sms_send_log").insert({ property_id: row.property_id, recipient_phone: r.phone, category: "deferred_instant", status, message, recipient_role: r.role });
     }
-    // Deferred alerts are best-effort: they've already waited for a whole quiet-hours window once,
-    // so this always clears the row rather than re-queuing indefinitely on a missing phone/cap hit.
     await supabase.from("pending_instant_sms").delete().eq("id", row.id);
   }
   return sent;
@@ -56,17 +51,15 @@ async function sweepPendingInstantSms(supabase: SupabaseClient): Promise<number>
 function lusakaParts(): { hour: number; weekday: number } {
   const now = new Date();
   const hour = Number(now.toLocaleString("en-US", { timeZone: "Africa/Lusaka", hour: "numeric", hour12: false }));
-  // "en-US" weekday short name mapped to 0=Sun..6=Sat, matched against JS's own getDay() numbering.
   const weekdayName = now.toLocaleString("en-US", { timeZone: "Africa/Lusaka", weekday: "short" });
   const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(weekdayName);
   return { hour, weekday };
 }
 
-const DAILY_DIGEST_HOUR = 18; // 18:00 Africa/Lusaka
-const WEEKLY_DIGEST_WEEKDAY = 1; // Monday
+const DAILY_DIGEST_HOUR = 18;
+const WEEKLY_DIGEST_WEEKDAY = 1;
 const WEEKLY_DIGEST_HOUR = 18;
 
-/** A tenant whose move-in date is still in the future owes nothing that is due yet. */
 function hasMovedIn(moveIn: string | null | undefined): boolean {
   if (!moveIn) return true;
   const d = new Date(moveIn);
@@ -78,6 +71,96 @@ function hasMovedIn(moveIn: string | null | undefined): boolean {
 function currentPeriodLabel(): string {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * Builds and sends one payment digest for one recipient (the owner, or a team member who holds
+ * alerts.operations), tracking its own watermark in notification_digest_state keyed by
+ * (property_id, digestType, recipientId). `recipientId` is OWNER_SENTINEL for the owner or a
+ * team_members.id for a manager — this is what lets an owner on "daily" and a manager on "hourly"
+ * each get correctly-paced digests from the same hourly cron run, without colliding on state.
+ *
+ * The feed notification (visible in the in-app notification list) is inserted at most once per
+ * property per run — tied to the owner's pass — so adding manager recipients never duplicates it.
+ */
+async function processPaymentDigest(
+  supabase: SupabaseClient,
+  propertyId: string,
+  digestType: DigestType,
+  phone: string | null | undefined,
+  recipientId: string,
+  recipientRole: "owner" | "manager",
+  insertFeedNotification: boolean,
+): Promise<Record<string, unknown> | null> {
+  const { data: state } = await supabase
+    .from("notification_digest_state")
+    .select("id, last_processed_at, last_sent_at")
+    .eq("property_id", propertyId)
+    .eq("digest_type", digestType)
+    .eq("team_member_id", recipientId)
+    .maybeSingle();
+
+  const watermark = state?.last_processed_at ?? "1970-01-01T00:00:00Z";
+
+  const { data: newPayments } = await supabase
+    .from("notifications")
+    .select("id, created_at, metadata")
+    .eq("property_id", propertyId)
+    .eq("category", "payment")
+    .gt("created_at", watermark)
+    .order("created_at", { ascending: true });
+
+  if (!newPayments || newPayments.length === 0) return null;
+
+  const total = newPayments.reduce((sum: number, n: { metadata: { amount?: number } }) => sum + Number(n.metadata?.amount ?? 0), 0);
+  const latestCreatedAt = newPayments[newPayments.length - 1].created_at;
+
+  const { data: owingTenants } = await supabase
+    .from("tenants")
+    .select("id, move_in_date")
+    .eq("property_id", propertyId)
+    .eq("active", true)
+    .gt("owed_amount", 0);
+  const outstandingCount = (owingTenants ?? []).filter((t: { move_in_date: string | null }) => hasMovedIn(t.move_in_date)).length;
+
+  const paymentWord = newPayments.length === 1 ? "payment" : "payments";
+  const periodWord = digestType === "payment_daily" ? "Today's collections" : digestType === "payment_weekly" ? "This week's collections" : "Collections update";
+  const countWord = digestType === "payment_daily" || digestType === "payment_weekly" ? `${newPayments.length} ${paymentWord}` : `${newPayments.length} new ${paymentWord}`;
+  const message = `${periodWord}: ${countWord} · K${total.toLocaleString()} collected. ${outstandingCount ?? 0} tenants outstanding.`;
+
+  let sent = false;
+  const trimmedPhone = String(phone ?? "").trim();
+  if (trimmedPhone && (await withinDailySmsCap(supabase, propertyId))) {
+    const result = await sendSms(trimmedPhone, message);
+    await supabase.from("sms_send_log").insert({ property_id: propertyId, recipient_phone: trimmedPhone, category: "payment_digest", status: result.ok ? "sent" : "failed", message, recipient_role: recipientRole });
+    sent = result.ok;
+  }
+
+  if (insertFeedNotification) {
+    const spanWord = digestType === "payment_weekly" ? "this week" : digestType === "payment_daily" ? "today" : "recently";
+    await supabase.from("notifications").insert({
+      property_id: propertyId,
+      category: "payment",
+      type: "paymentDigest",
+      title: `${newPayments.length} ${paymentWord} received`,
+      body: `K${total.toLocaleString()} collected ${spanWord}. ${outstandingCount ?? 0} tenant${outstandingCount === 1 ? "" : "s"} still outstanding. Open Online Payments to see who paid.`,
+      metadata: { count: newPayments.length, total, outstanding: outstandingCount, digest_type: digestType },
+      visible_in_feed: true,
+    });
+  }
+
+  await supabase.from("notification_digest_state").upsert(
+    {
+      property_id: propertyId,
+      digest_type: digestType,
+      team_member_id: recipientId,
+      last_processed_at: latestCreatedAt,
+      last_sent_at: sent ? new Date().toISOString() : state?.last_sent_at ?? null,
+    },
+    { onConflict: "property_id,digest_type,team_member_id" },
+  );
+
+  return { propertyId, digestType, recipientRole, recipientId: recipientId === OWNER_SENTINEL ? undefined : recipientId, count: newPayments.length, total, sent };
 }
 
 Deno.serve(async (req) => {
@@ -96,98 +179,62 @@ Deno.serve(async (req) => {
 
   const results: Record<string, unknown>[] = [];
 
-  // --- 1. Payment digests (hourly / daily / weekly) --------------------------------------------
+  // Owner digests — one per property, cadence from settings.payment_sms_mode.
   const { data: settingsRows, error: settingsError } = await supabase
     .from("settings")
-    .select("property_id, payment_sms_mode, notification_phone, autopilot_enabled")
+    .select("property_id, payment_sms_mode, notification_phone, autopilot_enabled, report_weekly_enabled")
     .neq("payment_sms_mode", "off");
   if (settingsError) {
     return new Response(JSON.stringify({ error: "Failed to load settings", detail: settingsError.message }), { status: 500 });
   }
 
   for (const settings of settingsRows ?? []) {
-    const digestType =
-      settings.payment_sms_mode === "hourly_digest" ? "payment_hourly" : settings.payment_sms_mode === "weekly_digest" ? "payment_weekly" : "payment_daily";
-    // Daily/weekly digests only actually evaluate during their one designated window, every
-    // other run this property is simply skipped, leaving its watermark untouched so the next
-    // real window picks up everything that accumulated since the previous digest.
+    const digestType = digestTypeForMode(settings.payment_sms_mode);
+    if (digestType === "payment_daily" && !isDailyWindow) continue;
+    if (digestType === "payment_weekly" && !isWeeklyWindow) continue;
+    // The Monday weekly report replaces the weekly payment digest, so the owner is not texted twice.
+    if (digestType === "payment_weekly" && settings.report_weekly_enabled) continue;
+
+    try {
+      const result = await processPaymentDigest(supabase, settings.property_id, digestType, settings.notification_phone, OWNER_SENTINEL, "owner", true);
+      if (result) results.push(result);
+    } catch (e) {
+      console.error("[send-notification-digests] owner digest failed", settings.property_id, String(e));
+    }
+  }
+
+  // Manager digests — one per qualifying team member, cadence from THEIR OWN payment_sms_mode
+  // (seeded as a one-time copy of the owner's at invite time, then independently editable). No
+  // "weekly report replaces it" exception here: the weekly property report only ever goes to the
+  // owner, so a manager's own weekly payment digest is the only thing they'd otherwise get.
+  const { data: memberRows, error: membersError } = await supabase
+    .from("team_members")
+    .select("id, property_id, notification_phone, payment_sms_mode, permissions")
+    .eq("status", "active")
+    .not("notification_phone", "is", null)
+    .not("payment_sms_mode", "is", null)
+    .neq("payment_sms_mode", "off");
+  if (membersError) {
+    console.error("[send-notification-digests] failed to load team members", membersError.message);
+  }
+
+  for (const member of memberRows ?? []) {
+    const perms: string[] = member.permissions ?? [];
+    const phone = String(member.notification_phone ?? "").trim();
+    if (!phone || !perms.includes("alerts.operations")) continue;
+
+    const digestType = digestTypeForMode(member.payment_sms_mode);
     if (digestType === "payment_daily" && !isDailyWindow) continue;
     if (digestType === "payment_weekly" && !isWeeklyWindow) continue;
 
-    const { data: state } = await supabase
-      .from("notification_digest_state")
-      .select("id, last_processed_at, last_sent_at")
-      .eq("property_id", settings.property_id)
-      .eq("digest_type", digestType)
-      .maybeSingle();
-
-    const watermark = state?.last_processed_at ?? "1970-01-01T00:00:00Z";
-
-    const { data: newPayments } = await supabase
-      .from("notifications")
-      .select("id, created_at, metadata")
-      .eq("property_id", settings.property_id)
-      .eq("category", "payment")
-      .gt("created_at", watermark)
-      .order("created_at", { ascending: true });
-
-    if (!newPayments || newPayments.length === 0) continue; // no new activity, never send "nothing happened"
-
-    const total = newPayments.reduce((sum: number, n: { metadata: { amount?: number } }) => sum + Number(n.metadata?.amount ?? 0), 0);
-    const latestCreatedAt = newPayments[newPayments.length - 1].created_at;
-
-    const { data: owingTenants } = await supabase
-      .from("tenants")
-      .select("id, move_in_date")
-      .eq("property_id", settings.property_id)
-      .eq("active", true)
-      .gt("owed_amount", 0);
-    // Tenants who have not moved in yet are not "outstanding".
-    const outstandingCount = (owingTenants ?? []).filter((t: { move_in_date: string | null }) => hasMovedIn(t.move_in_date)).length;
-
-    const paymentWord = newPayments.length === 1 ? "payment" : "payments";
-    const periodWord = digestType === "payment_daily" ? "Today's collections" : digestType === "payment_weekly" ? "This week's collections" : "Collections update";
-    const countWord = digestType === "payment_daily" || digestType === "payment_weekly" ? `${newPayments.length} ${paymentWord}` : `${newPayments.length} new ${paymentWord}`;
-    const message = `${periodWord}: ${countWord} · K${total.toLocaleString()} collected. ${outstandingCount ?? 0} tenants outstanding.`;
-
-    let sent = false;
-    if (settings.notification_phone && (await withinDailySmsCap(supabase, settings.property_id))) {
-      const result = await sendSms(settings.notification_phone, message);
-      await supabase.from("sms_send_log").insert({ property_id: settings.property_id, recipient_phone: settings.notification_phone, category: "payment_digest", status: result.ok ? "sent" : "failed", message });
-      sent = result.ok;
+    try {
+      const result = await processPaymentDigest(supabase, member.property_id, digestType, phone, member.id, "manager", false);
+      if (result) results.push(result);
+    } catch (e) {
+      console.error("[send-notification-digests] member digest failed", member.id, String(e));
     }
-
-    // The one VISIBLE in-app notification for this period, this is what shows in the bell/panel
-    // instead of the hidden per-payment rows the trigger wrote.
-    const spanWord = digestType === "payment_weekly" ? "this week" : digestType === "payment_daily" ? "today" : "recently";
-    await supabase.from("notifications").insert({
-      property_id: settings.property_id,
-      category: "payment",
-      type: "paymentDigest",
-      title: `${newPayments.length} ${paymentWord} received`,
-      body: `K${total.toLocaleString()} collected ${spanWord}. ${outstandingCount ?? 0} tenant${outstandingCount === 1 ? "" : "s"} still outstanding. Open Online Payments to see who paid.`,
-      metadata: { count: newPayments.length, total, outstanding: outstandingCount, digest_type: digestType },
-      visible_in_feed: true,
-    });
-
-    // Watermark advances regardless of whether the SMS itself went out (no phone configured, cap
-    // hit, provider failure), this batch of notifications has been accounted for either way, a
-    // permanently-failing send shouldn't cause the digest to balloon forever instead of just being
-    // silently missed for that one run.
-    await supabase.from("notification_digest_state").upsert(
-      {
-        property_id: settings.property_id,
-        digest_type: digestType,
-        last_processed_at: latestCreatedAt,
-        last_sent_at: sent ? new Date().toISOString() : state?.last_sent_at ?? null,
-      },
-      { onConflict: "property_id,digest_type" }
-    );
-
-    results.push({ propertyId: settings.property_id, digestType, count: newPayments.length, total, sent });
   }
 
-  // --- 2. 75% / 100% paid milestones (non-Autopilot properties, checked once a day) ------------
   if (isDailyWindow) {
     const { data: allProperties } = await supabase
       .from("settings")
@@ -237,8 +284,6 @@ Deno.serve(async (req) => {
         });
         results.push({ propertyId: property.property_id, milestone, pct, period });
 
-        // At 100%, also auto-build the month's income vs expenses report and text a direct,
-        // no-login link to it, so the landlord can see the numbers without opening the dashboard.
         if (milestone === 100) {
           try {
             const reportRes = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/generate-auto-report`, {

@@ -365,7 +365,16 @@ export function projectLedgerRows(rows: RawLedgerEntryRow[]): LedgerRow[] {
       continue;
     }
 
-    if (row.event_type === "charge") {
+    // A one-off charge the landlord added (a broken window, a cleaning fee) or a ledger penalty is
+    // owed money just like rent, so it gets the same treatment: payments linked to it settle it and
+    // it shows Paid / Partial / Unpaid. A positive adjustment that is itself linked to a rent charge
+    // is part of that charge instead, and stays where it was.
+    const isOneOffCharge =
+      (row.event_type === "adjustment" || row.event_type === "penalty") &&
+      row.amount > 0 &&
+      !row.charge_id &&
+      row.affects_balance !== false;
+    if (row.event_type === "charge" || isOneOffCharge) {
       charges.set(row.id, row);
       continue;
     }
@@ -402,7 +411,7 @@ export function projectLedgerRows(rows: RawLedgerEntryRow[]): LedgerRow[] {
       createdAt: charge.created_at,
       method: (charge.method as PaymentMethod | null) ?? null,
       source: toSource(charge.source),
-      eventType: "charge",
+      eventType: charge.event_type as LedgerRow["eventType"],
       chargeId: null,
       billingPeriodId: charge.billing_period_id,
       dueDate: charge.due_date,
@@ -638,6 +647,12 @@ export type NewLedgerEventInsert = {
   idempotencyKey: string;
   method?: PaymentMethod | null;
   createdAt?: string;
+  /** Rent-charge scheduling fields, set only when writing a 'charge' event (the shape
+   * generateRentCharge.ts produces server-side), so a charge created here is recognised by the
+   * nightly generator's duplicate guard and carries its own due/grace dates. */
+  billingPeriodId?: string | null;
+  dueDate?: string | null;
+  gracePeriodEnd?: string | null;
 };
 
 /** Inserts one new-model financial event. Sibling to addLedgerEntry (legacy shape) — this is the
@@ -658,6 +673,9 @@ export async function addLedgerEvent(entry: NewLedgerEventInsert): Promise<void>
     method: entry.method ?? null,
     created_by: userData.user?.id ?? null,
     ...(entry.createdAt ? { created_at: entry.createdAt } : {}),
+    ...(entry.billingPeriodId ? { billing_period_id: entry.billingPeriodId } : {}),
+    ...(entry.dueDate ? { due_date: entry.dueDate } : {}),
+    ...(entry.gracePeriodEnd ? { grace_period_end: entry.gracePeriodEnd } : {}),
   });
   if (error) throw error;
 }

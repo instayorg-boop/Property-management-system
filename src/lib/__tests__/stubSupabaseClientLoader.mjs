@@ -13,6 +13,16 @@ export async function resolve(specifier, context, nextResolve) {
   if (specifier === "./db") {
     return { url: "virtual:stub-offline-db", shortCircuit: true };
   }
+  // Vite resolves a relative import with no extension ("../tenants") to the .ts file beside it;
+  // plain Node does not, and fails with ERR_MODULE_NOT_FOUND before a test can run. Try the .ts
+  // file first for those, and fall through to Node's own behaviour if there isn't one.
+  if (specifier.startsWith(".") && !/\.[a-z]+$/i.test(specifier)) {
+    try {
+      return await nextResolve(`${specifier}.ts`, context);
+    } catch {
+      // not a TypeScript sibling, let Node resolve it normally below
+    }
+  }
   return nextResolve(specifier, context);
 }
 

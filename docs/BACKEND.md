@@ -110,6 +110,180 @@ there is the mistake that caused a real data leak once already in this
 project (full tenant PII exposed to any portal visitor) before it was
 caught and fixed this way.
 
+## How a payment is allocated
+
+Until 18 October 2026 there were four different answers to the question "what
+did this payment pay for". The portal's checkout preview worked one out in
+TypeScript, `pay-portal-collect-payment` worked one out again when it wrote the
+`collections` row, the webhook and the polling fallback each decided again on
+settlement, and `pay-portal-reconcile-pending` had quietly drifted onto an
+older `ledger_v2`/`post_payment` reconciliation path of its own. They agreed
+most of the time, which is worse than disagreeing all of the time: the cases
+where they did not agree surfaced only as a tenant balance nobody could
+explain. There is now one rule, implemented once, in Postgres.
+
+**`allocate_payment(p_tenant_id uuid, p_amount numeric, p_live_penalty numeric
+default 0) returns jsonb`** decides what a payment pays for at the moment the
+payment is made, and returns the line items that decision produced. Oldest open
+charge first. Nothing downstream re-derives it: the returned line items *are*
+the allocation, and every caller persists them rather than recomputing them.
+
+**`tenant_charge_status(p_tenant_id uuid)`** is what `allocate_payment` reads.
+It returns every payable charge for a tenant with the amount settled against
+it, the amount remaining and a status. Its real job is unification. A rent
+charge (`event_type = 'charge'`) and a one-off charge (`event_type` of
+`adjustment` or `penalty`, positive amount, no `charge_id`) were previously
+counted by different code in different places; they now come back from one
+function in one shape. It also applies overflow spillover, so an overpayment
+against one charge flows onto the next open charge instead of being left as an
+untargeted credit that later absorbs something it should not have.
+
+**`pay_portal_preview_payment(...)`** is the portal's checkout preview. It is
+`SECURITY DEFINER` and session-verified like the rest of the `pay_portal_*`
+family (see the portal section above), and it exists for one reason: the
+preview a tenant sees before paying and the allocation that actually happens
+are now produced by the same code, instead of two implementations that had to
+be kept in step by hand.
+
+**`pay_portal_get_ledger_v2`** was rewritten to union four sources into the
+single list the portal shows: legacy rows, the output of
+`tenant_charge_status`, standalone payments, and any remaining adjustments not
+already accounted for by a charge.
+
+On the edge-function side, all four payment-settlement paths now share one
+module, `supabase/functions/_shared/reconcileCollection.ts`:
+`pay-portal-collect-payment`, `lenco-webhook`, `pay-portal-check-collection`
+and `pay-portal-reconcile-pending`. The last of those is worth calling out,
+because it is the kind of drift that is invisible until it matters: it had been
+left behind on an older `ledger_v2`/`post_payment` reconciliation path while
+the other three moved on, so a payment rescued by the pending-reconciler could
+end up allocated differently from the identical payment settled by the webhook.
+It now goes through the same shared module as the rest. If you add a fifth
+settlement path, route it through `reconcileCollection.ts` rather than writing
+ledger rows directly.
+
+**Payment idempotency keys changed shape.** They were
+`lenco_payment:<collection id>`, one ledger row per collection. They are now
+`lenco_payment:<collection id>:<line index>`, one row per allocated line item,
+which is what makes a single payment legible as the several things it settled.
+Anything that looked a payment row up by the old key silently stopped matching
+when this changed (see the receipt function below for exactly that bug).
+
+## A new tenant now gets a real rent charge
+
+Ticking "rent collected today" while adding a tenant used to write a payment
+with `charge_id = null`. That was not laziness: a brand new tenant genuinely
+has no rent charge to point at yet, because the nightly generator creates the
+first one later. The consequence was subtle and bad. That untargeted payment
+sat in the ledger looking for something to settle, and silently absorbed the
+first one-off charge added afterwards, so the tenant's balance read zero while
+money was genuinely owed.
+
+`AddTenant.tsx` now creates the move-in rent charge first and then logs the
+payment against it. The charge is written with origin `tenant_setup`, a
+`billing_period_id`, due and grace dates, and the idempotency key
+`rent_charge:<tenant id>:<YYYY-MM>`: deliberately the same shape
+`supabase/functions/_shared/generateRentCharge.ts` produces, so the nightly
+generator's duplicate guard recognises it and skips the month rather than
+charging the tenant twice.
+
+Two supporting changes made that possible. `logPayments` in
+`TenantsContext.tsx` now honours an explicitly passed charge id even when the
+optimistic local ledger has not refreshed yet, which matters because the charge
+and the payment are created in the same breath. And `addLedgerEvent` in
+`src/lib/tenants.ts` gained optional `billingPeriodId`, `dueDate` and
+`gracePeriodEnd` arguments, so a caller outside the generator can write a
+properly shaped charge.
+
+## Service fees are not collected money
+
+A portal payment charges the tenant the rent *plus* a service fee on top.
+`collections.amount` is the total debited from the tenant's phone,
+`collections.fee_amount` is the fee, and the rent, the only part that is the
+landlord's money, is `amount - fee_amount`. Three places were reporting the
+gross figure as if the landlord had collected it:
+
+- `fetchPaymentsReceived` in `generate-report`, which backs the "Payments
+  received" PDF and CSV, now reports rent only.
+- `collected` in `getLencoBalance` (`src/lib/payoutApi.ts`).
+- `available_balance` in the Postgres function `assistant_get_payouts_summary`.
+
+Equally important, and the reason this section exists rather than a commit
+message: several paths were already correct, and should not be "fixed" again by
+the next person who finds this class of bug. The income vs expenses report and
+the automatic reports both read rent out of `ledger_entries` and never touch
+`collections.amount`. The dashboard collections trend and the report document
+go through `report_collected`, which is also ledger based. The Payouts page's
+lifetime collected figure and its payments list were already subtracting the
+fee. And `sweep-company-revenue` keeps the fee on purpose: that one *is* the
+company's revenue, and removing it there would be the actual bug.
+
+## Portal and ledger display
+
+`pay_portal_get_tenant_v2` was dropped and recreated with three additional
+returned columns: `due_day`, `last_payment_amount` and `last_payment_at`. Two
+display bugs needed them.
+
+First, the due day. The portal was showing the property's due day to every
+tenant, so a tenant who bills on their own move-in date was told the wrong
+date. It now resolves the tenant's own `due_day` and falls back to the
+property's, which is how the landlord dashboard had always resolved it.
+`TenantPaymentDrawer.tsx` was brought onto the same rule,
+`tenant.dueDay ?? property due day`.
+
+Second, "last payment" on the portal home. It used to pick the newest ledger
+row whose status read "paid", which is not the same thing as a payment: a
+settled charge also reads as paid, so the figure shown was sometimes a charge.
+It now reads the real last payment off the tenant record.
+
+In the landlord ledger (`TenantProfile.tsx`), a one-off charge row now always
+reads "Charge" or "Credit" and never relabels itself "Paid" once it has been
+settled, the same way a rent charge always reads "Invoice" whatever its state.
+Before this, a settled charge and the payment that settled it both read "Paid",
+so one payment looked like two.
+
+## The tenant receipt PDF
+
+`pay-portal-generate-receipt` was redesigned. It now works in pixels on A4 at
+794x1123 rather than in millimetres, embeds the app's own type pairing, Inter
+and Fraunces, with safe fallbacks (it had been using jsPDF's built-in
+Helvetica), and draws with the app's own colour tokens from `src/index.css`:
+brand navy `#1e3a8a`, brand soft `#e8ecf9`, ink `#212529`, muted `#6c757d` and
+line `#dde2ea`. The previous green palette appeared nowhere else in the
+product.
+
+The layout, top to bottom: a full-width brand masthead carrying the property,
+the receipt number, the amount at 64px and the paid mark; then "Paid by" and
+"Paid to"; the itemised table; a totals band that separates the total charged
+to the tenant's phone from the rent actually settled and the balance left after
+it; the mobile-money method and the Lenco reference; and a centred "Powered by
+Instay Manage" lockup at the foot. A part payment gets an amber band directly
+under the masthead stating the shortfall, so a tenant cannot mistake a partial
+receipt for a cleared month.
+
+One real bug was fixed in the same pass. The function looked its ledger row up
+by the old `lenco_payment:<collection id>` key, which stopped matching the
+moment keys became per line item, so that lookup had been silently returning
+nothing.
+
+## Deployment state as of 18 October 2026
+
+Stated plainly, because the three answers differ:
+
+- **Database migrations: all applied to production.** That includes
+  `allocate_payment`, `tenant_charge_status`, `pay_portal_preview_payment`, the
+  rewritten `pay_portal_get_ledger_v2`, the dropped and recreated
+  `pay_portal_get_tenant_v2`, and the `assistant_get_payouts_summary` fix.
+- **Edge functions: `generate-report` and `pay-portal-generate-receipt` are
+  edited on disk but not yet deployed.** The shared
+  `reconcileCollection.ts` consumers are deployed. Until those two are pushed,
+  the "Payments received" report still shows gross collections and receipts
+  still render in the old design. See `supabase/functions/README.md` for the
+  deploy commands.
+- **Frontend: not yet deployed.** The `AddTenant.tsx`, `TenantsContext.tsx`,
+  `TenantProfile.tsx`, `TenantPaymentDrawer.tsx`, `payoutApi.ts` and portal
+  changes are all on disk only.
+
 ## Auth (or: the lack of it)
 
 There is no real login yet — `/sign-in` is a UI stub. This was a deliberate

@@ -1092,6 +1092,11 @@ export default function TenantProfile() {
     // the charge's own identity regardless of how much of it has been settled; the balance column
     // right next to it (rowOutstanding, below) is what actually says how much is still owed.
     const isCharge = !row.synthetic && row.eventType === "charge";
+    // A one-off charge is the invoice, not the payment, so it keeps saying "Charge" (or "Credit"
+    // for a negative one) even once a linked payment has settled it, the same way a rent charge
+    // always stays "Invoice" regardless of how much of it has been paid. The payment row sitting
+    // next to it is what actually says "Paid"; relabeling the charge too used to make a settled
+    // one-off charge and the payment that settled it read as two separate payments.
     const displayStatusLabel = row.voidedAt
       ? "Voided"
       : isAdjustment
@@ -2041,6 +2046,7 @@ export default function TenantProfile() {
                   label: payment.label,
                   method: payment.method === "mobile" ? "mobile-money" : "cash",
                   paidAt: payment.date,
+                  chargeId: payment.chargeId,
                 })),
               );
               setShowLogPayment(false);

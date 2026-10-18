@@ -57,9 +57,12 @@ async function loadCore(token: string) {
       propertyName: property?.name ?? "",
       propertyLogoUrl: property?.logoUrl ?? null,
       propertyAddress: tenant?.propertyAddress ?? "",
+      // The tenant's own due day wins when they have one (e.g. billing on their move-in date),
+      // falling back to the property's, exactly as the landlord dashboard resolves it. Without
+      // this the portal quoted the property's day to a tenant who bills on another.
       // 1st-of-month is the same fallback the landlord dashboard lands on for a property that has
-      // never set one — not fabricated, just not undefined.
-      dueDay: property?.dueDay ?? 1,
+      // never set one, not fabricated, just not undefined.
+      dueDay: tenant?.dueDay ?? property?.dueDay ?? 1,
     },
     tenant,
     ledger,
@@ -105,6 +108,11 @@ export function invalidatePortal(token: string, tenantId?: string) {
     invalidate(`maintenance:${tenantId}`);
     invalidate(`documents:${tenantId}`);
   }
+}
+
+/** Reloads just the tenant's documents list, for after a receipt has been filed on demand. */
+export function invalidatePortalDocuments(tenantId: string) {
+  invalidate(`documents:${tenantId}`);
 }
 
 /** Narrower than invalidatePortal: for actions (like filing a maintenance report) that don't change

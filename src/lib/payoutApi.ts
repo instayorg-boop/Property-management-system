@@ -206,7 +206,7 @@ export async function createPayoutRecipient(params: {
 export async function getLencoBalance(propertyId: string): Promise<{ collected: number; paidOut: number; available: number }> {
   const [{ data: collectedRows, error: collectedError }, { data: paidRows, error: paidError }, { data: unclaimedRows, error: unclaimedError }] =
     await Promise.all([
-      supabase.from("collections").select("amount").eq("property_id", propertyId).eq("status", "successful").or("lenco_collection_id.is.null,lenco_collection_id.not.like.DEV-%"),
+      supabase.from("collections").select("amount, fee_amount").eq("property_id", propertyId).eq("status", "successful").or("lenco_collection_id.is.null,lenco_collection_id.not.like.DEV-%"),
       supabase.from("payouts").select("amount").eq("property_id", propertyId).in("status", ["successful", "processing"]),
       supabase
         .from("collections")
@@ -219,7 +219,10 @@ export async function getLencoBalance(propertyId: string): Promise<{ collected: 
   if (collectedError) throw collectedError;
   if (paidError) throw paidError;
   if (unclaimedError) throw unclaimedError;
-  const collected = (collectedRows ?? []).reduce((sum, r) => sum + r.amount, 0);
+  // Rent only. collections.amount is what the tenant's phone was debited, rent plus the service
+  // fee charged on top; the fee was never the landlord's money, so a "collected" total that
+  // included it overstated what came in.
+  const collected = (collectedRows ?? []).reduce((sum, r) => sum + (r.amount - (r.fee_amount ?? 0)), 0);
   const paidOut = (paidRows ?? []).reduce((sum, r) => sum + r.amount, 0);
   const available = (unclaimedRows ?? []).reduce((sum, r) => sum + (r.amount - (r.fee_amount ?? 0)), 0);
   return { collected, paidOut, available };

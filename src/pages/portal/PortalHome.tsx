@@ -1,6 +1,7 @@
-import { useParams } from "react-router-dom";
-import { CalendarBlank, Door } from "@phosphor-icons/react";
+import { Link, useParams } from "react-router-dom";
+import { CalendarBlank, Door, FilePdf } from "@phosphor-icons/react";
 import { usePortal } from "./portalData";
+import { ledgerEntryKey, wasReceiptSeen } from "./PortalPaymentDetail";
 import { isPortalDevMode } from "./portalDev";
 import PortalQuickActions from "./PortalQuickActions";
 import {
@@ -17,7 +18,7 @@ import {
   formatMoney,
   type ToneName,
 } from "./portalUi";
-import { groupPortalLedger, portalOwedPeriodLabel } from "../../lib/payPortal";
+import { groupPortalLedger, isOpenPortalRow, portalOwedPeriodLabel } from "../../lib/payPortal";
 
 function greeting(now = new Date()): string {
   const h = now.getHours();
@@ -99,9 +100,26 @@ export default function PortalHome() {
   const isClear = owed <= 0;
   const badge = dueBadge(nextDueDate, owed, tenant?.moveInDate, tenant?.daysOverdue);
   const openLabels = groupPortalLedger(ledger)
-    .filter((row) => row.status !== "paid")
+    .filter(isOpenPortalRow)
     .map((row) => row.label);
-  const lastPaid = ledger.find((row) => row.status === "paid");
+  // A settled charge reads as "paid" in the portal ledger just like a payment does, so picking the
+  // newest "paid" row once showed a damage charge as the tenant's last payment. The tenant record
+  // now carries the real last payment; the ledger scan is kept only as a fallback for a portal
+  // running against a deployment whose pay_portal_get_tenant_v2 predates that field.
+  const legacyLastPaid = ledger.find((row) => row.status === "paid");
+  const lastPayment =
+    tenant.lastPayment === undefined
+      ? legacyLastPaid
+        ? { amount: legacyLastPaid.paidAmount ?? legacyLastPaid.amount, at: legacyLastPaid.createdAt }
+        : null
+      : tenant.lastPayment;
+
+  // The newest settled entry, so the receipt for it is one tap from the front page. Tenants open
+  // this screen looking for the pay button, so without a pointer the receipt (which lives two
+  // levels down in each payment) goes unfound.
+  const lastPaidRow = groupPortalLedger(ledger).find((row) => row.status === "paid");
+  const receiptLink = lastPaidRow ? `/p/${token}/history/${ledgerEntryKey(lastPaidRow)}` : null;
+  const showReceiptBanner = !!lastPaidRow && !wasReceiptSeen(tenant.id);
 
   return (
     <>
@@ -130,6 +148,20 @@ export default function PortalHome() {
           </p>
         )}
       </header>
+
+      {showReceiptBanner && lastPaidRow && receiptLink && (
+        <Link
+          to={receiptLink}
+          className="mb-4 flex items-center justify-between gap-3 rounded-lg px-4 py-3 no-underline"
+          style={{ background: "var(--p-accent-tint)", color: "var(--p-accent)" }}
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <FilePdf size={18} />
+            <span className="truncate text-[13.5px] font-semibold">Your {lastPaidRow.label} receipt is ready</span>
+          </span>
+          <span className="shrink-0 text-[13px] font-semibold">View</span>
+        </Link>
+      )}
 
       {/* The one thing this page exists to answer: what do I owe, by when, and how do I pay it.
           Everything else on the screen is secondary and sits below it. */}
@@ -165,9 +197,11 @@ export default function PortalHome() {
         <StatTile label="Monthly rent" value={formatMoney(tenant.rentAmount)} sub={tenant.room || undefined} />
         <StatTile
           label="Last payment"
-          value={lastPaid ? formatMoney(lastPaid.paidAmount ?? lastPaid.amount) : "None yet"}
-          sub={lastPaid ? formatDate(lastPaid.createdAt) : undefined}
-          tone={lastPaid ? "var(--p-green)" : undefined}
+          value={lastPayment ? formatMoney(lastPayment.amount) : "None yet"}
+          sub={lastPayment ? formatDate(lastPayment.at) : undefined}
+          tone={lastPayment ? "var(--p-green)" : undefined}
+          to={lastPayment && receiptLink ? receiptLink : undefined}
+          cta={lastPayment && receiptLink ? "View receipt" : undefined}
         />
       </div>
 

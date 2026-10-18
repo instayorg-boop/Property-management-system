@@ -9,7 +9,6 @@ import {
   CaretDown,
   Wallet,
   Phone,
-  WhatsappLogo,
 } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useSidebar } from "../SidebarContext";
@@ -23,6 +22,7 @@ import { SUPPORT_PHONE_DISPLAY, SUPPORT_PHONE_TEL, SUPPORT_WHATSAPP_URL } from "
 import GlobalSearch from "./GlobalSearch";
 import TierBadge from "./TierBadge";
 import NotificationsDropdown from "./NotificationsDropdown";
+import WhatsAppIcon from "./WhatsAppIcon";
 
 /** Property logo, or its initials on a brand tint when there's no logo. */
 function AccountAvatar({ logoUrl, name, size }: { logoUrl?: string | null; name: string; size: "sm" | "md" }) {
@@ -325,26 +325,32 @@ export default function Header() {
                   </MenuLink>
                 </div>
                 <div className="border-t border-line p-2.5">
-                  <p className="px-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">Need help?</p>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-between px-1 pb-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">Need help?</p>
+                    <p className="text-[11px] font-medium text-muted">{SUPPORT_PHONE_DISPLAY}</p>
+                  </div>
+                  <div className="grid grid-cols-2 ">
                     <a
                       href={SUPPORT_PHONE_TEL}
-                      className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-line px-2 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-mist"
+                      className="group flex  items-center gap-1.5 rounded-md  bg-paper py-2.5 text-xs font-semibold text-ink transition-colors hover:border-brand/30 hover:bg-brand-soft/40"
                     >
-                      <Phone size={14} weight="duotone" />
+                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-soft text-brand transition-transform group-hover:scale-105">
+                        <Phone size={16} weight="fill" />
+                      </span>
                       Call
                     </a>
                     <a
                       href={SUPPORT_WHATSAPP_URL}
                       target="_blank"
                       rel="noreferrer"
-                      className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-line px-2 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-mist"
+                      className="group flex items-center gap-1.5 rounded-xl  bg-paper py-2.5 text-xs font-semibold text-ink transition-colors hover:border-[#25D366]/40 hover:bg-[#25D366]/10"
                     >
-                      <WhatsappLogo size={14} weight="duotone" />
+                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#25D366]/15 text-[#25D366] transition-transform group-hover:scale-105">
+                        <WhatsAppIcon size={16} />
+                      </span>
                       WhatsApp
                     </a>
                   </div>
-                  <p className="px-1 pt-1.5 text-[11px] text-muted">{SUPPORT_PHONE_DISPLAY}</p>
                 </div>
                 <div className="border-t border-line p-1.5">
                   <button

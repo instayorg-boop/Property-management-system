@@ -608,10 +608,15 @@ async function fetchPayoutsSent(supabase: SupabaseClient, propertyId: string, da
   return { rows, totalAmount, totalNet, count: rows.length };
 }
 
+/** Every figure here is the RENT the tenant paid, never what their phone was debited. A portal
+ * payment charges the tenant the rent plus the service fee on top (collections.amount is the
+ * total, collections.fee_amount the fee), and the fee is not the landlord's money, so reporting
+ * the gross overstated what was collected. Rent is amount minus fee, which is also what the
+ * tenant's ledger payment rows hold, so this report now agrees with the income report. */
 async function fetchPaymentsReceived(supabase: SupabaseClient, propertyId: string, dateFrom: string, dateTo: string, status?: string) {
   let query = supabase
     .from("collections")
-    .select("amount, status, created_at, operator, phone, failure_reason, tenants(name)")
+    .select("amount, fee_amount, status, created_at, operator, phone, failure_reason, tenants(name)")
     .eq("property_id", propertyId)
     .gte("created_at", `${dateFrom}T00:00:00Z`)
     .lte("created_at", `${dateTo}T23:59:59Z`)
@@ -621,6 +626,7 @@ async function fetchPaymentsReceived(supabase: SupabaseClient, propertyId: strin
 
   type Row = {
     amount: number;
+    fee_amount: number | null;
     status: string;
     created_at: string;
     operator: string;
@@ -631,7 +637,7 @@ async function fetchPaymentsReceived(supabase: SupabaseClient, propertyId: strin
   const rows = ((data ?? []) as Row[]).map((r) => ({
     date: r.created_at.slice(0, 10),
     tenant: r.tenants?.name ?? "Not set",
-    amount: r.amount,
+    amount: Math.round((Number(r.amount) - Number(r.fee_amount ?? 0)) * 100) / 100,
     operator: (r.operator ?? "").toUpperCase(),
     phone: r.phone ? `xxxx ${r.phone.slice(-4)}` : "",
     status: r.status,

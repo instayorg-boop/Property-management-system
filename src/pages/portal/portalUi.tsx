@@ -299,9 +299,25 @@ export function ActionTile({ to, icon, label, highlight }: { to: string; icon: R
 }
 
 /** Stat tile: small uppercase label, big figure, optional sub line. Two sit side by side on the home page. */
-export function StatTile({ label, value, sub, tone }: { label: string; value: ReactNode; sub?: ReactNode; tone?: string }) {
-  return (
-    <div className="p-card flex min-w-0 flex-col px-4 py-4">
+export function StatTile({
+  label,
+  value,
+  sub,
+  tone,
+  to,
+  cta,
+}: {
+  label: string;
+  value: ReactNode;
+  sub?: ReactNode;
+  tone?: string;
+  /** Makes the whole tile a link. */
+  to?: string;
+  /** A short line in the accent colour at the foot of a linked tile, saying where it goes. */
+  cta?: string;
+}) {
+  const body = (
+    <>
       <span className="mb-2 text-[10.5px] font-bold uppercase leading-none tracking-[.08em]" style={{ color: "var(--p-muted)" }}>
         {label}
       </span>
@@ -313,7 +329,19 @@ export function StatTile({ label, value, sub, tone }: { label: string; value: Re
           {sub}
         </span>
       )}
-    </div>
+      {cta && (
+        <span className="mt-2 truncate text-[12px] font-semibold leading-none" style={{ color: "var(--p-accent)" }}>
+          {cta}
+        </span>
+      )}
+    </>
+  );
+  return to ? (
+    <Link to={to} className="p-card flex min-w-0 flex-col px-4 py-4 no-underline" style={{ color: "var(--p-ink)" }}>
+      {body}
+    </Link>
+  ) : (
+    <div className="p-card flex min-w-0 flex-col px-4 py-4">{body}</div>
   );
 }
 

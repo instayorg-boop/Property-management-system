@@ -1,18 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { PieChart, Pie, Cell, ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid } from "recharts";
+import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
 import { useExpenses } from "../ExpensesContext";
 import { useSettings } from "../SettingsContext";
-import { listCollections, type CollectionRecord } from "../../lib/payoutApi";
+import { supabase } from "../../lib/supabaseClient";
 import { ArrowRight as ArrowIcon, Receipt as ReceiptIcon } from "@phosphor-icons/react";
 import { formatCurrency } from "../TenantsContext";
 import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
-  ChartLegend,
-  ChartLegendContent,
   type ChartConfig,
 } from "../../components/ui/chart";
 
@@ -34,24 +32,14 @@ const SERIES = [
  * 6 categories folds into one "Other" wedge rather than generating a lookalike 8th hue. */
 const MAX_SLICES = 6;
 const OTHER_COLOR = "var(--color-muted)";
-/** Legend rows shown beside the donut: fixed regardless of how many categories exist, so the
+/** Legend rows shown below the donut: fixed regardless of how many categories exist, so the
  * card's height never grows as more categories get logged. Anything past this collapses into one
  * "+N more" row that links to the full tracker instead of the card growing to fit it. */
-const VISIBLE_LEGEND_ROWS = 4;
+const VISIBLE_LEGEND_ROWS = 5;
 
-function DashedLineIcon() {
-  return (
-    <svg width="16" height="8" viewBox="0 0 16 8" aria-hidden="true">
-      <line x1="0" y1="4" x2="16" y2="4" stroke="var(--color-expenses)" strokeWidth={2} strokeDasharray="5 3" />
-    </svg>
-  );
-}
-
-/** Online payments solid, Expenses dashed: the dash is a second, non-color channel so the two
- * lines stay distinguishable for a colorblind reader even if the hues read close. */
 const trendChartConfig: ChartConfig = {
-  online: { label: "Online payments", color: "var(--chart-series-6)" },
-  expenses: { label: "Expenses", color: "var(--chart-series-8)", icon: DashedLineIcon },
+  collected: { label: "Collected", color: "var(--color-success)" },
+  expenses: { label: "Expenses", color: "var(--color-danger)" },
 };
 
 type Slice = { id: string; name: string; value: number; color: string };
@@ -66,61 +54,11 @@ const TREND_PRESETS = [
   { months: 12, label: "1Y" },
 ] as const;
 
-/**
- * Expense breakdown — replaces the maintenance-inbox preview on the dashboard overview. A donut
- * (not a filled pie: the hole keeps the reader off an angle-only read and gives a label somewhere
- * to live), one hue per category from the app's validated categorical ramp, this calendar month
- * only so the picture matches what "Expense tracker" currently shows as open.
- *
- * Deliberately no floating recharts <Tooltip>: on a chart this small a tooltip box has nowhere to
- * go that doesn't sit on top of the donut itself (or the legend beside it). Hover instead swaps
- * the center label from "Total" to that slice's own name/amount/share — the info the tooltip would
- * have shown, without ever covering anything.
- */
-export default function ExpensesBreakdownCard() {
+/** Shared by both dashboard cards below: this month's collected-online total and expenses, per
+ * category for the donut and per month for the bar chart. Split into two components (not one) so
+ * each gets its own full-height card instead of splitting one card's height between them. */
+function useExpensesData() {
   const { expenses, categoryName, isReady } = useExpenses();
-  const { propertyId } = useSettings();
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
-
-  // Online payments only (mobile-money collections via the tenant portal): cash the landlord
-  // logs manually never lands in this table, so the trend line is labeled "Online payments", not
-  // "Revenue", rather than implying it covers every rent payment. It's the same data the Online
-  // payments card's own "Recent transactions" list already draws on.
-  const [collections, setCollections] = useState<CollectionRecord[]>([]);
-  const [trendMonths, setTrendMonths] = useState<3 | 6 | 12>(3);
-  useEffect(() => {
-    if (!propertyId) return;
-    let cancelled = false;
-    listCollections(propertyId, { status: ["successful"], limit: 500 })
-      .then((rows) => {
-        if (!cancelled) setCollections(rows);
-      })
-      .catch((e) => console.error("Failed to load collections for the trend chart", e));
-    return () => {
-      cancelled = true;
-    };
-  }, [propertyId]);
-
-  const trend = useMemo(() => {
-    const now = new Date();
-    const months = Array.from({ length: trendMonths }, (_, i) => {
-      const d = new Date(now.getFullYear(), now.getMonth() - (trendMonths - 1 - i), 1);
-      return { key: currentMonthKey(d), label: d.toLocaleDateString("en-GB", { month: "short" }) };
-    });
-
-    const collectedByMonth = new Map<string, number>();
-    for (const c of collections) collectedByMonth.set(c.createdAt.slice(0, 7), (collectedByMonth.get(c.createdAt.slice(0, 7)) ?? 0) + c.amount);
-
-    const expensesByMonth = new Map<string, number>();
-    for (const e of expenses) expensesByMonth.set(e.date.slice(0, 7), (expensesByMonth.get(e.date.slice(0, 7)) ?? 0) + e.amount);
-
-    return months.map((m) => ({
-      month: m.label,
-      online: Math.round(collectedByMonth.get(m.key) ?? 0),
-      expenses: Math.round(expensesByMonth.get(m.key) ?? 0),
-    }));
-  }, [collections, expenses, trendMonths]);
-  const hasTrendData = trend.some((m) => m.online > 0 || m.expenses > 0);
 
   const { slices, total } = useMemo(() => {
     const monthKey = currentMonthKey();
@@ -143,6 +81,24 @@ export default function ExpensesBreakdownCard() {
     return { slices: withOther, total: withOther.reduce((sum, s) => sum + s.value, 0) };
   }, [expenses, categoryName]);
 
+  return { isReady, slices, total };
+}
+
+/**
+ * Expense breakdown donut — one hue per category from the app's validated categorical ramp, this
+ * calendar month only so the picture matches what "Expense tracker" currently shows as open. A
+ * donut, not a filled pie: the hole keeps the reader off an angle-only read and gives a label
+ * somewhere to live. The legend sits stacked below it, not beside it, now that the donut has a
+ * full card's width to itself.
+ *
+ * Deliberately no floating recharts <Tooltip>: on a chart this small a tooltip box has nowhere to
+ * go that doesn't sit on top of the donut itself. Hover instead swaps the center label from
+ * "Total" to that slice's own name/amount/share.
+ */
+export function ExpenseDonutCard() {
+  const { isReady, slices, total } = useExpensesData();
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+
   const monthLabel = new Date().toLocaleDateString("en-GB", { month: "long" });
   const hovered = hoveredId ? slices.find((s) => s.id === hoveredId) : undefined;
   const hoveredPct = hovered && total > 0 ? Math.round((hovered.value / total) * 100) : 0;
@@ -152,11 +108,11 @@ export default function ExpensesBreakdownCard() {
       <p className="font-display text-lg font-semibold tracking-tight text-ink">Expenses this month</p>
 
       {!isReady ? (
-        <div className="mt-4 flex items-center justify-center py-10">
-          <div className="h-44 w-44 animate-pulse rounded-full bg-mist" />
+        <div className="mt-4 flex flex-1 items-center justify-center">
+          <div className="h-52 w-52 animate-pulse rounded-full bg-mist" />
         </div>
       ) : slices.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-3 py-8 text-center">
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
           <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-muted">
             <ReceiptIcon size={22} weight="duotone" />
           </span>
@@ -166,199 +122,221 @@ export default function ExpensesBreakdownCard() {
           </div>
         </div>
       ) : (
-        <div className="flex flex-1 flex-col">
-          {/* Donut beside its legend rather than stacked above it: the legend is capped to a
-              fixed row count (VISIBLE_LEGEND_ROWS) below, so this side-by-side block holds a
-              constant height no matter how many categories get logged over time. flex-1 so it
-              claims half the card's height, matching the trend block below it. */}
-          <div className="mt-3 flex flex-1 items-center gap-5">
-            {/* Donut, not a filled pie: the hole keeps this off an angle-only read and gives a
-                label somewhere to sit. The 2px paper-colored stroke between wedges is the same
-                "surface gap" the rest of the app's charts use between adjacent segments. */}
-            <div className="relative h-40 w-40 shrink-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={slices}
-                    dataKey="value"
-                    nameKey="name"
-                    innerRadius={48}
-                    outerRadius={74}
-                    startAngle={90}
-                    endAngle={-270}
-                    stroke="var(--color-paper)"
-                    strokeWidth={2}
-                    paddingAngle={slices.length > 1 ? 1.5 : 0}
-                    isAnimationActive={false}
-                    onMouseEnter={(_, i) => setHoveredId(slices[i]?.id ?? null)}
-                    onMouseLeave={() => setHoveredId(null)}
-                  >
-                    {slices.map((s) => (
-                      <Cell
-                        key={s.id}
-                        fill={s.color}
-                        opacity={hoveredId && hoveredId !== s.id ? 0.35 : 1}
-                        style={{ transition: "opacity 120ms ease", cursor: "default" }}
-                      />
-                    ))}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-              {/* Center label: the month's total by default, that slice's own figure on hover — see
-                  the file header for why this replaces a floating tooltip. */}
-              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-2 text-center">
-                {hovered ? (
-                  <>
-                    <p className="line-clamp-2 text-[10px] leading-tight text-muted">{hovered.name}</p>
-                    <p className="mt-0.5 text-sm font-semibold leading-tight text-ink">
-                      {formatCurrency(hovered.value)}
-                    </p>
-                    <p className="text-[10px] text-muted">{hoveredPct}%</p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-[10px] text-muted">Total</p>
-                    <p className="mt-0.5 text-sm font-semibold leading-tight text-ink">{formatCurrency(total)}</p>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* Legend, direct-labeled and capped to VISIBLE_LEGEND_ROWS: every slice named beside
-                its swatch rather than relying on color alone, with anything past the cap folded
-                into one "+N more" row linking to the full tracker instead of growing the card. */}
-            <ul className="min-w-0 flex-1 space-y-2.5">
-              {slices.slice(0, VISIBLE_LEGEND_ROWS).map((s) => {
-                const pct = total > 0 ? Math.round((s.value / total) * 100) : 0;
-                const rowContent = (
-                  <>
-                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: s.color }} />
-                    <span className="min-w-0 flex-1 truncate text-ink">{s.name}</span>
-                    <span className="shrink-0 tabular-nums text-muted">{pct}%</span>
-                  </>
-                );
-                return (
-                  <li key={s.id} className="text-xs">
-                    {s.id === "__other__" ? (
-                      <div className="flex items-center gap-2">{rowContent}</div>
-                    ) : (
-                      <Link
-                        to="/expense-tracker"
-                        state={{ categoryFilter: s.id }}
-                        className="flex items-center gap-2 no-underline transition-colors hover:text-brand"
-                        onMouseEnter={() => setHoveredId(s.id)}
-                        onMouseLeave={() => setHoveredId(null)}
-                      >
-                        {rowContent}
-                      </Link>
-                    )}
-                  </li>
-                );
-              })}
-              {slices.length > VISIBLE_LEGEND_ROWS && (
-                <li className="text-xs">
-                  <Link to="/expense-tracker" className="flex items-center gap-1 text-muted transition-colors hover:text-brand">
-                    +{slices.length - VISIBLE_LEGEND_ROWS} more
-                    <ArrowIcon size={11} weight="bold" />
-                  </Link>
-                </li>
+        <div className="flex flex-1 flex-col items-center">
+          {/* Donut, bigger now that it owns the whole card's width — centered above its legend. */}
+          <div className="relative mt-2 h-52 w-52 shrink-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={slices}
+                  dataKey="value"
+                  nameKey="name"
+                  innerRadius={62}
+                  outerRadius={96}
+                  startAngle={90}
+                  endAngle={-270}
+                  stroke="var(--color-paper)"
+                  strokeWidth={2}
+                  paddingAngle={slices.length > 1 ? 1.5 : 0}
+                  isAnimationActive={false}
+                  onMouseEnter={(_, i) => setHoveredId(slices[i]?.id ?? null)}
+                  onMouseLeave={() => setHoveredId(null)}
+                >
+                  {slices.map((s) => (
+                    <Cell
+                      key={s.id}
+                      fill={s.color}
+                      opacity={hoveredId && hoveredId !== s.id ? 0.35 : 1}
+                      style={{ transition: "opacity 120ms ease", cursor: "default" }}
+                    />
+                  ))}
+                </Pie>
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-2 text-center">
+              {hovered ? (
+                <>
+                  <p className="line-clamp-2 text-xs leading-tight text-muted">{hovered.name}</p>
+                  <p className="mt-0.5 text-base font-semibold leading-tight text-ink">
+                    {formatCurrency(hovered.value)}
+                  </p>
+                  <p className="text-xs text-muted">{hoveredPct}%</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-muted">Total</p>
+                  <p className="mt-0.5 text-base font-semibold leading-tight text-ink">{formatCurrency(total)}</p>
+                </>
               )}
-            </ul>
+            </div>
           </div>
+
+          {/* Legend, stacked below the donut rather than beside it, direct-labeled and capped to
+              VISIBLE_LEGEND_ROWS: every slice named beside its swatch, with anything past the cap
+              folded into one "+N more" row linking to the full tracker. */}
+          <ul className="mt-5 w-full max-w-xs space-y-2">
+            {slices.slice(0, VISIBLE_LEGEND_ROWS).map((s) => {
+              const pct = total > 0 ? Math.round((s.value / total) * 100) : 0;
+              const rowContent = (
+                <>
+                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: s.color }} />
+                  <span className="min-w-0 flex-1 truncate text-ink">{s.name}</span>
+                  <span className="shrink-0 tabular-nums text-muted">{pct}%</span>
+                </>
+              );
+              return (
+                <li key={s.id} className="text-xs">
+                  {s.id === "__other__" ? (
+                    <div className="flex items-center gap-2">{rowContent}</div>
+                  ) : (
+                    <Link
+                      to="/expense-tracker"
+                      state={{ categoryFilter: s.id }}
+                      className="flex items-center gap-2 no-underline transition-colors hover:text-brand"
+                      onMouseEnter={() => setHoveredId(s.id)}
+                      onMouseLeave={() => setHoveredId(null)}
+                    >
+                      {rowContent}
+                    </Link>
+                  )}
+                </li>
+              );
+            })}
+            {slices.length > VISIBLE_LEGEND_ROWS && (
+              <li className="text-xs">
+                <Link to="/expense-tracker" className="flex items-center gap-1 text-muted transition-colors hover:text-brand">
+                  +{slices.length - VISIBLE_LEGEND_ROWS} more
+                  <ArrowIcon size={11} weight="bold" />
+                </Link>
+              </li>
+            )}
+          </ul>
 
           <Link
             to="/expense-tracker"
-            className="mt-4 flex items-center justify-center gap-1.5 rounded-lg bg-mist py-2 text-xs font-medium text-ink transition-colors hover:bg-line/40"
+            className="mt-5 flex w-full items-center justify-center gap-1.5 rounded-lg bg-mist py-2 text-xs font-medium text-ink transition-colors hover:bg-line/40"
           >
             View expense tracker
             <ArrowIcon size={14} weight="bold" />
           </Link>
-
-          {/* Online payments vs expenses: a second, different kind of chart in this same card
-              rather than a second donut, so the card earns the vertical room the first chart
-              already claims instead of leaving it blank. flex-1 so it claims the other half of
-              the card's height, matching the donut block above it. */}
-          <div className="mt-5 flex flex-1 flex-col border-t border-line/70 pt-4">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-sm font-semibold text-ink">Payments vs expenses</p>
-              <div className="flex items-center gap-0.5 rounded-lg bg-mist p-0.5">
-                {TREND_PRESETS.map((p) => (
-                  <button
-                    key={p.months}
-                    type="button"
-                    onClick={() => setTrendMonths(p.months)}
-                    className={`rounded-md px-2 py-1 text-[11px] font-semibold transition-colors ${
-                      trendMonths === p.months ? "bg-paper text-ink shadow-sm" : "text-muted hover:text-ink"
-                    }`}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {!hasTrendData ? (
-              <p className="py-8 text-center text-xs text-muted">Not enough history yet for a trend.</p>
-            ) : (
-              <AnimatePresence mode="wait" initial={false}>
-                <motion.div
-                  key={trendMonths}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -6 }}
-                  transition={{ duration: 0.25, ease: "easeOut" }}
-                  className="mt-2 min-h-0 flex-1"
-                >
-                  <ChartContainer config={trendChartConfig} className="aspect-auto h-full w-full">
-                    <LineChart data={trend} margin={{ top: 8, right: 4, left: 4, bottom: 0 }}>
-                  <CartesianGrid vertical={false} stroke="var(--color-line)" strokeOpacity={0.6} />
-                  <XAxis dataKey="month" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "var(--color-muted)" }} dy={6} />
-                  <YAxis hide domain={[0, "auto"]} />
-                  <ChartTooltip
-                    cursor={{ stroke: "var(--color-line)", strokeWidth: 1 }}
-                    content={
-                      <ChartTooltipContent
-                        formatter={(value, name, item) => (
-                          <>
-                            <span className="h-0.5 w-3.5 shrink-0 rounded-[2px]" style={{ background: item.color }} />
-                            <span className="font-semibold tabular-nums text-ink">{formatCurrency(value as number)}</span>
-                            <span className="text-muted">
-                              {trendChartConfig[name as keyof typeof trendChartConfig]?.label ?? name}
-                            </span>
-                          </>
-                        )}
-                      />
-                    }
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="online"
-                    name="online"
-                    stroke="var(--color-online)"
-                    strokeWidth={2}
-                    dot={{ r: 4, strokeWidth: 2, stroke: "var(--color-paper)", fill: "var(--color-online)" }}
-                    activeDot={{ r: 6, strokeWidth: 2, stroke: "var(--color-paper)" }}
-                    isAnimationActive={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="expenses"
-                    name="expenses"
-                    stroke="var(--color-expenses)"
-                    strokeWidth={2}
-                    strokeDasharray="5 3"
-                    dot={{ r: 4, strokeWidth: 2, stroke: "var(--color-paper)", fill: "var(--color-expenses)" }}
-                    activeDot={{ r: 6, strokeWidth: 2, stroke: "var(--color-paper)" }}
-                    isAnimationActive={false}
-                  />
-                      <ChartLegend content={<ChartLegendContent />} />
-                    </LineChart>
-                  </ChartContainer>
-                </motion.div>
-              </AnimatePresence>
-            )}
-          </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Collected vs expenses, one bar pair per month — green (collected, standing in for profit before
+ * expenses are netted off) and red (expenses), so a glance says which months ran ahead and which
+ * ran behind, something the earlier line chart left to line-slope-squinting. A visible Y axis
+ * (unlike the old hidden one) gives the reader the actual scale, not just relative shape.
+ */
+type TrendMonth = { month: string; collected: number; expenses: number };
+
+export function ExpenseTrendCard() {
+  const { propertyId } = useSettings();
+  const [trendMonths, setTrendMonths] = useState<3 | 6 | 12>(3);
+  const [trend, setTrend] = useState<TrendMonth[]>([]);
+  const [trendReady, setTrendReady] = useState(false);
+
+  // "Collected" here is TOTAL rent collected (cash, mobile money, bank transfer — every method),
+  // not just online payments: the same report_facts RPC the weekly/monthly property reports are
+  // built from, so this card and those reports can never disagree about what "collected" means.
+  useEffect(() => {
+    if (!propertyId) return;
+    let cancelled = false;
+    setTrendReady(false);
+    supabase.functions
+      .invoke("dashboard-collections-trend", { body: { propertyId, months: trendMonths } })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          console.error("Failed to load the payments vs expenses trend", error);
+          setTrend([]);
+          return;
+        }
+        setTrend((data as { months?: TrendMonth[] })?.months ?? []);
+      })
+      .finally(() => {
+        if (!cancelled) setTrendReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [propertyId, trendMonths]);
+  const hasTrendData = trend.some((m) => m.collected > 0 || m.expenses > 0);
+
+  return (
+    <div className="flex h-full flex-col rounded-lg border border-line bg-paper p-5">
+      <div className="flex items-center justify-between gap-2">
+        <p className="font-display text-lg font-semibold tracking-tight text-ink">Payments vs expenses</p>
+        <div className="flex items-center gap-0.5 rounded-lg bg-mist p-0.5">
+          {TREND_PRESETS.map((p) => (
+            <button
+              key={p.months}
+              type="button"
+              onClick={() => setTrendMonths(p.months)}
+              className={`rounded-md px-2 py-1 text-[11px] font-semibold transition-colors ${
+                trendMonths === p.months ? "bg-paper text-ink shadow-sm" : "text-muted hover:text-ink"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {!trendReady ? (
+        <div className="flex flex-1 items-center justify-center">
+          <div className="h-32 w-full max-w-sm animate-pulse rounded-md bg-mist" />
+        </div>
+      ) : !hasTrendData ? (
+        <div className="flex flex-1 items-center justify-center">
+          <p className="text-center text-xs text-muted">Not enough history yet for a trend.</p>
+        </div>
+      ) : (
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={trendMonths}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
+            className="mt-4 min-h-0 flex-1"
+          >
+            <ChartContainer config={trendChartConfig} className="aspect-auto h-full w-full">
+              <BarChart data={trend} margin={{ top: 8, right: 4, left: 4, bottom: 0 }} barGap={4}>
+                <CartesianGrid vertical={false} stroke="var(--color-line)" strokeOpacity={0.6} />
+                <XAxis dataKey="month" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "var(--color-muted)" }} dy={6} />
+                <YAxis
+                  tickLine={false}
+                  axisLine={false}
+                  width={44}
+                  tick={{ fontSize: 10, fill: "var(--color-muted)" }}
+                  tickFormatter={(v: number) => (v >= 1000 ? `${Math.round(v / 1000)}K` : `${v}`)}
+                />
+                <ChartTooltip
+                  cursor={{ fill: "var(--color-mist)" }}
+                  content={
+                    <ChartTooltipContent
+                      formatter={(value, name, item) => (
+                        <>
+                          <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: item.color }} />
+                          <span className="font-semibold tabular-nums text-ink">{formatCurrency(value as number)}</span>
+                          <span className="text-muted">
+                            {trendChartConfig[name as keyof typeof trendChartConfig]?.label ?? name}
+                          </span>
+                        </>
+                      )}
+                    />
+                  }
+                />
+                <Bar dataKey="collected" name="collected" fill="var(--color-success)" radius={[3, 3, 0, 0]} isAnimationActive={false} />
+                <Bar dataKey="expenses" name="expenses" fill="var(--color-danger)" radius={[3, 3, 0, 0]} isAnimationActive={false} />
+              </BarChart>
+            </ChartContainer>
+          </motion.div>
+        </AnimatePresence>
       )}
     </div>
   );

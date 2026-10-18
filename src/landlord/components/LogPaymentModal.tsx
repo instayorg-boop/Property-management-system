@@ -10,9 +10,13 @@ import type { LedgerRow } from "../../lib/tenants";
 // without needing dozens of taps, fine enough not to overshoot small corrections.
 const AMOUNT_STEP = 50;
 
-export type LoggedPayment = { amount: number; method: "mobile" | "cash"; label: string; date: string };
+/** `chargeId` is set when the payment settles one specific one-off charge (a broken window, a
+ * penalty), so it links to that charge instead of being guessed at from its label. */
+export type LoggedPayment = { amount: number; method: "mobile" | "cash"; label: string; date: string; chargeId?: string };
 
 const CUSTOM = "__custom__";
+// Select values for an open one-off charge are this prefix plus the charge's ledger id.
+const CHARGE_PREFIX = "charge:";
 
 // A note typed into the modal gets folded onto the label as "<label> (<note>)" so it survives on
 // the ledger row — strip that back off to compare a logged entry against a plain month label.
@@ -54,7 +58,9 @@ function monthOptions(moveInDate?: string | null) {
     const d = new Date(start.getFullYear(), start.getMonth() + i, 1);
     return {
       key: d.toLocaleDateString("en-US", { month: "long" }),
-      label: `${d.toLocaleDateString("en-US", { month: "long" })} Rent ${d.getFullYear()}`,
+      // Same wording as the rent charges the system generates ("October 2026 rent"), so a month
+      // reads one way everywhere: ledger, receipts and the portal.
+      label: `${d.toLocaleDateString("en-US", { month: "long" })} ${d.getFullYear()} rent`,
       year: d.getFullYear(),
       month: d.getMonth(),
     };
@@ -95,6 +101,8 @@ export default function LogPaymentModal({
     const periods = new Set<string>();
     for (const e of ledger) {
       if (e.status !== "paid") continue;
+      // A paid one-off charge never settles a rent month, even if its description names one.
+      if (e.eventType === "adjustment" || e.eventType === "penalty") continue;
       const p = periodOf(baseLabelOf(e.label));
       if (p) periods.add(`${p.year}-${p.month}`);
     }
@@ -108,7 +116,26 @@ export default function LogPaymentModal({
     [settledPeriods, moveInDate]
   );
   const currentLabel = options[0]?.label;
+  // One-off charges still owed (broken window, cleaning fee, a penalty): offered by name so a cash
+  // payment for one links to it and marks it paid, instead of being typed in under "Other".
+  const openCharges = useMemo(
+    () =>
+      ledger
+        .filter(
+          (r) =>
+            (r.eventType === "adjustment" || r.eventType === "penalty") &&
+            r.amount > 0 &&
+            !r.voidedAt &&
+            (r.status === "unpaid" || r.status === "partial")
+        )
+        .map((r) => ({ id: r.id, label: r.label, remaining: Math.round((r.amount - (r.paidAmount ?? 0)) * 100) / 100 })),
+    [ledger]
+  );
+  const chargeFor = (choice: string) =>
+    choice.startsWith(CHARGE_PREFIX) ? openCharges.find((c) => `${CHARGE_PREFIX}${c.id}` === choice) : undefined;
   function remainingFor(label: string) {
+    const charge = chargeFor(label);
+    if (charge) return charge.remaining;
     if (label === currentLabel) return outstanding || rentAmount;
     const targetPeriod = options.find((o) => o.label === label) ?? periodOf(label);
     // A "paid" entry's `amount` is the total that was due; a "partial" one's `paidAmount` is what
@@ -148,7 +175,8 @@ export default function LogPaymentModal({
   const multiMonthTotal = coveredMonths.reduce((sum, o) => sum + remainingFor(o.label), 0);
 
   const parsedAmount = isMultiMonth ? multiMonthTotal : Number(amount);
-  const baseLabel = labelChoice === CUSTOM ? customLabel.trim() : labelChoice;
+  const selectedCharge = chargeFor(labelChoice);
+  const baseLabel = labelChoice === CUSTOM ? customLabel.trim() : selectedCharge ? selectedCharge.label : labelChoice;
   // No separate note field on a ledger entry — folded into the label so it's still visible on the
   // payment-history row rather than silently dropped.
   const label = note.trim() ? `${baseLabel} (${note.trim()})` : baseLabel;
@@ -179,7 +207,7 @@ export default function LogPaymentModal({
         onConfirm(coveredMonths.map((o) => ({ amount: remainingFor(o.label), method, label: o.label, date })));
         return;
       }
-      onConfirm([{ amount: parsedAmount, method, label, date }]);
+      onConfirm([{ amount: parsedAmount, method, label, date, chargeId: selectedCharge?.id }]);
     } finally {
       setIsSubmitting(false);
     }
@@ -274,6 +302,7 @@ export default function LogPaymentModal({
               }}
               options={[
                 ...options.map((o) => ({ value: o.label, label: o.label })),
+                ...openCharges.map((c) => ({ value: `${CHARGE_PREFIX}${c.id}`, label: c.label })),
                 { value: CUSTOM, label: "Other…" },
               ]}
               className="w-full"

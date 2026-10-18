@@ -17,6 +17,8 @@ import TierBadge from "../components/TierBadge";
 import { startProductTour } from "../components/ProductTour";
 import PhoneNumberInput from "../components/PhoneNumberInput";
 import { useAccess } from "../AccessContext";
+import { useAuth } from "../AuthContext";
+import { supabase } from "../../lib/supabaseClient";
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -208,6 +210,7 @@ export default function Settings() {
   const [changingPassword, setChangingPassword] = useState(section === "password");
 
   const {
+    propertyId,
     // invoicesOn, setInvoicesOn, // MVP: invoicing toggle is commented out — see the note above.
     propertyName, setPropertyName, propertyNameChangesRemaining,
     propertyAddress: livePropertyAddress, setPropertyAddress: commitPropertyAddress,
@@ -248,6 +251,7 @@ export default function Settings() {
   } = useSettings();
 
   const { showToast } = useToast();
+  const { user } = useAuth();
   const { can, isOwner: isPropertyOwner } = useAccess();
   const canSeeTeam = isPropertyOwner || can("team.invite");
   const visibleCardGroups = cardGroups
@@ -255,6 +259,40 @@ export default function Settings() {
     .filter((g) => g.cards.length > 0);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
+
+  // `settings.notification_phone` / `payment_sms_mode` / `sms_notification_prefs` (the "SMS alerts
+  // to you" card) are owner-only — RLS only grants the property owner read/write on `settings`. A
+  // team member opening this same card isn't editing the owner's shared config at all: they're
+  // setting their OWN texting number, payment-digest cadence and per-event prefs, which live on
+  // their own team_members row (seeded from the owner's values at invite time, then independently
+  // editable) and are only reachable through the set-notification-phone edge function — not a
+  // normal RLS-gated table write, which is why this works for a member in the first place.
+  const [myNotificationPhone, setMyNotificationPhoneState] = useState<string | null>(null);
+  const [myPaymentSmsMode, setMyPaymentSmsModeState] = useState<PaymentSmsMode | null>(null);
+  const [mySmsPrefs, setMySmsPrefsState] = useState<SmsNotificationPrefs | null>(null);
+  useEffect(() => {
+    if (isPropertyOwner || !propertyId || !user) return;
+    let cancelled = false;
+    supabase
+      .from("team_members")
+      .select("notification_phone, payment_sms_mode, sms_notification_prefs")
+      .eq("property_id", propertyId)
+      .eq("user_id", user.id)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          console.error("Failed to load your notification settings", error);
+          return;
+        }
+        setMyNotificationPhoneState(data?.notification_phone ?? "");
+        setMyPaymentSmsModeState((data?.payment_sms_mode as PaymentSmsMode | null) ?? "daily_digest");
+        setMySmsPrefsState((data?.sms_notification_prefs as SmsNotificationPrefs | null) ?? ({} as SmsNotificationPrefs));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isPropertyOwner, propertyId, user]);
 
   // Nothing here is written until the modal's Save button is pressed: edits are staged in `draft`
   // (and the two text drafts below) and discarded if the modal is closed any other way. The names
@@ -300,6 +338,20 @@ export default function Settings() {
   const setTaskCollectionsTargetEnabled = (v: typeof liveTaskCollectionsTargetEnabled) => stage("taskCollectionsTargetEnabled", v);
   const notificationPhone = pick("notificationPhone", liveNotificationPhone);
   const setNotificationPhone = (v: typeof liveNotificationPhone) => stage("notificationPhone", v);
+  const myNotificationPhoneDraft = pick("myNotificationPhone", myNotificationPhone ?? "");
+  const setMyNotificationPhone = (v: string) => stage("myNotificationPhone", v);
+  const myPaymentSmsModeDraft = pick("myPaymentSmsMode", myPaymentSmsMode ?? "daily_digest");
+  const setMyPaymentSmsMode = (v: PaymentSmsMode) => stage("myPaymentSmsMode", v);
+  const mySmsPrefsDraft: SmsNotificationPrefs = { ...(mySmsPrefs ?? {}) } as SmsNotificationPrefs;
+  for (const k of Object.keys(mySmsPrefs ?? {}) as (keyof SmsNotificationPrefs)[]) {
+    if (`mySms:${k}` in draft) mySmsPrefsDraft[k] = draft[`mySms:${k}`] as boolean;
+  }
+  // A key the member never had an opinion on yet (not present in their copied-at-invite prefs)
+  // still needs to be stageable from a toggle click, so fall through to the draft directly too.
+  for (const k of smsNotificationRows.map((r) => r.key)) {
+    if (`mySms:${k}` in draft) mySmsPrefsDraft[k] = draft[`mySms:${k}`] as boolean;
+  }
+  const setMySmsPref = (k: keyof SmsNotificationPrefs, v: boolean) => stage(`mySms:${k}`, v);
   const paymentSmsMode = pick("paymentSmsMode", livePaymentSmsMode);
   const setPaymentSmsMode = (v: typeof livePaymentSmsMode) => stage("paymentSmsMode", v);
   const sendOnboardingSms = pick("sendOnboardingSms", liveSendOnboardingSms);
@@ -342,6 +394,35 @@ export default function Settings() {
 
   const dirty = Object.keys(draft).length > 0 || propertyNameDraft !== propertyName || (!accountEmail && emailDraft.trim() !== "");
 
+  // Omitting memberId means "myself" to the edge function — for a non-owner caller that's their
+  // own team_members row, never settings.* (only the owner can reach that). Phone, payment-digest
+  // mode and per-event prefs are sent together in one call: the prefs field replaces the whole
+  // object server-side, so it always carries the full merged draft, not just whichever single
+  // toggle happened to change.
+  const commitMyNotificationSettings = async (changes: {
+    phone?: string;
+    paymentSmsMode?: PaymentSmsMode;
+    smsNotificationPrefs?: SmsNotificationPrefs;
+  }) => {
+    if (!propertyId) return;
+    const body: Record<string, unknown> = { propertyId };
+    if (changes.phone !== undefined) body.phone = changes.phone.trim();
+    if (changes.paymentSmsMode !== undefined) body.paymentSmsMode = changes.paymentSmsMode;
+    if (changes.smsNotificationPrefs !== undefined) body.smsNotificationPrefs = changes.smsNotificationPrefs;
+    const { data, error } = await supabase.functions.invoke("set-notification-phone", { body });
+    if (error) throw error;
+    const resp = data as { ok?: boolean; testSent?: boolean; error?: string; phone?: string | null; paymentSmsMode?: string | null; smsNotificationPrefs?: SmsNotificationPrefs | null };
+    if (resp?.error) throw new Error(resp.error);
+    if (changes.phone !== undefined) {
+      setMyNotificationPhoneState(resp.phone ?? "");
+      if (changes.phone.trim() && resp?.testSent === false) {
+        showToast("Saved, but the test text did not send. Check the number.", "error");
+      }
+    }
+    if (changes.paymentSmsMode !== undefined) setMyPaymentSmsModeState((resp.paymentSmsMode as PaymentSmsMode | null) ?? changes.paymentSmsMode);
+    if (changes.smsNotificationPrefs !== undefined) setMySmsPrefsState(resp.smsNotificationPrefs ?? changes.smsNotificationPrefs);
+  };
+
   const saveCard = async () => {
     setSaving(true);
     try {
@@ -378,8 +459,15 @@ export default function Settings() {
         propertyAddress: commitPropertyAddress,
         propertyCoords: commitPropertyCoords,
       };
+      const myChanges: { phone?: string; paymentSmsMode?: PaymentSmsMode; smsNotificationPrefs?: SmsNotificationPrefs } = {};
+      if ("myNotificationPhone" in draft) myChanges.phone = draft.myNotificationPhone as string;
+      if ("myPaymentSmsMode" in draft) myChanges.paymentSmsMode = draft.myPaymentSmsMode as PaymentSmsMode;
+      if (Object.keys(draft).some((k) => k.startsWith("mySms:"))) myChanges.smsNotificationPrefs = mySmsPrefsDraft;
+      if (Object.keys(myChanges).length > 0) await commitMyNotificationSettings(myChanges);
+
       for (const [k, v] of Object.entries(draft)) {
         if (k.startsWith("sms:")) commitSmsPref(k.slice(4) as keyof SmsNotificationPrefs, v as boolean);
+        else if (k === "myNotificationPhone" || k === "myPaymentSmsMode" || k.startsWith("mySms:")) continue;
         else commit[k]?.(v);
       }
       showToast("Settings saved", "success");
@@ -693,21 +781,38 @@ export default function Settings() {
     sms: (
       <>
         <SettingsPanel>
-<Row stack label="Alert phone number" desc="Where SMS alerts are sent.">
-                  <PhoneNumberInput
-                    value={notificationPhone}
-                    onChange={(v) => { setNotificationPhone(v); }}
-                  />
-                </Row>
+{isPropertyOwner ? (
+                  <Row stack label="Alert phone number" desc="Where SMS alerts are sent.">
+                    <PhoneNumberInput
+                      value={notificationPhone}
+                      onChange={(v) => { setNotificationPhone(v); }}
+                    />
+                  </Row>
+                ) : (
+                  <Row
+                    stack
+                    label="Phone for texts"
+                    desc={
+                      can("alerts.operations")
+                        ? "Maintenance and tenant requests are texted to this number straight away."
+                        : "Your own number for texts, once you're given day-to-day alerts by the owner."
+                    }
+                  >
+                    <PhoneNumberInput
+                      value={myNotificationPhoneDraft}
+                      onChange={(v) => { setMyNotificationPhone(v); }}
+                    />
+                  </Row>
+                )}
                 <Row stack label="Payment summaries" desc="Get an SMS summary of new payments instead of one text per payment.">
                   <div className="flex gap-2">
                     {paymentSmsModes.map((m) => (
                       <button
                         key={m.value}
                         type="button"
-                        onClick={() => { setPaymentSmsMode(m.value); }}
+                        onClick={() => { if (isPropertyOwner) setPaymentSmsMode(m.value); else setMyPaymentSmsMode(m.value); }}
                         className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                          paymentSmsMode === m.value ? "border-brand bg-brand-soft text-brand" : "border-line text-muted hover:bg-mist"
+                          (isPropertyOwner ? paymentSmsMode : myPaymentSmsModeDraft) === m.value ? "border-brand bg-brand-soft text-brand" : "border-line text-muted hover:bg-mist"
                         }`}
                       >
                         {m.label}
@@ -723,7 +828,10 @@ export default function Settings() {
                       <p className="text-[14px] font-semibold text-ink">{n.label}</p>
                       {n.desc && <p className="mt-1 text-xs text-muted">{n.desc}</p>}
                     </div>
-                    <Toggle checked={smsNotificationPrefs[n.key]} onChange={(v) => { setSmsNotificationPref(n.key, v); }} />
+                    <Toggle
+                      checked={(isPropertyOwner ? smsNotificationPrefs : mySmsPrefsDraft)[n.key] ?? true}
+                      onChange={(v) => { if (isPropertyOwner) setSmsNotificationPref(n.key, v); else setMySmsPref(n.key, v); }}
+                    />
                   </div>
                 ))}
               </div>

@@ -83,6 +83,9 @@ type RentRow = {
 function ledgerEntryForMonth(t: Tenant, monthDate: Date) {
   return t.ledger.find((row) => {
     if (!row.createdAt) return false;
+    // This page is about rent: a one-off charge (broken window, a penalty) or a credit logged in a
+    // month must not decide whether that month's rent reads as paid.
+    if (row.eventType === "adjustment" || row.eventType === "penalty" || row.eventType === "credit") return false;
     const d = new Date(row.createdAt);
     return d.getFullYear() === monthDate.getFullYear() && d.getMonth() === monthDate.getMonth();
   });
@@ -671,6 +674,7 @@ export default function Rent() {
             label: payment.label,
             method: payment.method === "mobile" ? "mobile-money" : "cash",
             paidAt: payment.date,
+            chargeId: payment.chargeId,
           })),
         );
         setPaymentStep(null);

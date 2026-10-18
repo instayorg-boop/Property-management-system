@@ -18,11 +18,50 @@ is still an unconfirmed guess — see that file's top comment before relying on 
 | `create-payout-recipient` | Registers a Lenco transfer recipient and saves it to `payout_recipients` | `src/lib/payoutApi.ts` (`createPayoutRecipient`) — Settings page, on confirm |
 | `pay-portal-request-otp` | Sends a 6-digit OTP (via Africa's Talking SMS) to the tenant's phone on file | `src/lib/payPortal.ts` (`requestPortalOtp`) — public payment portal, on landing on a claimed tenant |
 | `pay-portal-verify-otp` | Verifies the OTP and issues a `portal_sessions` token | `src/lib/payPortal.ts` (`verifyPortalOtp`) — public payment portal, OTP entry |
+| `pay-portal-collect-payment` | Calls Lenco to debit the tenant, writes the `collections` row with its allocated `line_items` | `src/lib/payPortal.ts` , public payment portal, on confirming a payment |
+| `pay-portal-check-collection` | Polling fallback that settles a collection when the webhook has not arrived | `src/lib/payPortal.ts` , portal, while a payment is in flight |
+| `pay-portal-reconcile-pending` | Sweeps collections left pending by a dropped webhook and settles them | Scheduled |
+| `pay-portal-generate-receipt` | Renders the tenant's receipt PDF for a settled collection | `src/lib/payPortal.ts` , portal, on "Download receipt" |
+| `generate-report` | Builds the landlord's report PDFs and CSVs, including "Payments received" | `src/lib/reportApi.ts` , Reports page |
 
 `pay-portal-request-otp`/`pay-portal-verify-otp` are real and deployed. Without `AT_API_KEY` set,
 `pay-portal-request-otp` doesn't send an SMS but still works end-to-end for testing — it returns
 the code directly in the response as `devCode` (logged server-side too) instead of texting it,
 same "keep working with no real delivery" convention as the other placeholder functions.
+
+## One settlement path (18 October 2026)
+
+Four functions can settle a tenant payment, and they used to decide
+independently what that payment paid for: `pay-portal-collect-payment`,
+`lenco-webhook`, `pay-portal-check-collection` and
+`pay-portal-reconcile-pending`. They now all go through one shared module,
+`_shared/reconcileCollection.ts`, which calls the Postgres function
+`allocate_payment` and persists the line items it returns. The allocation
+decision lives in the database, once, and these functions only record it; see
+`../../docs/BACKEND.md` for the rule itself.
+
+`pay-portal-reconcile-pending` is worth a sentence of its own. It had silently
+drifted onto an older `ledger_v2`/`post_payment` reconciliation path while the
+other three moved forward, so a payment rescued by the pending sweeper could be
+allocated differently from the identical payment settled by the webhook. It now
+matches the others. If you add a fifth way for a payment to settle, route it
+through `_shared/reconcileCollection.ts` instead of writing `ledger_entries`
+rows yourself.
+
+One consequence to be aware of when reading ledger rows from a function:
+payment idempotency keys are now `lenco_payment:<collection id>:<line index>`,
+one row per allocated line item, not `lenco_payment:<collection id>`. Any
+lookup still using the old single-row key matches nothing.
+`pay-portal-generate-receipt` was doing exactly that and has been fixed.
+
+## Not yet deployed
+
+`generate-report` and `pay-portal-generate-receipt` are edited on disk and
+**not yet deployed** as of 18 October 2026. `generate-report` stops counting
+the tenant-side service fee as collected money in the "Payments received"
+report, and `pay-portal-generate-receipt` carries the redesigned receipt plus
+the per-line-item idempotency-key fix above. Until both are pushed, production
+still serves the old behaviour.
 
 ## Deploy
 
@@ -35,11 +74,13 @@ npx supabase functions deploy resolve-bank-account --project-ref <your-project-r
 npx supabase functions deploy create-payout-recipient --project-ref <your-project-ref>
 npx supabase functions deploy pay-portal-request-otp --project-ref <your-project-ref>
 npx supabase functions deploy pay-portal-verify-otp --project-ref <your-project-ref>
+npx supabase functions deploy generate-report --project-ref <your-project-ref>
+npx supabase functions deploy pay-portal-generate-receipt --project-ref <your-project-ref>
 ```
 
 `lenco-webhook` needs `--no-verify-jwt` because Lenco calls it directly (no Supabase session) —
 see that function's own comment for why it must verify Lenco's own signature instead. The other
-five are all invoked by a signed-in landlord's own browser session and keep the default JWT check.
+functions listed above are all invoked by a signed-in landlord's own browser session and keep the default JWT check.
 
 ## Secrets (set once real credentials exist)
 

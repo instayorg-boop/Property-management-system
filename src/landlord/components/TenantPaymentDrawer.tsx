@@ -54,7 +54,12 @@ export default function TenantPaymentDrawer({
   onMoveOut: () => void;
 }) {
   const { updateTenant } = useTenants();
-  const { dueDay } = useSettings();
+  const { dueDay: propertyDueDay } = useSettings();
+  // A tenant can carry their own due day (e.g. billing on their move-in date instead of the
+  // property's shared due day), same fallback TenantProfile.tsx already uses. This card used to
+  // always show the property default here, so a tenant with their own due day saw the wrong next
+  // due date.
+  const dueDay = tenant.dueDay ?? propertyDueDay;
   const [historyFilter, setHistoryFilter] = useState<(typeof historyFilters)[number]>("All");
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const [note, setNote] = useState(tenant.notes);

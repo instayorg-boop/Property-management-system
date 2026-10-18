@@ -19,7 +19,7 @@ import { getLencoBalance, listCollections, listPayoutRecipients, type Collection
 import { supabase } from "../../lib/supabaseClient";
 import { calcTotalOwed } from "../invoiceUtils";
 import TodaysTasks from "../components/TodaysTasks";
-import ExpensesBreakdownCard from "../components/ExpensesBreakdownCard";
+import { ExpenseDonutCard, ExpenseTrendCard } from "../components/ExpensesBreakdownCard";
 import {
   ArrowRight as ArrowIcon,
   CheckCircle as CheckCircleIcon,
@@ -29,9 +29,7 @@ import {
   Plus as PlusIcon,
   Coins,
 } from "@phosphor-icons/react";
-import SetupChecklist from "../components/SetupChecklist";
 import Button from "../components/Button";
-import NotificationsFeed from "../components/NotificationsFeed";
 import DashboardTabs from "../components/DashboardTabs";
 import MetricCard from "../components/MetricCard";
 
@@ -295,15 +293,6 @@ export default function Dashboard() {
       <DashboardTabs />
       <Greeting propertyId={propertyId} onAction={handleAction} />
 
-      {/* Setup checklist is a full-width banner while onboarding is incomplete, not a
-          permanent block inside either column: it shouldn't be the reason one side of the
-          page reads longer than the other. */}
-      {dataReady && (
-        <div className="px-4 sm:px-8">
-          <SetupChecklist />
-        </div>
-      )}
-
       {/* Four tiles, always the same four, so the layout is predictable every visit instead of
           swapping "Rooms occupied" for "Tenants" depending on whether rooms are set up. */}
       <div className="grid grid-cols-2 gap-3 px-4 sm:grid-cols-4 sm:px-8">
@@ -475,17 +464,11 @@ export default function Dashboard() {
         </div>
         )}
 
-        {/* Recent activity, now the exact same component as the bell dropdown (header, day
-            grouping, bundled rows, footer) inside a plain card shell instead of a floating
-            panel, so this and the dropdown can never drift into two different designs. */}
-        <div className="overflow-hidden rounded-lg border border-line bg-paper">
-          <NotificationsFeed maxBundles={5} />
-        </div>
-
-        {/* Expenses this month — a donut broken down by category, replacing the old
-            maintenance-inbox preview (maintenance requests already have their own dashboard
-            entry point via Recent activity / the sidebar). */}
-        <ExpensesBreakdownCard />
+        {/* Expenses this month, split into two equal-height cards instead of one tall one: the
+            category donut on its own (room to grow bigger, legend stacked below it) and the
+            collected-vs-expenses trend as its own bar chart next to it. */}
+        <ExpenseDonutCard />
+        <ExpenseTrendCard />
       </div>
 
       <AnimatePresence>
@@ -530,6 +513,7 @@ export default function Dashboard() {
                   label: payment.label,
                   method: payment.method === "mobile" ? "mobile-money" : "cash",
                   paidAt: payment.date,
+                  chargeId: payment.chargeId,
                 })),
               );
               setPaymentStep(null);

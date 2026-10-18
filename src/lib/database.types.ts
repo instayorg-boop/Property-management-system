@@ -2714,11 +2714,13 @@ export type Database = {
           invited_phone: string | null
           notification_phone: string | null
           notification_prefs: Json
+          payment_sms_mode: string | null
           permissions: string[]
           property_id: string
           revoked_at: string | null
           revoked_by: string | null
           role: string
+          sms_notification_prefs: Json | null
           status: string
           updated_at: string
           user_id: string | null
@@ -2735,11 +2737,13 @@ export type Database = {
           invited_phone?: string | null
           notification_phone?: string | null
           notification_prefs?: Json
+          payment_sms_mode?: string | null
           permissions?: string[]
           property_id: string
           revoked_at?: string | null
           revoked_by?: string | null
           role: string
+          sms_notification_prefs?: Json | null
           status?: string
           updated_at?: string
           user_id?: string | null
@@ -2756,11 +2760,13 @@ export type Database = {
           invited_phone?: string | null
           notification_phone?: string | null
           notification_prefs?: Json
+          payment_sms_mode?: string | null
           permissions?: string[]
           property_id?: string
           revoked_at?: string | null
           revoked_by?: string | null
           role?: string
+          sms_notification_prefs?: Json | null
           status?: string
           updated_at?: string
           user_id?: string | null

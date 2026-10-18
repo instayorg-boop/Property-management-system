@@ -1,5 +1,32 @@
 # IPM Financial Ledger Audit
 
+> **Partly superseded, 18 October 2026.** This audit is kept as written, as the
+> record of what the ledger looked like when it was reviewed. Since then the
+> payment-allocation work has resolved or changed several of its findings, and
+> `docs/BACKEND.md` ("How a payment is allocated" onwards) is now the current
+> reference for all of them:
+>
+> - The "what did this payment pay for" question now has exactly one answer,
+>   the Postgres function `allocate_payment`, read by every settlement path
+>   through `supabase/functions/_shared/reconcileCollection.ts`. The
+>   per-caller FIFO allocation described in sections 2 and 3 is gone.
+> - Rent charges and one-off charges are unified by `tenant_charge_status`,
+>   with overflow spillover, which removes the "counted differently in
+>   different places" problem behind parts of F-1 and the section 5 table.
+> - F-6's charge-matching fragility is reduced: the move-in charge created by
+>   `AddTenant.tsx` now carries `billing_period_id` and the generator's own
+>   `rent_charge:<tenant id>:<YYYY-MM>` idempotency key, so the label-parsing
+>   fallback is no longer what stops a duplicate move-in month.
+> - F-7's payout-balance workaround is unchanged in approach, but the
+>   tenant-side service fee is no longer counted as collected money in
+>   `getLencoBalance`, `assistant_get_payouts_summary` or the "Payments
+>   received" report.
+>
+> Everything else below, in particular F-2 (deposits have no ledger), F-4 and
+> F-5 (penalties and waivers), F-8 (payout claim concurrency) and the whole
+> legacy-model backfill plan in section 7, still stands.
+
+
 Scope: read-only review of the repo at `c:\Users\user\Desktop\Property management system`. No live DB connection was available (no service-role key / Supabase MCP access was exercised against this project), so findings are based on migrations (`supabase/migrations/*.sql`), edge functions (`supabase/functions/*`), and frontend/lib code. Section 4 lists the queries to run once DB access is available.
 
 ## 1. Executive summary

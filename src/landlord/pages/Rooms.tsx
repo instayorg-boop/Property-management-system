@@ -1357,6 +1357,7 @@ export default function Rooms() {
                   label: payment.label,
                   method: payment.method === "mobile" ? "mobile-money" : "cash",
                   paidAt: payment.date,
+                  chargeId: payment.chargeId,
                 })),
               );
               setPayingTenant(null);

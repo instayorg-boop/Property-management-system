@@ -51,6 +51,7 @@ import {
   deleteTenantDocument,
   type TenantDocument,
 } from "../../lib/tenantDocuments";
+import { addLedgerEvent } from "../../lib/tenants";
 
 /** A working copy of an emergency contact while the form is open — `relationOther` is always a
  * string here (never undefined) so the "Other" text input can stay a controlled input. */
@@ -1235,7 +1236,49 @@ export default function AddTenant() {
     }
 
     if (rentPaidNow && rentAmountToLog > 0) {
-      logPayment(created.id, rentAmountToLog, rentLedgerLabel);
+      // Rent collected at setup needs a real charge to settle. A brand-new tenant has no rent
+      // charge yet (the nightly generator only creates one later), so without this the payment
+      // was written unlinked and sat as untargeted credit, which then silently absorbed the next
+      // charge added to the tenant and kept their balance reading as zero. Same shape the
+      // generator and the import opening balance both write, including the idempotency key and
+      // billing period, so the nightly run recognises this as that month's charge and skips it.
+      const chargePeriod = isMidCycle ? moveInDateObj : rentPeriodDate;
+      const periodYear = chargePeriod.getFullYear();
+      const periodMonth = chargePeriod.getMonth();
+      const billingPeriodId = `${periodYear}-${String(periodMonth + 1).padStart(2, "0")}`;
+      const daysInPeriod = new Date(periodYear, periodMonth + 1, 0).getDate();
+      const dueDate = new Date(periodYear, periodMonth, Math.min(tenantDueDay, daysInPeriod));
+      const graceEnd = new Date(dueDate);
+      graceEnd.setDate(graceEnd.getDate() + tenantGracePeriodDays);
+      // Calendar dates, read off local fields: toISOString would convert to UTC first and shift
+      // the day back for a positive offset (same reason generateRentCharge.ts formats its own).
+      const ymd = (date: Date) =>
+        `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+      const chargeId = crypto.randomUUID();
+      let linkedChargeId: string | undefined;
+      try {
+        await addLedgerEvent({
+          id: chargeId,
+          tenantId: created.id,
+          label: rentLedgerLabel,
+          amount: rentDue > 0 ? rentDue : rentAmountToLog,
+          eventType: "charge",
+          affectsBalance: true,
+          origin: "tenant_setup",
+          source: "manual",
+          chargeId: null,
+          idempotencyKey: `rent_charge:${created.id}:${billingPeriodId}`,
+          billingPeriodId,
+          dueDate: ymd(dueDate),
+          gracePeriodEnd: ymd(graceEnd),
+        });
+        linkedChargeId = chargeId;
+      } catch (e) {
+        // The payment itself still matters more than the charge behind it: fall back to the old
+        // unlinked write rather than losing a payment the landlord just collected.
+        console.error("Failed to create the move-in rent charge", e);
+      }
+      logPayment(created.id, rentAmountToLog, rentLedgerLabel, undefined, undefined, linkedChargeId);
     }
 
     if (documents.length > 0 && propertyId) {

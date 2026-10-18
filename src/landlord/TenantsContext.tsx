@@ -71,13 +71,13 @@ type TenantsContextValue = {
    * real mobile-money payments via the tenant portal are tagged separately by lenco-webhook, never
    * through this path. `paidAt` (YYYY-MM-DD) defaults to today — pass it when the landlord is
    * logging a payment that was actually made on a different day (backdating, paying in advance). */
-  logPayment: (id: string, amount: number, label?: string, method?: PaymentMethod, paidAt?: string) => void;
+  logPayment: (id: string, amount: number, label?: string, method?: PaymentMethod, paidAt?: string, chargeId?: string) => void;
   /** Same as `logPayment` but for several payments against the same tenant at once (e.g. paying
    * two or three months in advance in a single action) — applied as one state update so each
    * later entry's balance math sees the previous ones already settled, instead of separate
    * `logPayment` calls in a loop, which only the first of would actually take effect (see
    * logPayments' comment for why). */
-  logPayments: (id: string, payments: { amount: number; label?: string; method?: PaymentMethod; paidAt?: string }[]) => void;
+  logPayments: (id: string, payments: { amount: number; label?: string; method?: PaymentMethod; paidAt?: string; chargeId?: string }[]) => void;
   /** Marks one ledger record voided (never deletes it) — a correction to the log, not a balance
    * change; see lib/tenants.ts's voidLedgerEntry for why owedAmount/status are untouched, and why
    * this is safe for both legacy and new-model rows. Deliberately does NOT optimistically remove
@@ -383,7 +383,7 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
   // that reason; batching them into one updater sidesteps it entirely.
   const logPayments = (
     id: string,
-    payments: { amount: number; label?: string; method?: PaymentMethod; paidAt?: string }[]
+    payments: { amount: number; label?: string; method?: PaymentMethod; paidAt?: string; chargeId?: string }[]
   ) => {
     if (payments.length === 0) return;
     let updated: Tenant | undefined;
@@ -393,7 +393,7 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
         if (t.id !== id) return t;
         let current = t;
         const createdEvents: NewLedgerEventInsert[] = [];
-        for (const { amount, label, method, paidAt } of payments) {
+        for (const { amount, label, method, paidAt, chargeId: chosenChargeId } of payments) {
           // Generated once and reused everywhere (local state, the online insert, the offline
           // queue's idempotency key) so a retried/double-triggered sync can't insert the same
           // payment twice, and so the row can be targeted for deletion right after it's logged.
@@ -443,9 +443,12 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
           // event instead of guessing at a historical charge to attach it to.
           const now = new Date();
           const currentBillingPeriodId = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-          const openCharge = current.ledger.find(
-            (row) => row.eventType === "charge" && row.billingPeriodId === currentBillingPeriodId && row.status !== "paid"
-          );
+          // A payment the landlord logged against a specific one-off charge links to exactly that.
+          const openCharge = chosenChargeId
+            ? current.ledger.find((row) => row.id === chosenChargeId)
+            : current.ledger.find(
+                (row) => row.eventType === "charge" && row.billingPeriodId === currentBillingPeriodId && row.status !== "paid"
+              );
 
           const rawEvent: NewLedgerEventInsert = {
             id: ledgerEntryId,
@@ -457,7 +460,11 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
             affectsBalance: true,
             origin: "landlord_manual",
             source: "manual",
-            chargeId: openCharge ? openCharge.id : null,
+            // An explicitly chosen charge wins even when the optimistic local ledger hasn't
+            // caught up with it yet (AddTenant creates the move-in rent charge moments before
+            // logging the payment that settles it), so the payment is never written unlinked
+            // just because this projection hasn't refetched.
+            chargeId: chosenChargeId ?? (openCharge ? openCharge.id : null),
             // Deterministic function of this operation's own id — stable across a retried
             // offline replay of the exact same queued action, unique per real payment.
             idempotencyKey: `manual_payment:${ledgerEntryId}`,
@@ -627,8 +634,8 @@ export function TenantsProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const logPayment = (id: string, amount: number, label?: string, method?: PaymentMethod, paidAt?: string) =>
-    logPayments(id, [{ amount, label, method, paidAt }]);
+  const logPayment = (id: string, amount: number, label?: string, method?: PaymentMethod, paidAt?: string, chargeId?: string) =>
+    logPayments(id, [{ amount, label, method, paidAt, chargeId }]);
 
   // Voiding a ledger row is a record correction, not a balance change — owedAmount, status, and
   // the on-time/total month counts stay exactly as they are (see the comment on lib/tenants.ts's

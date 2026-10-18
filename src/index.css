@@ -28,6 +28,20 @@
   input:disabled {
     cursor: not-allowed;
   }
+
+  /* Chrome/Edge paint autofilled fields with their own opaque background and a near-invisible
+     text color that ignores whatever classes the input has — worst in dark mode, where it reads
+     as blank. The long transition delay is the standard trick to swap that background back to
+     ours instead of the browser's yellow/gray fill, and -webkit-text-fill-color (not `color`,
+     which autofill also ignores) restores legible text. */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus {
+    -webkit-text-fill-color: var(--color-ink);
+    -webkit-box-shadow: 0 0 0 1000px var(--color-mist) inset;
+    box-shadow: 0 0 0 1000px var(--color-mist) inset;
+    transition: background-color 9999s ease-in-out 0s;
+  }
 }
 
 @theme {

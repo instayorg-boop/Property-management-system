@@ -1,7 +1,8 @@
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { FilePdf, ArrowSquareOut } from "@phosphor-icons/react";
-import { groupPortalLedger, type PortalLedgerRow, type PortalDocument } from "../../lib/payPortal";
-import { usePortal, usePortalDocuments } from "./portalData";
+import { FilePdf, ArrowSquareOut, CircleNotch } from "@phosphor-icons/react";
+import { generateRecordedPortalReceipt, groupPortalLedger, type PortalLedgerRow, type PortalDocument } from "../../lib/payPortal";
+import { invalidatePortalDocuments, usePortal, usePortalDocuments } from "./portalData";
 import {
   Card,
   MoneyRow,
@@ -52,13 +53,76 @@ const STATUS: Record<string, { tone: ToneName; label: string }> = {
 function receiptsFor(row: PortalLedgerRow, documents: PortalDocument[] | undefined): PortalDocument[] {
   if (!documents) return [];
   const day = new Date(row.createdAt).toDateString();
-  return documents.filter((d) => d.contentType?.includes("pdf") && new Date(d.createdAt).toDateString() === day);
+  // A receipt made on demand for a payment the landlord's import recorded is filed days after the
+  // entry, so the same-day rule can't find it. Those carry the charge's own label in their name
+  // ("October 2026 rent receipt.pdf"), which is matched as well.
+  const named = `${row.label} receipt`.toLowerCase();
+  return documents.filter(
+    (d) =>
+      d.contentType?.includes("pdf") &&
+      (new Date(d.createdAt).toDateString() === day || d.name.toLowerCase().startsWith(named))
+  );
+}
+
+/** Where a tenant last opened a payment page, so the home banner that points here can stand down. */
+export function markReceiptSeen(tenantId: string) {
+  try {
+    localStorage.setItem(`ipm-receipt-seen:${tenantId}`, "1");
+  } catch {
+    // Storage can be blocked; the banner simply keeps showing.
+  }
+}
+export function wasReceiptSeen(tenantId: string): boolean {
+  try {
+    return localStorage.getItem(`ipm-receipt-seen:${tenantId}`) === "1";
+  } catch {
+    return false;
+  }
 }
 
 export default function PortalPaymentDetail() {
   const { token, entryKey } = useParams();
   const { ledger, tenant, loading } = usePortal(token);
   const { data: documents, loading: docsLoading } = usePortalDocuments(tenant?.id);
+
+  const row = groupPortalLedger(ledger).find((r) => ledgerEntryKey(r) === entryKey);
+  const rowLabel = row?.label;
+  const tenantId = tenant?.id;
+  const rowPaid = row ? (row.paidAmount ?? (row.status === "paid" ? row.amount : 0)) : 0;
+  const hasReceipt = row ? receiptsFor(row, documents).length > 0 : false;
+
+  // "idle" until a paid entry turns out to have no receipt on file; "working" while one is made on
+  // the spot; "done" once it is filed and the documents list is reloading; "none" when the server
+  // says there is nothing recorded to receipt (a cash payment, say); "failed" for anything else.
+  const [gen, setGen] = useState<"idle" | "working" | "done" | "none" | "failed">("idle");
+  const attempted = useRef("");
+
+  const makeReceipt = async () => {
+    if (!tenantId || !rowLabel) return;
+    setGen("working");
+    try {
+      await generateRecordedPortalReceipt(tenantId, rowLabel);
+      invalidatePortalDocuments(tenantId);
+      setGen("done");
+    } catch (e) {
+      setGen(e instanceof Error && e.message.includes("No successful payment") ? "none" : "failed");
+    }
+  };
+
+  useEffect(() => {
+    if (tenantId) markReceiptSeen(tenantId);
+  }, [tenantId]);
+
+  const ready = !!documents && !docsLoading && !!tenantId && !!rowLabel && rowPaid > 0 && !hasReceipt;
+  useEffect(() => {
+    if (!ready) return;
+    const key = `${tenantId}|${rowLabel}`;
+    if (attempted.current === key) return;
+    attempted.current = key;
+    void makeReceipt();
+    // makeReceipt only reads tenantId and rowLabel, both in the key above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, tenantId, rowLabel]);
 
   if (loading) {
     return (
@@ -68,8 +132,6 @@ export default function PortalPaymentDetail() {
       </>
     );
   }
-
-  const row = groupPortalLedger(ledger).find((r) => ledgerEntryKey(r) === entryKey);
 
   if (!row) {
     return (
@@ -138,6 +200,24 @@ export default function PortalPaymentDetail() {
               <Row key={doc.id} label={doc.name} value="Unavailable" icon={<FilePdf size={18} />} />
             )
           )}
+        </Card>
+      ) : gen === "working" ? (
+        <Card className="flex items-center gap-3 px-4 py-4">
+          <CircleNotch size={20} className="animate-spin" style={{ color: "var(--p-accent)" }} />
+          <p className="text-[13.5px]" style={{ color: "var(--p-muted)" }}>
+            Preparing your receipt...
+          </p>
+        </Card>
+      ) : gen === "failed" ? (
+        <Card className="px-4 py-4">
+          <p className="text-[13px] leading-relaxed" style={{ color: "var(--p-muted)" }}>
+            We couldn't prepare your receipt just now.
+          </p>
+          <div className="mt-3">
+            <PortalButton onClick={() => void makeReceipt()} variant="secondary">
+              Try again
+            </PortalButton>
+          </div>
         </Card>
       ) : (
         <Card className="px-4 py-4">

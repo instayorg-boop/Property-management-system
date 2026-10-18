@@ -88,6 +88,14 @@ export type PortalTenant = {
   moveInDate: string | null;
   emergencyContacts: EmergencyContact[];
   propertyAddress?: string;
+  /** This tenant's own due day, when they bill on a different day from the property (e.g. their
+   * move-in date). Null means "use the property's". */
+  dueDay: number | null;
+  /** The tenant's most recent actual payment, read straight off their payment rows rather than
+   * guessed from the ledger, where a settled charge also reads as "paid". `undefined` means the
+   * deployed pay_portal_get_tenant_v2 doesn't return it yet, so callers should keep their old
+   * behaviour; `null` means it does and this tenant has never paid. */
+  lastPayment?: { amount: number; at: string } | null;
 };
 export type PortalLedgerRow = { label: string; amount: number; paidAmount?: number; status?: string; createdAt: string };
 
@@ -239,7 +247,61 @@ export function computePortalNextDueDate(
 export function portalOwedPeriodLabel(openLabels: string[], nextDue: Date | null, now: Date = new Date()): string {
   if (openLabels.length === 0) return `${(nextDue ?? now).toLocaleDateString("en-GB", { month: "long", year: "numeric" })} rent`;
   if (openLabels.length === 1) return openLabels[0];
-  return `${openLabels.length} unpaid periods`;
+  // "Periods" only means rent months: a broken window or a cleaning fee is a charge, and saying
+  // "2 unpaid periods" for two one-off charges is what made the checkout read as nonsense.
+  const periods = openLabels.filter(isRentPeriodLabel).length;
+  const charges = openLabels.length - periods;
+  if (charges === 0) return `${periods} unpaid periods`;
+  if (periods === 0) return `${charges} unpaid charges`;
+  return `${periods} unpaid period${periods === 1 ? "" : "s"} and ${charges} charge${charges === 1 ? "" : "s"}`;
+}
+
+/** A ledger label for a rent month ("October 2026 rent", "September Rent 2026"), as opposed to a
+ * one-off charge ("Broken window"). */
+export function isRentPeriodLabel(label: string): boolean {
+  return /\brent\b/i.test(label) && /\d{4}/.test(label) && MONTH_NAMES.some((m) => label.includes(m));
+}
+
+/** Still owed: unpaid, overdue or part paid. A credit or a note has no status at all and is never
+ * "open", it used to be counted as one because the check was only "not paid". */
+export function isOpenPortalRow(row: PortalLedgerRow): boolean {
+  return row.status === "unpaid" || row.status === "overdue" || row.status === "partial";
+}
+
+/** One line of what a portal payment would pay for, exactly as the server will record it. */
+export type PortalPaymentLine = {
+  id: string | null;
+  label: string;
+  amount: number;
+  kind: "legacy" | "rent" | "charge" | "penalty" | "balance" | "advance";
+};
+
+/** How a payment of `amount` would be split: oldest rent or charge first, then the late fee, then
+ * the balance or next month's rent in advance. This is the same database function the payment
+ * itself runs, so the confirm screen, the ledger, the receipt and the SMS all say the same thing. */
+export async function previewPortalPayment(tenantId: string, amount: number, livePenalty: number): Promise<PortalPaymentLine[]> {
+  const sessionToken = requireSessionToken(tenantId);
+  const { data, error } = await (supabase as unknown as {
+    rpc: (fn: string, args: object) => Promise<{ data: unknown; error: { message: string } | null }>;
+  }).rpc("pay_portal_preview_payment", {
+    p_tenant_id: tenantId,
+    p_session_token: sessionToken,
+    p_amount: amount,
+    p_live_penalty: livePenalty,
+  });
+  if (error) throw new Error(error.message);
+  return Array.isArray(data) ? (data as PortalPaymentLine[]) : [];
+}
+
+/** "Paying for ..." in a few words, from the preview lines. */
+export function portalPaymentSummary(lines: PortalPaymentLine[]): string {
+  if (lines.length === 0) return "";
+  if (lines.length === 1) return lines[0].label;
+  const rent = lines.filter((l) => l.kind === "rent" || l.kind === "advance" || (l.kind === "legacy" && isRentPeriodLabel(l.label))).length;
+  const other = lines.length - rent;
+  if (other === 0) return `${rent} months' rent`;
+  if (rent === 0) return `${other} charges`;
+  return `${rent === 1 ? "Rent" : `${rent} months' rent`} and ${other} other charge${other === 1 ? "" : "s"}`;
 }
 
 export type PortalLedgerGroup = { key: string; label: string; rows: PortalLedgerRow[] };
@@ -380,6 +442,14 @@ export async function getPortalTenant(propertySlug: string, tenantId: string): P
   });
   const penaltyAmount =
     isPaidUp || hasLedgerPenalty === true ? 0 : calcLatePenalty(row.rent_amount, row.days_overdue ?? undefined, lateFeeConfig);
+  // Read off the row rather than the generated row type: these columns are newer than the
+  // checked-in database types, and the portal has to keep working against either version of the
+  // function (see PortalTenant.lastPayment for what undefined vs null means here).
+  const extra = row as unknown as {
+    due_day?: number | null;
+    last_payment_amount?: number | null;
+    last_payment_at?: string | null;
+  };
   return {
     id: row.id,
     name: row.name,
@@ -394,6 +464,13 @@ export async function getPortalTenant(propertySlug: string, tenantId: string): P
     moveInDate: row.move_in_date ?? null,
     emergencyContacts: toEmergencyContacts(row.emergency_contacts),
     propertyAddress: row.property_address ?? "",
+    dueDay: extra.due_day ?? null,
+    lastPayment:
+      "last_payment_at" in (row as object)
+        ? extra.last_payment_at
+          ? { amount: Math.abs(Number(extra.last_payment_amount ?? 0)), at: extra.last_payment_at }
+          : null
+        : undefined,
   };
 }
 
@@ -581,6 +658,25 @@ export async function generatePortalReceipt(
   const { data, error } = await supabase.functions.invoke<{ ok?: boolean; documentId?: string; name?: string; error?: string }>(
     "pay-portal-generate-receipt",
     { body: { tenantId, sessionToken, collectionId } }
+  );
+  if (error || !data?.ok || !data?.documentId) {
+    throw new Error(await edgeFunctionErrorMessage(error, "Failed to generate the receipt."));
+  }
+  return { documentId: data.documentId, name: data.name ?? "Receipt.pdf" };
+}
+
+/** The receipt for a payment the landlord's import recorded as already made before the tenant
+ * joined. There is no collection to point at, so the portal names the charge it settled and the
+ * server reads every figure back from the import's own ledger rows. Rejects with a message
+ * containing "No successful payment" when the tenant has no such recorded payment. */
+export async function generateRecordedPortalReceipt(
+  tenantId: string,
+  chargeLabel: string
+): Promise<{ documentId: string; name: string }> {
+  const sessionToken = requireSessionToken(tenantId);
+  const { data, error } = await supabase.functions.invoke<{ ok?: boolean; documentId?: string; name?: string; error?: string }>(
+    "pay-portal-generate-receipt",
+    { body: { tenantId, sessionToken, recordedFor: chargeLabel } }
   );
   if (error || !data?.ok || !data?.documentId) {
     throw new Error(await edgeFunctionErrorMessage(error, "Failed to generate the receipt."));

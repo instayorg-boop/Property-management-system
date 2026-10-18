@@ -7,19 +7,25 @@
 // isn't available here without paying for a third-party rendering API. jsPDF runs natively in Deno
 // and is the standard approach for generating invoices/receipts server-side.
 //
-// Layout (v4): "Rent receipt" title top-left (no brand mark up here, the brand only appears once,
-// in the footer lockup), receipt number + date paid, a bill-from (landlord/property, unmasked
-// landlord phone) / bill-to (tenant, room + room type, unmasked tenant phone) pair, a bold
-// "K2,500.00 paid on <date>" line with a small outlined status mark set directly against it
-// (drawStatusPill, green for "Paid in full", amber for "Partly paid", the one accent color on
-// the page) and a partial-payment note underneath when the payment didn't clear the balance owed,
-// an itemized table sourced from collections.line_items with a separate "Processing fee" row, a
-// Total / Amount paid / Balance band set apart with a tint instead of a pair of rules, a paid-via
-// line with the Lenco reference underneath it (moved down from the header info block, where it
-// used to sit next to a plain "Status" row that the pill above now replaces), and a centered
-// "Powered by Instay Manage" footer lockup (icon + wordmark, vertically centered against each
-// other). No amount-in-words, no payment-history table (a receipt is generated per payment, so
-// history would only ever have shown the one row already above it).
+// Layout (v5, designed and signed off on a canvas before any of it was built here): a full-width
+// brand-navy masthead carrying the property, the receipt number, the amount at 64px and the paid
+// mark, so the only question the document exists to answer is settled before anything else is
+// read; then, on white, a "Paid by" / "Paid to" pair, an itemized table from
+// collections.line_items with its own "Processing fee" row, a tinted totals band separating what
+// the phone was debited from the rent actually settled and the balance left after it, the
+// mobile-money method and Lenco reference, and a centered "Powered by Instay Manage" lockup at the
+// foot. A part payment gets an amber band directly under the masthead stating the shortfall,
+// rather than the small grey note it used to be easy to miss.
+//
+// Why v4 looked thin next to the reports: it was set in jsPDF's built-in Helvetica at 8 to 13pt,
+// so its "hero" amount rendered at roughly 17px on an A4 page among 8pt labels, with no size
+// contrast anywhere. This one embeds the app's own pairing, Inter and Fraunces (see
+// registerFonts), works in px like generate-report does, and runs a real type scale.
+//
+// Colours are the app's own tokens now (src/index.css), not the green this file used to invent.
+//
+// No amount-in-words, no payment-history table (a receipt is generated per payment, so history
+// would only ever have shown the one row already above it).
 //
 // Logo aspect ratio: jsPDF stretches addImage to whatever width/height you pass, so a non-square
 // source forced into a square box (the old bug) looks distorted. fitImage reads the real pixel
@@ -45,16 +51,28 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { jsPDF } from "npm:jspdf@2.5.2";
 import { corsHeaders, handleOptions } from "./_shared/cors.ts";
 
-type Payload = { tenantId?: string; sessionToken?: string; collectionId?: string };
+type Payload = { tenantId?: string; sessionToken?: string; collectionId?: string; recordedFor?: string };
 type LineItem = { label: string; amount: number };
 
+// Straight from the app's own design tokens in src/index.css (--color-brand, --color-brand-soft,
+// --color-ink, --color-muted, --color-line). The receipt used to run a green-tinted palette of its
+// own that appeared nowhere else in the product.
 const COLOR = {
-  ink: [27, 36, 32] as [number, number, number],
-  inkMuted: [91, 102, 95] as [number, number, number],
-  rule: [229, 229, 224] as [number, number, number],
-  band: [244, 245, 242] as [number, number, number],
-  paid: [31, 122, 77] as [number, number, number],
-  amber: [180, 83, 9] as [number, number, number],
+  brand: [30, 58, 138] as [number, number, number],
+  brandSoft: [232, 236, 249] as [number, number, number],
+  brandSoftRule: [205, 214, 239] as [number, number, number],
+  onBrand: [255, 255, 255] as [number, number, number],
+  onBrandMuted: [205, 212, 232] as [number, number, number],
+  onBrandBody: [232, 236, 246] as [number, number, number],
+  bandLabel: [68, 80, 107] as [number, number, number],
+  ink: [33, 37, 41] as [number, number, number],
+  muted: [108, 117, 125] as [number, number, number],
+  rule: [221, 226, 234] as [number, number, number],
+  paid: [6, 95, 70] as [number, number, number],
+  amberInk: [138, 75, 6] as [number, number, number],
+  amberBg: [253, 244, 231] as [number, number, number],
+  amberRule: [240, 223, 196] as [number, number, number],
+  white: [255, 255, 255] as [number, number, number],
 };
 
 function formatMoney(amount: number): string {
@@ -117,34 +135,125 @@ function fitImage(
   }
 }
 
-// Draws a small outlined status mark (check + label), right-aligned at rightEdgeX and vertically
-// centered on centerY, set directly against the amount it confirms rather than filed away in the
-// header info block as plain text.
-function drawStatusPill(
-  doc: jsPDF,
-  label: string,
-  rightEdgeX: number,
-  centerY: number,
-  color: [number, number, number]
-): void {
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(8);
-  const textWidth = doc.getTextWidth(label);
-  const padX = 2.5;
-  const checkW = 4.5;
-  const height = 5.5;
-  const width = textWidth + padX * 2 + checkW;
-  const x = rightEdgeX - width;
-  const boxY = centerY - height / 2;
-  doc.setDrawColor(...color);
-  doc.setLineWidth(0.3);
-  doc.roundedRect(x, boxY, width, height, 1, 1);
-  const checkX = x + padX;
-  doc.setLineWidth(0.5);
-  doc.line(checkX, centerY, checkX + 1.1, centerY + 1.2);
-  doc.line(checkX + 1.1, centerY + 1.2, checkX + 2.6, centerY - 1.3);
-  doc.setTextColor(...color);
-  doc.text(label, checkX + checkW, centerY + 1.1);
+// Portrait A4 at 96dpi, in px, so every coordinate below matches the approved design 1:1 (the
+// same unit choice generate-report makes, and the reason its layouts are easier to reason about
+// than this file's old millimetre maths).
+const PAGE_W = 794;
+const PAGE_H = 1123;
+const MARGIN = 56;
+const RIGHT = PAGE_W - MARGIN;
+const CONTENT_W = PAGE_W - MARGIN * 2;
+const COL2_X = MARGIN + (CONTENT_W - 48) / 2 + 48;
+const MASTHEAD_H = 296;
+const PARTIAL_BAND_H = 46;
+
+// jsPDF's setFontSize is always in points whatever the document's unit, so a size meant to read as
+// 13px has to be converted or every string renders about a third too large (the same trap
+// generate-report documents).
+const PX_TO_PT = 0.75;
+
+type FontFace = "sans" | "sansBold" | "display";
+type Ctx = { doc: jsPDF; sans: string; display: string };
+
+function setFont(ctx: Ctx, face: FontFace, sizePx: number, color: [number, number, number]): void {
+  if (face === "display") ctx.doc.setFont(ctx.display, "bold");
+  else ctx.doc.setFont(ctx.sans, face === "sansBold" ? "bold" : "normal");
+  ctx.doc.setFontSize(sizePx * PX_TO_PT);
+  ctx.doc.setTextColor(...color);
+}
+
+async function fetchFontBase64(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    let binary = "";
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+  } catch {
+    return null;
+  }
+}
+
+const INTER_REGULAR_URL = "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/inter/static/Inter-Regular.ttf";
+const INTER_BOLD_URL = "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/inter/static/Inter-Bold.ttf";
+// Fraunces is the app's own display face (src/index.css --font-display). The repo has moved its
+// static instances around between releases, so try the known paths in turn and fall back to the
+// variable file, which renders at its default instance rather than not at all.
+const FRAUNCES_URLS = [
+  "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/fraunces/static/Fraunces_9pt-SemiBold.ttf",
+  "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/fraunces/static/Fraunces_9pt/Fraunces_9pt-SemiBold.ttf",
+  "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/fraunces/Fraunces%5BSOFT%2CWONK%2Copsz%2Cwght%5D.ttf",
+];
+
+/** Registers Inter (body) and Fraunces (display) on the doc, matching the app's own type pairing.
+ * Either can fail to fetch without failing the receipt: the sans falls back to jsPDF's built-in
+ * Helvetica, and the display face falls back to the sans. Helvetica alone is what the receipt used
+ * to be set in, and is most of why it read as flat next to the reports. */
+async function registerFonts(doc: jsPDF): Promise<{ sans: string; display: string }> {
+  let sans = "helvetica";
+  const [regular, bold] = await Promise.all([fetchFontBase64(INTER_REGULAR_URL), fetchFontBase64(INTER_BOLD_URL)]);
+  if (regular && bold) {
+    try {
+      doc.addFileToVFS("Inter-Regular.ttf", regular);
+      doc.addFont("Inter-Regular.ttf", "Inter", "normal");
+      doc.addFileToVFS("Inter-Bold.ttf", bold);
+      doc.addFont("Inter-Bold.ttf", "Inter", "bold");
+      sans = "Inter";
+    } catch {
+      sans = "helvetica";
+    }
+  }
+
+  let display = sans;
+  for (const url of FRAUNCES_URLS) {
+    const data = await fetchFontBase64(url);
+    if (!data) continue;
+    try {
+      doc.addFileToVFS("Fraunces.ttf", data);
+      doc.addFont("Fraunces.ttf", "Fraunces", "bold");
+      display = "Fraunces";
+      break;
+    } catch {
+      // try the next candidate
+    }
+  }
+  return { sans, display };
+}
+
+/** The paid mark, set against the amount it confirms: outlined white on the masthead when the
+ * payment cleared the balance, a white chip with the amber state when it only partly did. */
+function drawPill(ctx: Ctx, label: string, rightX: number, centerY: number, variant: "paid" | "part"): void {
+  const { doc } = ctx;
+  setFont(ctx, "sansBold", 13, variant === "paid" ? COLOR.onBrand : COLOR.amberInk);
+  const textW = doc.getTextWidth(label);
+  const iconW = 15;
+  const gap = 8;
+  const padLeft = variant === "paid" ? 14 : 16;
+  const padRight = 18;
+  const h = 30;
+  const w = padLeft + iconW + gap + textW + padRight;
+  const x = rightX - w;
+  const y = centerY - h / 2;
+
+  if (variant === "paid") {
+    doc.setDrawColor(...COLOR.onBrandMuted);
+    doc.setLineWidth(1.5);
+    doc.roundedRect(x, y, w, h, h / 2, h / 2, "S");
+    doc.setDrawColor(...COLOR.onBrand);
+    doc.setLineWidth(2.1);
+    const cx = x + padLeft;
+    doc.line(cx + 2, centerY + 0.5, cx + 5.8, centerY + 4.2);
+    doc.line(cx + 5.8, centerY + 4.2, cx + 12.5, centerY - 4.3);
+  } else {
+    doc.setFillColor(...COLOR.white);
+    doc.roundedRect(x, y, w, h, h / 2, h / 2, "F");
+    doc.setFillColor(...COLOR.amberInk);
+    doc.circle(x + padLeft + iconW / 2, centerY, 4.5, "F");
+  }
+
+  setFont(ctx, "sansBold", 13, variant === "paid" ? COLOR.onBrand : COLOR.amberInk);
+  doc.text(label, x + padLeft + iconW + gap, centerY + 4.5);
 }
 
 Deno.serve(async (req) => {
@@ -171,8 +280,12 @@ Deno.serve(async (req) => {
   const tenantId = payload.tenantId?.trim() ?? "";
   const sessionToken = payload.sessionToken?.trim() ?? "";
   const collectionId = payload.collectionId?.trim() ?? "";
-  if (!tenantId || !sessionToken || !collectionId) {
-    return new Response(JSON.stringify({ error: "tenantId, sessionToken and collectionId are required" }), {
+  // "Recorded" mode: a payment the landlord's import recorded as already made before the tenant
+  // joined (no Lenco collection exists for it). The caller names only the charge it settled, by
+  // label; every figure is read back from the import's own ledger rows below.
+  const recordedFor = payload.recordedFor?.trim() ?? "";
+  if (!tenantId || !sessionToken || (!collectionId && !recordedFor)) {
+    return new Response(JSON.stringify({ error: "tenantId, sessionToken and collectionId (or recordedFor) are required" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -191,12 +304,56 @@ Deno.serve(async (req) => {
     });
   }
 
-  const { data: collection } = await supabase
-    .from("collections")
-    .select("id, tenant_id, property_id, amount, phone, operator, status, updated_at, line_items, fee_amount, owed_before, lenco_collection_id")
-    .eq("id", collectionId)
-    .eq("tenant_id", tenantId)
-    .maybeSingle();
+  // deno-lint-ignore no-explicit-any
+  let collection: any = null;
+  let recordedChargeId = "";
+  if (recordedFor) {
+    // Shape the import's ledger rows like a collection so one drawing path serves both. Only
+    // payments the import itself wrote count (origin 'import', not voided, linked to a charge
+    // whose label is the one asked for), so this can't be used to mint a receipt for anything else.
+    const { data: tenantRow } = await supabase.from("tenants").select("property_id").eq("id", tenantId).maybeSingle();
+    const { data: importPayments } = await supabase
+      .from("ledger_entries")
+      .select("id, amount, created_at, charge_id")
+      .eq("tenant_id", tenantId)
+      .eq("event_type", "payment")
+      .eq("origin", "import")
+      .is("voided_at", null)
+      .not("charge_id", "is", null)
+      .order("created_at", { ascending: true });
+    const chargeIds = [...new Set((importPayments ?? []).map((r: { charge_id: string }) => r.charge_id))];
+    const { data: charges } = chargeIds.length
+      ? await supabase.from("ledger_entries").select("id, label, amount").in("id", chargeIds).eq("label", recordedFor).is("voided_at", null)
+      : { data: [] };
+    const charge = (charges ?? [])[0] as { id: string; label: string; amount: number } | undefined;
+    const settled = (importPayments ?? []).filter((r: { charge_id: string }) => charge && r.charge_id === charge.id);
+    if (tenantRow && charge && settled.length > 0) {
+      const paid = settled.reduce((sum: number, r: { amount: number }) => sum + Math.abs(Number(r.amount)), 0);
+      recordedChargeId = charge.id;
+      collection = {
+        id: settled[0].id,
+        tenant_id: tenantId,
+        property_id: tenantRow.property_id,
+        amount: paid,
+        phone: null,
+        operator: null,
+        status: "successful",
+        updated_at: settled[settled.length - 1].created_at,
+        line_items: [{ label: charge.label, amount: paid }],
+        fee_amount: 0,
+        owed_before: Number(charge.amount),
+        lenco_collection_id: null,
+      };
+    }
+  } else {
+    const { data } = await supabase
+      .from("collections")
+      .select("id, tenant_id, property_id, amount, phone, operator, status, updated_at, line_items, fee_amount, owed_before, lenco_collection_id")
+      .eq("id", collectionId)
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+    collection = data;
+  }
 
   if (!collection || collection.status !== "successful") {
     return new Response(JSON.stringify({ error: "No successful payment found for that reference." }), {
@@ -210,7 +367,9 @@ Deno.serve(async (req) => {
   // hands it straight back instead of rendering + uploading + filing a duplicate PDF for the exact
   // same payment. Checked before any of the PDF work below, not just before the upload, so a repeat
   // tap is cheap too, not just non-duplicating.
-  const filePath = `${collection.property_id}/${tenantId}/${collectionId}-receipt.pdf`;
+  const filePath = recordedFor
+    ? `${collection.property_id}/${tenantId}/recorded-${recordedChargeId}-receipt.pdf`
+    : `${collection.property_id}/${tenantId}/${collectionId}-receipt.pdf`;
   const { data: existingDoc } = await supabase
     .from("tenant_documents")
     .select("id, name")
@@ -274,18 +433,30 @@ Deno.serve(async (req) => {
     .from("ledger_entries")
     .select("label")
     .eq("tenant_id", tenantId)
-    .eq("idempotency_key", `lenco_payment:${collectionId}`)
+    .or(`idempotency_key.eq.lenco_payment:${collectionId},idempotency_key.like.lenco_payment:${collectionId}:%`)
+    .order("created_at", { ascending: true })
+    .limit(1)
     .maybeSingle();
   const entryLabel: string | null = entry?.label ?? null;
 
+  // Collections started since allocate_payment already name every line exactly as the ledger does
+  // ("Broken window", "October 2026 rent", "November 2026 rent (paid in advance)"), so they print
+  // as stored. Only older ones carry the vague "Rent paid in advance", which gets its month here.
+  // Both advance wordings are recognised: "November 2026 rent (paid in advance)" now, and
+  // "Rent for November 2026 (paid in advance)" on rows written before the wording was unified.
+  const ADVANCE_RE = /^(?:Rent for (.+) \(paid in advance\)|(.+) rent \(paid in advance\))$/;
   let lineItems: LineItem[] = rawItems.map((i) =>
-    i.label === "Rent paid in advance" ? { ...i, label: `Rent for ${advanceLabel} (paid in advance)` } : i
+    i.label === "Rent paid in advance" ? { ...i, label: `${advanceLabel} rent (paid in advance)` } : i
   );
-  let coversAdvance = rawItems.some((i) => i.label === "Rent paid in advance");
-  if (entryLabel) {
-    const advanceMatch = entryLabel.match(/^Rent for (.+) \(paid in advance\)$/);
+  const advanceLine = lineItems.map((i) => i.label.match(ADVANCE_RE)).find((m) => m !== null);
+  if (advanceLine) advanceLabel = advanceLine[1] ?? advanceLine[2];
+  let coversAdvance = !!advanceLine;
+  // Only a single-line payment can be renamed wholesale from its ledger row; a payment that
+  // settled several charges keeps the stored line items.
+  if (entryLabel && rawItems.length <= 1) {
+    const advanceMatch = entryLabel.match(ADVANCE_RE);
     if (advanceMatch) {
-      advanceLabel = advanceMatch[1];
+      advanceLabel = advanceMatch[1] ?? advanceMatch[2];
       coversAdvance = true;
       lineItems = [{ label: entryLabel, amount: rentPortion }];
     } else if (entryLabel.startsWith("Mobile money payment, ")) {
@@ -295,231 +466,201 @@ Deno.serve(async (req) => {
     }
   }
   const balanceAfter = owedBefore != null ? Math.max(0, Math.round((owedBefore - rentPortion) * 100) / 100) : null;
+  // Only call it a rent receipt when every line is rent: a payment for a broken window (or rent plus
+  // a one-off charge) is a payment receipt.
+  const allRent = lineItems.every((i) => /\brent\b/i.test(i.label));
   const fileTitle = isPartial
     ? "Partial payment receipt"
-    : coversAdvance
-      ? `${advanceLabel} rent receipt`
-      : entryLabel?.endsWith("towards balance")
-        ? "Payment receipt"
-        : `${monthLabel} rent receipt`;
+    : !allRent
+      ? "Payment receipt"
+      : coversAdvance
+        ? `${advanceLabel} rent receipt`
+        : entryLabel?.endsWith("towards balance")
+          ? "Payment receipt"
+          : `${monthLabel} rent receipt`;
 
   const logoDataUrl = await fetchLogoDataUrl(IPM_LOGO_URL);
 
-  const doc = new jsPDF({ unit: "mm", format: "a4" });
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const margin = 20;
-  const contentWidth = pageWidth - margin * 2;
-  let y = 26;
+  const doc = new jsPDF({ unit: "px", format: [PAGE_W, PAGE_H] });
+  const faces = await registerFonts(doc);
+  const ctx: Ctx = { doc, sans: faces.sans, display: faces.display };
 
-  // Header: "Rent receipt" title, alone, the brand mark only shows once further down in the footer
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(18);
-  doc.setTextColor(...COLOR.ink);
-  doc.text("Rent receipt", margin, y);
+  const bodyTop = MASTHEAD_H + (isPartial ? PARTIAL_BAND_H : 0);
+  const timeLabel = paidAt.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
+  const purpose =
+    lineItems.length === 1
+      ? lineItems[0].label
+      : `${lineItems[0].label} and ${lineItems.length - 1} more`;
 
-  y += 6;
-  doc.setDrawColor(...COLOR.ink);
-  doc.setLineWidth(0.3);
-  doc.line(margin, y, pageWidth - margin, y);
+  // Masthead: the whole point of the document, settled before anything else is read. The amount is
+  // the rent that was actually settled; what the phone was debited (rent plus the processing fee)
+  // is broken out in the totals band below, which is the distinction tenants ask about most.
+  doc.setFillColor(...COLOR.brand);
+  doc.rect(0, 0, PAGE_W, MASTHEAD_H, "F");
 
-  y += 10;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
-  doc.setTextColor(...COLOR.ink);
-  doc.text("Receipt number", margin, y);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(...COLOR.inkMuted);
-  doc.text(shortReceiptNumber(collection.id), margin + 32, y);
-  y += 6;
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(...COLOR.ink);
-  doc.text("Date paid", margin, y);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(...COLOR.inkMuted);
-  doc.text(paidOnLabel, margin + 32, y);
-
-  // Bill from / bill to
-  y += 12;
-  const colWidth = contentWidth / 2;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
-  doc.setTextColor(...COLOR.ink);
-  doc.text(property?.name ?? "-", margin, y);
-  doc.text("Bill to", margin + colWidth, y, { align: "left" });
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5);
-  doc.setTextColor(...COLOR.inkMuted);
-  let yFrom = y + 4.5;
-  if (settings?.landlord_name) {
-    doc.text(`Landlord: ${settings.landlord_name}`, margin, yFrom);
-    yFrom += 4.5;
-  }
+  setFont(ctx, "display", 23, COLOR.onBrand);
+  doc.text(property?.name ?? "Your property", MARGIN, 70);
   if (property?.address) {
-    const lines = doc.splitTextToSize(property.address, colWidth - 6) as string[];
-    doc.text(lines, margin, yFrom);
-    yFrom += 4.5 * lines.length;
-  }
-  if (settings?.landlord_phone) {
-    doc.text(settings.landlord_phone, margin, yFrom);
+    setFont(ctx, "sans", 12.5, COLOR.onBrandMuted);
+    doc.text(property.address, MARGIN, 92);
   }
 
-  let yTo = y + 4.5;
-  doc.setTextColor(...COLOR.ink);
-  doc.text(tenant?.name ?? "-", margin + colWidth, yTo);
-  doc.setTextColor(...COLOR.inkMuted);
-  yTo += 4.5;
-  const roomText = room ? (/^[A-Za-z]?\d+[A-Za-z]?$/.test(room) ? `Room ${room}` : room) : null;
-  const roomLine = [roomText, roomType].filter(Boolean).join("    ");
-  if (roomLine) {
-    doc.text(roomLine, margin + colWidth, yTo);
-    yTo += 4.5;
-  }
-  if (tenantPhone) {
-    doc.text(tenantPhone, margin + colWidth, yTo);
-  }
+  setFont(ctx, "sans", 11.5, COLOR.onBrandMuted);
+  doc.text("Receipt number", RIGHT, 68, { align: "right" });
+  setFont(ctx, "sansBold", 14, COLOR.onBrand);
+  doc.text(shortReceiptNumber(collection.id), RIGHT, 89, { align: "right" });
 
-  y = Math.max(yFrom, yTo) + 10;
+  setFont(ctx, "sans", 12.5, COLOR.onBrandMuted);
+  doc.text(recordedFor ? "Payment recorded" : "Payment received", MARGIN, 178);
+  setFont(ctx, "display", 64, COLOR.onBrand);
+  doc.text(formatMoney(rentPortion), MARGIN, 240);
+  setFont(ctx, "sans", 13.5, COLOR.onBrandBody);
+  doc.text(recordedFor ? `${purpose}, recorded on ${paidOnLabel}` : `${purpose}, paid on ${paidOnLabel} at ${timeLabel}`, MARGIN, 268);
 
-  // Paid line, with a status mark set directly against it instead of a plain "Status" row above
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(13);
-  doc.setTextColor(...COLOR.ink);
-  doc.text(`${formatMoney(collection.amount)} paid on ${paidOnLabel}`, margin, y);
-  drawStatusPill(
-    doc,
-    isPartial ? "Partly paid" : "Paid in full",
-    pageWidth - margin,
-    y - 3.5,
-    isPartial ? COLOR.amber : COLOR.paid
-  );
+  drawPill(ctx, isPartial ? "Part paid" : recordedFor ? "Recorded payment" : "Paid in full", RIGHT, 258, isPartial ? "part" : "paid");
+
+  // A shortfall is stated in its own band rather than left as a grey note someone can miss.
   if (isPartial) {
-    y += 5;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.5);
-    doc.setTextColor(...COLOR.inkMuted);
-    doc.text(`Partial payment, ${formatMoney(remaining)} remaining`, margin, y);
+    doc.setFillColor(...COLOR.amberBg);
+    doc.rect(0, MASTHEAD_H, PAGE_W, PARTIAL_BAND_H, "F");
+    doc.setDrawColor(...COLOR.amberRule);
+    doc.setLineWidth(1);
+    doc.line(0, MASTHEAD_H + PARTIAL_BAND_H, PAGE_W, MASTHEAD_H + PARTIAL_BAND_H);
+    setFont(ctx, "sans", 13.5, COLOR.amberInk);
+    doc.text("This payment did not clear the full amount due.", MARGIN, MASTHEAD_H + 29);
+    setFont(ctx, "sansBold", 14, COLOR.amberInk);
+    doc.text(`${formatMoney(remaining)} still owed`, RIGHT, MASTHEAD_H + 29, { align: "right" });
   }
 
-  // Line items table
-  y += 10;
-  doc.setDrawColor(...COLOR.ink);
-  doc.setLineWidth(0.3);
-  doc.line(margin, y, pageWidth - margin, y);
-  y -= 2;
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  doc.setTextColor(...COLOR.inkMuted);
-  doc.text("Description", margin, y);
-  doc.text("Amount", pageWidth - margin, y, { align: "right" });
-  y += 2;
+  // Who paid whom. "Bill from / Bill to" was invoice language on a document that proves a payment
+  // already happened, and nobody is being billed by it.
+  setFont(ctx, "sans", 11.5, COLOR.muted);
+  doc.text("Paid by", MARGIN, bodyTop + 50);
+  doc.text("Paid to", COL2_X, bodyTop + 50);
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9.5);
+  setFont(ctx, "sansBold", 15, COLOR.ink);
+  doc.text(tenant?.name ?? "Tenant", MARGIN, bodyTop + 74);
+  doc.text(settings?.landlord_name ?? property?.name ?? "Landlord", COL2_X, bodyTop + 74);
+
+  setFont(ctx, "sans", 13, COLOR.muted);
+  const tenantPlace = [room ? `Room ${room}` : null, roomType].filter(Boolean).join(", ");
+  if (tenantPlace) doc.text(tenantPlace, MARGIN, bodyTop + 94);
+  if (property?.name) doc.text(property.name, COL2_X, bodyTop + 94);
+  if (tenantPhone) doc.text(tenantPhone, MARGIN, bodyTop + 113);
+  if (settings?.landlord_phone) doc.text(settings.landlord_phone, COL2_X, bodyTop + 113);
+
+  doc.setDrawColor(...COLOR.rule);
+  doc.setLineWidth(1);
+  doc.line(MARGIN, bodyTop + 143, RIGHT, bodyTop + 143);
+
+  setFont(ctx, "sans", 11.5, COLOR.muted);
+  doc.text("What this covers", MARGIN, bodyTop + 172);
+  doc.text("Amount", RIGHT, bodyTop + 172, { align: "right" });
+
+  let rowTop = bodyTop + 182;
+  const ROW_H = 44;
   for (const item of lineItems) {
-    y += 8;
-    doc.setTextColor(...COLOR.ink);
-    doc.text(item.label, margin, y);
-    doc.text(formatMoney(item.amount), pageWidth - margin, y, { align: "right" });
+    doc.setDrawColor(...COLOR.rule);
+    doc.setLineWidth(1);
+    doc.line(MARGIN, rowTop, RIGHT, rowTop);
+    setFont(ctx, "sans", 13.5, COLOR.ink);
+    doc.text(doc.splitTextToSize(item.label, CONTENT_W - 120)[0] ?? item.label, MARGIN, rowTop + 27);
+    setFont(ctx, "sans", 14, COLOR.ink);
+    doc.text(formatMoney(item.amount), RIGHT, rowTop + 27, { align: "right" });
+    rowTop += ROW_H;
   }
   if (feeAmount > 0) {
-    y += 6;
-    doc.setTextColor(...COLOR.inkMuted);
-    doc.setFontSize(8.5);
-    doc.text("Processing fee", margin, y);
-    doc.text(formatMoney(feeAmount), pageWidth - margin, y, { align: "right" });
-    doc.setFontSize(9.5);
+    doc.setDrawColor(...COLOR.rule);
+    doc.setLineWidth(1);
+    doc.line(MARGIN, rowTop, RIGHT, rowTop);
+    setFont(ctx, "sans", 13.5, COLOR.muted);
+    doc.text("Processing fee", MARGIN, rowTop + 27);
+    setFont(ctx, "sans", 14, COLOR.muted);
+    doc.text(formatMoney(feeAmount), RIGHT, rowTop + 27, { align: "right" });
+    rowTop += ROW_H;
   }
 
-  // Total / amount paid / balance, set apart with a tinted band sized to the rows that actually
-  // apply (no subtotal row, there's no tax or discount to separate it from total) rather than the
-  // old pair of rules around just the Total line.
-  y += 6;
-  const totalsRows = 2 + (balanceAfter != null ? 1 : 0);
-  const rowH = 6;
-  const bandPad = 4;
-  const bandTop = y - bandPad;
-  const bandHeight = (totalsRows - 1) * rowH + bandPad * 2 + 3;
-  doc.setFillColor(...COLOR.band);
-  doc.rect(margin - 4, bandTop, contentWidth + 8, bandHeight, "F");
+  const bandTop = rowTop + 20;
+  // A recorded payment has no phone debit, so its band drops the "Total charged" row.
+  const BAND_H = recordedFor ? (balanceAfter != null ? 108 : 62) : balanceAfter != null ? 148 : 102;
+  const rentRowY = bandTop + (recordedFor ? 36 : 76);
+  doc.setFillColor(...COLOR.brandSoft);
+  doc.rect(MARGIN, bandTop, CONTENT_W, BAND_H, "F");
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  doc.setTextColor(...COLOR.inkMuted);
-  doc.text("Total", margin, y);
-  doc.setTextColor(...COLOR.ink);
-  doc.text(formatMoney(collection.amount), pageWidth - margin, y, { align: "right" });
+  if (!recordedFor) {
+    setFont(ctx, "sans", 13.5, COLOR.bandLabel);
+    doc.text("Total charged to your phone", MARGIN + 24, bandTop + 36);
+    setFont(ctx, "sans", 15, COLOR.ink);
+    doc.text(formatMoney(collection.amount), RIGHT - 24, bandTop + 36, { align: "right" });
+  }
 
-  y += rowH;
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(...COLOR.ink);
-  doc.text("Amount paid", margin, y);
-  doc.text(formatMoney(collection.amount), pageWidth - margin, y, { align: "right" });
+  setFont(ctx, "sansBold", 14, COLOR.ink);
+  doc.text(recordedFor ? "Rent recorded as paid" : "Rent settled", MARGIN + 24, rentRowY);
+  setFont(ctx, "display", 26, COLOR.brand);
+  doc.text(formatMoney(rentPortion), RIGHT - 24, rentRowY, { align: "right" });
 
   if (balanceAfter != null) {
-    y += rowH;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(...COLOR.inkMuted);
-    doc.text("Balance after this payment", margin, y);
-    doc.setTextColor(...COLOR.ink);
-    doc.text(formatMoney(balanceAfter), pageWidth - margin, y, { align: "right" });
+    doc.setDrawColor(...COLOR.brandSoftRule);
+    doc.setLineWidth(1);
+    doc.line(MARGIN + 24, rentRowY + 20, RIGHT - 24, rentRowY + 20);
+    setFont(ctx, "sans", 13.5, COLOR.bandLabel);
+    doc.text("Balance on your account after this payment", MARGIN + 24, rentRowY + 50);
+    setFont(ctx, "sansBold", 15, balanceAfter > 0 ? COLOR.amberInk : COLOR.paid);
+    doc.text(formatMoney(balanceAfter), RIGHT - 24, rentRowY + 50, { align: "right" });
   }
 
-  y = bandTop + bandHeight + 4;
-  if (coversAdvance) {
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.5);
-    doc.setTextColor(...COLOR.inkMuted);
-    doc.text(`This payment is credited towards ${advanceLabel} rent.`, margin, y);
-    y += 6;
-  }
-
-  // Paid via, with the Lenco reference set underneath it now that Reference has moved out of the
-  // header info block, reading more naturally beside how the payment was made than up top.
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5);
-  doc.setTextColor(...COLOR.inkMuted);
+  const detailsY = bandTop + BAND_H + 42;
   const operatorLabel = OPERATOR_LABEL[collection.operator ?? ""] ?? collection.operator ?? "Mobile money";
-  doc.text(`Paid via ${operatorLabel} mobile money ···${lastDigits(collection.phone ?? "", 3)}`, margin, y);
+  setFont(ctx, "sans", 11.5, COLOR.muted);
+  doc.text(recordedFor ? "Recorded by" : "Paid with", MARGIN, detailsY);
+  setFont(ctx, "sans", 13.5, COLOR.ink);
+  if (recordedFor) {
+    doc.text(settings?.landlord_name ?? property?.name ?? "Your property manager", MARGIN, detailsY + 21);
+    setFont(ctx, "sans", 11.5, COLOR.muted);
+    doc.text("Recorded on", COL2_X, detailsY);
+    setFont(ctx, "sans", 13.5, COLOR.ink);
+    doc.text(paidOnLabel, COL2_X, detailsY + 21);
+  } else {
+    doc.text(`${operatorLabel} mobile money, number ending ${lastDigits(collection.phone ?? "", 3)}`, MARGIN, detailsY + 21);
+  }
   if (collection.lenco_collection_id) {
-    y += 4.5;
-    doc.setFontSize(7.5);
-    doc.text(`Reference ${collection.lenco_collection_id}`, margin, y);
+    setFont(ctx, "sans", 11.5, COLOR.muted);
+    doc.text("Reference", COL2_X, detailsY);
+    setFont(ctx, "sans", 13.5, COLOR.ink);
+    doc.text(doc.splitTextToSize(collection.lenco_collection_id, CONTENT_W / 2 - 24)[0] ?? collection.lenco_collection_id, COL2_X, detailsY + 21);
   }
 
-  // Footer: "Powered by Instay Manage" lockup, centered as one group — icon and wordmark share a
-  // vertical center line instead of being placed independently (the fix for the stretched/
-  // misaligned footer).
-  const footerY = doc.internal.pageSize.getHeight() - 30;
+  // Footer: the company lockup, centered, with the mark at a size it can actually be read at.
   doc.setDrawColor(...COLOR.rule);
-  doc.setLineWidth(0.2);
-  doc.line(margin, footerY, pageWidth - margin, footerY);
+  doc.setLineWidth(1);
+  doc.line(MARGIN, 1000, RIGHT, 1000);
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7);
-  doc.setTextColor(...COLOR.inkMuted);
-  doc.text("Powered by", pageWidth / 2, footerY + 8, { align: "center" });
+  setFont(ctx, "sans", 11, COLOR.muted);
+  doc.text("Powered by", PAGE_W / 2, 1022, { align: "center" });
 
-  const lockupY = footerY + 15;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
   const wordmark = "Instay Manage";
-  const wordmarkWidth = doc.getTextWidth(wordmark);
-  const iconMax = 4.5;
-  const gap = 2;
-  const groupWidth = (logoDataUrl ? iconMax + gap : 0) + wordmarkWidth;
-  const groupX = pageWidth / 2 - groupWidth / 2;
+  setFont(ctx, "display", 17, COLOR.brand);
+  const wordmarkW = doc.getTextWidth(wordmark);
+  const markW = logoDataUrl ? 26 : 0;
+  const markGap = logoDataUrl ? 10 : 0;
+  const groupX = PAGE_W / 2 - (markW + markGap + wordmarkW) / 2;
+  if (logoDataUrl) fitImage(doc, logoDataUrl, groupX + markW / 2, 1046, markW, 31);
+  doc.text(wordmark, groupX + markW + markGap, 1052);
 
-  if (logoDataUrl) {
-    fitImage(doc, logoDataUrl, groupX + iconMax / 2, lockupY, iconMax, iconMax);
-  }
-  doc.setTextColor(...COLOR.ink);
-  doc.text(wordmark, groupX + (logoDataUrl ? iconMax + gap : 0), lockupY + 1.5, { align: "left" });
+  setFont(ctx, "sans", 10.5, COLOR.muted);
+  doc.text(
+    recordedFor
+      ? "This confirms a payment recorded by your property manager. Generated automatically, no signature required."
+      : "Keep this receipt as proof of payment. Generated automatically, no signature required.",
+    PAGE_W / 2,
+    1085,
+    { align: "center" }
+  );
+
 
   const pdfBytes = doc.output("arraybuffer");
 
-  const fileName = `${fileTitle}.pdf`;
+  const fileName = recordedFor ? `${recordedFor} receipt.pdf` : `${fileTitle}.pdf`;
 
   const { error: uploadError } = await supabase.storage.from("tenant-documents").upload(filePath, pdfBytes, {
     contentType: "application/pdf",

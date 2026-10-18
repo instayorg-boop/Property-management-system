@@ -32,19 +32,21 @@ export default function Select({
         <RadixSelect.Content
           position="popper"
           sideOffset={6}
-          className="z-50 min-w-[--radix-select-trigger-width] overflow-hidden rounded-lg border border-line bg-paper shadow-card"
+          className="z-50 w-[--radix-select-trigger-width] max-w-[min(22rem,90vw)] overflow-hidden rounded-lg border border-line bg-paper shadow-card"
         >
-          <RadixSelect.Viewport className="p-1">
+          <RadixSelect.Viewport className="max-h-72 overflow-y-auto p-1">
             {options.map((o) => (
               <RadixSelect.Item
                 key={o.value}
                 value={o.value}
-                className="relative flex cursor-pointer items-center rounded-md py-2 pr-3 pl-8 text-sm text-ink outline-none select-none data-[highlighted]:bg-mist data-[state=checked]:font-medium data-[state=checked]:text-brand"
+                className="relative flex cursor-pointer items-start rounded-md py-2 pr-3 pl-8 text-sm text-ink outline-none select-none data-[highlighted]:bg-mist data-[state=checked]:font-medium data-[state=checked]:text-brand"
               >
-                <RadixSelect.ItemIndicator className="absolute left-2 flex items-center">
+                <RadixSelect.ItemIndicator className="absolute left-2 top-2 flex items-center">
                   <CheckIcon size={14} weight="bold" />
                 </RadixSelect.ItemIndicator>
-                <RadixSelect.ItemText>{o.label}</RadixSelect.ItemText>
+                <RadixSelect.ItemText>
+                  <span className="break-words">{o.label}</span>
+                </RadixSelect.ItemText>
               </RadixSelect.Item>
             ))}
           </RadixSelect.Viewport>

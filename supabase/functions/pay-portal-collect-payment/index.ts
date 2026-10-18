@@ -198,7 +198,12 @@ Deno.serve(async (req) => {
     settings?.late_fee_cap_enabled && settings.late_fee_cap_amount != null
       ? Math.min(rawPenalty, settings.late_fee_cap_amount)
       : rawPenalty;
-  const owedBefore: number = tenant.status === "paid" ? 0 : (tenant.owed_amount || tenant.rent_amount || 0) + penaltyAmount;
+  // Owes something: they can pay up to that (plus the live late fee). Owes nothing: they are paying
+  // ahead, up to one month's rent at a time. This used to refuse any payment from a "paid" tenant
+  // ("nothing due"), so the pay-in-advance option the portal offers could never actually go through.
+  const currentOwed = Number(tenant.owed_amount ?? 0);
+  const owesSomething = tenant.status !== "paid" && currentOwed > 0;
+  const owedBefore: number = owesSomething ? currentOwed + penaltyAmount : Number(tenant.rent_amount ?? 0);
   if (!owedBefore || owedBefore <= 0) {
     return new Response(JSON.stringify({ error: "There's nothing due to pay right now." }), {
       status: 400,
@@ -213,65 +218,23 @@ Deno.serve(async (req) => {
   const feeAmount = round2(rentPortion * feeRate);
   const totalAmount = round2(rentPortion + feeAmount);
 
-  const { data: openEntries } = await supabase
-    .from("ledger_entries")
-    .select("id, label, amount, paid_amount, status, created_at")
-    .eq("tenant_id", tenantId)
-    .in("status", ["unpaid", "overdue", "partial"])
-    .order("created_at", { ascending: true });
-
-  const lineItems: { id: string | null; label: string; amount: number }[] = [];
-  let remaining = rentPortion;
-  for (const entry of openEntries ?? []) {
-    if (remaining <= 0) break;
-    const outstanding = round2(Number(entry.amount) - Number(entry.paid_amount ?? 0));
-    if (outstanding <= 0) continue;
-    const applied = Math.min(outstanding, remaining);
-    lineItems.push({ id: entry.id, label: entry.label, amount: applied });
-    remaining = round2(remaining - applied);
-  }
-  // Manual charges the landlord adds (event_type "adjustment", a positive one-off amount, see
-  // TenantsContext.tsx addAdjustment) raise owed_amount but never get a legacy status, so the loop above never
-  // finds them, and any payment that was really settling one of these used to fall straight into
-  // the generic "Rent paid in advance" line below with no sign it was ever for that charge. Same
-  // FIFO idea as above, just against adjustment/credit rows instead of status-tracked ones, and
-  // "already settled" is whether this row's id shows up in any of this tenant's own past
-  // successful collections (adjustments have no paid_amount to check partial progress against, so
-  // this is all-or-nothing per row rather than true partial allocation).
-  if (remaining > 0) {
-    const { data: adjustmentEntries } = await supabase
-      .from("ledger_entries")
-      .select("id, label, amount, created_at")
-      .eq("tenant_id", tenantId)
-      .in("event_type", ["adjustment", "credit"])
-      .gt("amount", 0)
-      .eq("affects_balance", true)
-      .is("voided_at", null)
-      .order("created_at", { ascending: true });
-
-    if (adjustmentEntries && adjustmentEntries.length > 0) {
-      const { data: pastCollections } = await supabase
-        .from("collections")
-        .select("line_items")
-        .eq("tenant_id", tenantId)
-        .eq("status", "successful");
-      const alreadySettledIds = new Set(
-        (pastCollections ?? []).flatMap((c: { line_items: unknown }) =>
-          Array.isArray(c.line_items) ? (c.line_items as { id: string | null }[]).map((item) => item.id) : []
-        )
-      );
-      for (const entry of adjustmentEntries) {
-        if (remaining <= 0) break;
-        if (alreadySettledIds.has(entry.id)) continue;
-        const applied = Math.min(Number(entry.amount), remaining);
-        lineItems.push({ id: entry.id, label: entry.label, amount: applied });
-        remaining = round2(remaining - applied);
-      }
-    }
-  }
-
-  if (remaining > 0) {
-    lineItems.push({ id: null, label: "Rent paid in advance", amount: remaining });
+  // What this payment pays for, decided once here by the database's allocate_payment (oldest open
+  // rent or one-off charge first, then the live late fee, then the balance or next month's rent paid
+  // in advance) and stored on the collection. The checkout preview, the ledger rows written on
+  // success, the PDF receipt and the SMS all read this same list, so they can't disagree.
+  let lineItems: { id: string | null; label: string; amount: number; kind?: string }[];
+  const { data: allocation, error: allocationError } = await supabase.rpc("allocate_payment", {
+    p_tenant_id: tenantId,
+    p_amount: rentPortion,
+    p_live_penalty: owesSomething ? penaltyAmount : 0,
+  });
+  if (allocationError || !Array.isArray(allocation) || allocation.length === 0) {
+    // Never block a payment over this: the old generic line still settles correctly, it just gets
+    // its wording from the database trigger instead.
+    console.error("[collect-payment] allocate_payment failed, using a single general line", tenantId, allocationError?.message);
+    lineItems = [{ id: null, label: "Rent paid in advance", amount: rentPortion }];
+  } else {
+    lineItems = allocation as { id: string | null; label: string; amount: number; kind?: string }[];
   }
 
   const { data: collectionRow, error: insertError } = await supabase
@@ -285,7 +248,8 @@ Deno.serve(async (req) => {
       status: "pending",
       line_items: lineItems,
       fee_amount: feeAmount,
-      owed_before: owedBefore,
+      // 0 for a pay-ahead: nothing was owed, so the receipt must not call it a partial payment.
+      owed_before: owesSomething ? owedBefore : 0,
     })
     .select()
     .single();

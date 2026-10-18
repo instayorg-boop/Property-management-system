@@ -112,7 +112,7 @@ Deno.serve(async (req) => {
 
   const property = tenant.properties as unknown as { name: string } | null;
   const portalLink = `https://portal.instayhomes.com/p/${tenant.portal_token}`;
-  const message = `Hi ${firstName(tenant.name)}, welcome to ${property?.name ?? "your new home"}, glad to have you with us. Use this link for future payments: ${portalLink}`;
+  const message = `Hi ${firstName(tenant.name)}, welcome to ${property?.name ?? "your new home"}, glad to have you with us. Use this link to pay rent and view your receipts: ${portalLink}`;
 
   if (!(await withinDailySmsCap(serviceClient, tenant.property_id))) {
     await supabase.from("sms_send_log").insert({ property_id: tenant.property_id, recipient_phone: phone, category: "onboarding", status: "skipped_cap", message });

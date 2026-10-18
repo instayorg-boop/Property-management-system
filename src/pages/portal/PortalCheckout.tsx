@@ -1,6 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { groupPortalLedger, portalOwedPeriodLabel } from "../../lib/payPortal";
+import {
+  groupPortalLedger,
+  isOpenPortalRow,
+  portalOwedPeriodLabel,
+  portalPaymentSummary,
+  previewPortalPayment,
+  type PortalPaymentLine,
+} from "../../lib/payPortal";
 import { onlineFeeRateForRent } from "../../lib/pricing";
 import { MOBILE_MONEY_LOGO } from "../../lib/mobileMoneyProviders";
 import { usePortal } from "./portalData";
@@ -60,6 +67,36 @@ export default function PortalCheckout() {
   const detected = detectOperator(phone);
   const operator = operatorChoice ?? detected;
 
+  // What this payment will actually pay for, straight from the server's own allocation (the same
+  // one the payment runs when it is confirmed). Refetched as the amount changes, debounced so typing
+  // a figure doesn't fire a request per keystroke. Until it arrives (or if it fails) the screen
+  // falls back to working it out from the ledger rows below.
+  const [preview, setPreview] = useState<PortalPaymentLine[] | null>(null);
+  const previewOwed = tenant ? (tenant.owedAmount > 0 ? tenant.owedAmount : tenant.rentAmount) : 0;
+  const previewAmount = amountInput === null ? previewOwed : Math.max(0, Number(amountInput) || 0);
+  const previewPenalty = tenant && tenant.owedAmount > 0 ? tenant.penaltyAmount : 0;
+  const tenantId = tenant?.id;
+  useEffect(() => {
+    if (!tenantId || !(previewAmount > 0)) {
+      setPreview(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      previewPortalPayment(tenantId, previewAmount, previewPenalty)
+        .then((lines) => {
+          if (!cancelled) setPreview(lines.length > 0 ? lines : null);
+        })
+        .catch(() => {
+          if (!cancelled) setPreview(null);
+        });
+    }, 300);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [tenantId, previewAmount, previewPenalty]);
+
   // Latched on the first `?dev=1` seen this tab session — see portalDev.ts for why it can't just
   // read the current URL.
   const devMode = isPortalDevMode();
@@ -91,7 +128,7 @@ export default function PortalCheckout() {
   const isPartial = amount < balanceOwed;
   const baseRent = Math.max(amount - tenant.penaltyAmount, 0);
 
-  const openRows = groupPortalLedger(ledger).filter((row) => row.status !== "paid");
+  const openRows = groupPortalLedger(ledger).filter(isOpenPortalRow);
   // Itemised, per period, from the same ledger rows the home screen shows — so the figure being
   // charged can always be traced back to specific months. Anything the ledger rows do not explain
   // is shown as its own line rather than being folded silently into "Rent".
@@ -101,7 +138,7 @@ export default function PortalCheckout() {
     .filter((line) => line.amount > 0);
   const explained = periodLines.reduce((sum, line) => sum + line.amount, 0);
   const unexplained = Math.round((rentBalance - explained) * 100) / 100;
-  const payingFor = portalOwedPeriodLabel(openRows.map((r) => r.label), nextDueDate);
+  const payingFor = preview ? portalPaymentSummary(preview) : portalOwedPeriodLabel(openRows.map((r) => r.label), nextDueDate);
 
   const amountValid = amount > 0 && amount <= balanceOwed;
   const phoneValid = phone.replace(/\D/g, "").length >= 9;
@@ -163,7 +200,26 @@ export default function PortalCheckout() {
         <p className="px-0 pb-1 pt-3 text-[13px] font-semibold" style={{ color: "var(--p-muted)" }}>
           Cost breakdown
         </p>
-        {isPartial ? (
+        {preview ? (
+          <>
+            {preview.map((line, i) => (
+              <MoneyRow
+                key={`${line.id ?? line.kind}-${i}`}
+                label={
+                  line.kind === "penalty"
+                    ? tenant.daysOverdue
+                      ? `Late fee (${tenant.daysOverdue} days overdue)`
+                      : "Late fee"
+                    : line.label
+                }
+                amount={line.amount}
+              />
+            ))}
+            {isPartial && tenant.owedAmount > 0 && (
+              <MoneyRow label="Balance left after this payment" amount={Math.max(balanceOwed - amount, 0)} />
+            )}
+          </>
+        ) : isPartial ? (
           <>
             <MoneyRow label="Rent (part payment)" amount={baseRent} />
             <MoneyRow label="Balance left after this payment" amount={Math.max(balanceOwed - amount, 0)} />
@@ -181,7 +237,7 @@ export default function PortalCheckout() {
             )}
           </>
         )}
-        {tenant.penaltyAmount > 0 && (
+        {!preview && tenant.penaltyAmount > 0 && (
           <MoneyRow
             label={tenant.daysOverdue ? `Late fee (${tenant.daysOverdue} days overdue)` : "Late fee"}
             amount={tenant.penaltyAmount}
